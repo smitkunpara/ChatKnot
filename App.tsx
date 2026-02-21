@@ -1,20 +1,23 @@
+import 'react-native-gesture-handler';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppNavigator } from './src/navigation/AppNavigator';
+import { useSettingsStore } from './src/store/useSettingsStore';
+import { McpManager } from './src/services/mcp/McpManager';
 
 export default function App() {
+  const mcpServers = useSettingsStore(state => state.mcpServers);
+
+  // Re-initialize MCP manager when servers config changes
+  useEffect(() => {
+    McpManager.initialize(mcpServers).catch(console.error);
+  }, [mcpServers]);
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      <AppNavigator />
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
