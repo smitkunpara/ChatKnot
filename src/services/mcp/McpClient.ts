@@ -1,6 +1,13 @@
 import EventSource from 'react-native-sse';
-import { McpServerConfig, ToolCall, McpToolSchema } from '../../types';
+import { McpServerConfig, McpToolSchema } from '../../types';
 import uuid from 'react-native-uuid';
+
+type OpenApiToolMeta = {
+  path: string;
+  method: string;
+  baseUrl?: string;
+  securityHeaders?: string[];
+};
 
 export class McpClient {
   private config: McpServerConfig;
@@ -10,13 +17,25 @@ export class McpClient {
   private isConnected: boolean = false;
   private openapiSpec: any = null;
   private isOpenApi: boolean = false;
+  private normalizedBaseUrl: string;
   
   constructor(config: McpServerConfig) {
-    this.config = config;
+    this.normalizedBaseUrl = this.ensureHttpUrl(config.url);
+    this.config = {
+      ...config,
+      url: this.normalizedBaseUrl,
+    };
+  }
+
+  private ensureHttpUrl(rawUrl: string): string {
+    const trimmed = (rawUrl || '').trim();
+    if (!trimmed) return trimmed;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
   }
 
   async connect(): Promise<void> {
-    const baseUrl = this.config.url.replace(/\/$/, '');
+    const baseUrl = this.normalizedBaseUrl.replace(/\/$/, '');
     
     // First, try fetching openapi.json
     try {
@@ -174,18 +193,21 @@ export class McpClient {
   private parseOpenApi(spec: any): McpToolSchema[] {
     const tools: McpToolSchema[] = [];
     const schemas = spec.components?.schemas || {};
+    const globalSecurity = this.extractSecuritySchemeNames(spec?.security);
 
     Object.entries(spec.paths || {}).forEach(([path, methods]: [string, any]) => {
       Object.entries(methods).forEach(([method, operation]: [string, any]) => {
         if (['get', 'post', 'put', 'delete'].includes(method)) {
           const name = operation.operationId || `${method}_${path.replace(/\//g, '_')}`;
           
-          let inputSchema: any = { type: 'object', properties: {} };
+          let inputSchema: any = { type: 'object', properties: {}, required: [] };
           
           // Handle Request Body (mostly for POST)
           if (operation.requestBody?.content?.['application/json']?.schema) {
             const schemaRef = operation.requestBody.content['application/json'].schema;
             inputSchema = this.resolveSchema(schemaRef, schemas);
+            if (!inputSchema.required) inputSchema.required = [];
+            if (!inputSchema.properties) inputSchema.properties = {};
           }
 
           // Handle Parameters (Query, Path, Headers)
@@ -193,20 +215,57 @@ export class McpClient {
              operation.parameters.forEach((param: any) => {
                 if (param.schema) {
                    inputSchema.properties[param.name] = param.schema;
+                   if (param.required && !inputSchema.required.includes(param.name)) {
+                     inputSchema.required.push(param.name);
+                   }
                 }
              });
           }
+
+          const operationSecurity = this.extractSecuritySchemeNames(operation?.security);
+          const appliedSecurity = operationSecurity.length > 0 ? operationSecurity : globalSecurity;
+          const securityHeaders = this.extractSecurityHeaders(spec, appliedSecurity);
 
           tools.push({
             name,
             description: operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
             inputSchema: inputSchema,
-            _meta: { path, method, baseUrl: spec.servers?.[0]?.url }
+            _meta: { path, method, baseUrl: spec.servers?.[0]?.url, securityHeaders } as OpenApiToolMeta
           } as any);
         }
       });
     });
     return tools;
+  }
+
+  private extractSecuritySchemeNames(security: any): string[] {
+    if (!Array.isArray(security)) return [];
+    const names: string[] = [];
+    for (const entry of security) {
+      if (!entry || typeof entry !== 'object') continue;
+      for (const key of Object.keys(entry)) {
+        if (!names.includes(key)) names.push(key);
+      }
+    }
+    return names;
+  }
+
+  private extractSecurityHeaders(spec: any, schemeNames: string[]): string[] {
+    const schemes = spec?.components?.securitySchemes || {};
+    const headers: string[] = [];
+
+    for (const schemeName of schemeNames) {
+      const scheme = schemes?.[schemeName];
+      if (!scheme) continue;
+      if (scheme.type === 'apiKey' && scheme.in === 'header' && typeof scheme.name === 'string') {
+        const headerName = scheme.name.trim();
+        if (headerName && !headers.includes(headerName)) {
+          headers.push(headerName);
+        }
+      }
+    }
+
+    return headers;
   }
 
   private resolveSchema(schema: any, components: any): any {
@@ -217,12 +276,32 @@ export class McpClient {
     return schema;
   }
 
+  private resolveToolBaseUrl(baseUrl?: string): string {
+    if (!baseUrl) return this.normalizedBaseUrl;
+    const trimmed = String(baseUrl).trim();
+    if (!trimmed) return this.normalizedBaseUrl;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('/')) {
+      const root = new URL(this.normalizedBaseUrl);
+      return `${root.protocol}//${root.host}${trimmed}`;
+    }
+    return this.ensureHttpUrl(trimmed);
+  }
+
   private async callOpenApiTool(name: string, args: any): Promise<any> {
     const tool = this.tools.find(t => t.name === name) as any;
     if (!tool || !tool._meta) throw new Error(`Tool ${name} not found or invalid`);
 
-    const { path, method } = tool._meta;
-    let url = this.config.url.replace(/\/$/, '') + path;
+    const { path, method, baseUrl, securityHeaders = [] } = tool._meta as OpenApiToolMeta;
+    const missingHeaders = securityHeaders.filter((headerName: string) => !this.hasConfiguredHeader(headerName));
+    if (missingHeaders.length > 0) {
+      throw new Error(
+        `Missing required header(s): ${missingHeaders.join(', ')}. Add them in MCP server headers in Settings.`
+      );
+    }
+
+    const toolBaseUrl = this.resolveToolBaseUrl(baseUrl);
+    let url = toolBaseUrl.replace(/\/$/, '') + path;
     
     // Replace path parameters
     Object.entries(args).forEach(([key, val]) => {
@@ -261,9 +340,74 @@ export class McpClient {
     return await response.json();
   }
 
+  private hasConfiguredHeader(headerName: string): boolean {
+    const target = headerName.toLowerCase();
+    const configuredHeaders = this.config.headers || {};
+    return Object.keys(configuredHeaders).some(key => key.toLowerCase() === target && !!configuredHeaders[key]);
+  }
+
+  getProtocol(): 'openapi' | 'mcp' {
+    return this.isOpenApi ? 'openapi' : 'mcp';
+  }
+
+  getOpenApiMetadata():
+    | {
+        title?: string;
+        version?: string;
+        serverUrl?: string;
+        securityHeaders: string[];
+      }
+    | null {
+    if (!this.isOpenApi || !this.openapiSpec) return null;
+
+    const globalSecurity = this.extractSecuritySchemeNames(this.openapiSpec.security);
+    const securityHeaders = this.extractSecurityHeaders(this.openapiSpec, globalSecurity);
+    const perToolHeaders = this.tools.flatMap((tool: any) => {
+      const headers = tool?._meta?.securityHeaders;
+      return Array.isArray(headers) ? headers : [];
+    });
+    const mergedHeaders = Array.from(new Set([...securityHeaders, ...perToolHeaders]));
+    const serverUrl = this.resolveToolBaseUrl(this.openapiSpec?.servers?.[0]?.url || this.normalizedBaseUrl);
+
+    return {
+      title: this.openapiSpec?.info?.title,
+      version: this.openapiSpec?.info?.version,
+      serverUrl,
+      securityHeaders: mergedHeaders,
+    };
+  }
+
   getOpenApiContext(): string | null {
      if (!this.isOpenApi || !this.openapiSpec) return null;
-     return `API Context for ${this.config.name}:\n${JSON.stringify(this.openapiSpec, null, 2)}`;
+
+     const meta = this.getOpenApiMetadata();
+     const toolLines = this.tools
+      .slice(0, 20)
+      .map((tool: any) => {
+        const required = Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required : [];
+        const requiredText = required.length ? `required: ${required.join(', ')}` : 'required: none';
+        return `- ${tool.name} (${tool._meta?.method?.toUpperCase()} ${tool._meta?.path}) ${requiredText}`;
+      })
+      .join('\n');
+
+     const headerInstruction =
+      meta?.securityHeaders?.length
+        ? `Authentication headers are already configured at MCP server level (${meta.securityHeaders.join(
+            ', '
+          )}). Do not add auth headers in tool arguments.`
+        : 'No API-key header requirement detected from OpenAPI security schemes.';
+
+     return [
+      `MCP OpenAPI instructions for ${this.config.name}:`,
+      `- API: ${meta?.title || 'Unknown'}${meta?.version ? ` (v${meta.version})` : ''}`,
+      `- Base URL: ${meta?.serverUrl || this.normalizedBaseUrl}`,
+      '- Always call tools via native tool/function calls, never XML.',
+      '- For GET endpoints: provide query/path fields as tool args.',
+      '- For POST/PUT/DELETE endpoints: provide JSON body fields as tool args.',
+      `- ${headerInstruction}`,
+      '- Available tools:',
+      toolLines || '- none',
+     ].join('\n');
   }
 
   disconnect() {

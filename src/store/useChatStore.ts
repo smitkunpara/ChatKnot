@@ -20,7 +20,13 @@ interface ChatState {
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
   setLoading: (loading: boolean) => void;
   addToolCall: (conversationId: string, messageId: string, toolCall: ToolCall) => void;
-  updateToolCallStatus: (conversationId: string, messageId: string, toolCallId: string, status: ToolCall['status'], result?: string) => void;
+  updateToolCallStatus: (
+    conversationId: string,
+    messageId: string,
+    toolCallId: string,
+    status: ToolCall['status'],
+    payload?: { result?: string; error?: string }
+  ) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -134,7 +140,7 @@ export const useChatStore = create<ChatState>()(
         }),
       })),
 
-      updateToolCallStatus: (conversationId, messageId, toolCallId, status, result) => set((state) => ({
+      updateToolCallStatus: (conversationId, messageId, toolCallId, status, payload) => set((state) => ({
         conversations: state.conversations.map((c) => {
           if (c.id === conversationId) {
             return {
@@ -144,7 +150,14 @@ export const useChatStore = create<ChatState>()(
                   return {
                     ...m,
                     toolCalls: m.toolCalls.map((t) => 
-                      t.id === toolCallId ? { ...t, status, result } : t
+                      t.id === toolCallId
+                        ? {
+                            ...t,
+                            status,
+                            result: payload?.result ?? (status === 'failed' ? undefined : t.result),
+                            error: payload?.error ?? (status !== 'failed' ? undefined : t.error),
+                          }
+                        : t
                     ),
                   };
                 }

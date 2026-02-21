@@ -1,10 +1,11 @@
 // @ts-nocheck
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
-import { Message } from '../../types';
 import { Copy, Edit2 } from 'lucide-react-native';
+import { Message } from '../../types';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
 
 interface MessageBubbleProps {
@@ -13,107 +14,188 @@ interface MessageBubbleProps {
   onEdit?: (id: string, content: string) => void;
 }
 
-const StreamingCursor = () => {
+const StreamingCursor = ({ color }: { color: string }) => {
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0, duration: 420, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 420, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [opacity]);
 
-  return <Animated.View style={[styles.cursor, { opacity }]} />;
+  return <Animated.View style={[baseStyles.cursor, { opacity, backgroundColor: color }]} />;
 };
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, onEdit }) => {
+  const { colors } = useAppTheme();
+  const styles = createStyles(colors);
+  const markdownStyles = createMarkdownStyles(colors);
   const isUser = message.role === 'user';
-  const isTool = message.role === 'tool'; 
+  const isTool = message.role === 'tool';
   const isSystem = message.role === 'system';
-  const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+  const hasToolCalls = !!message.toolCalls?.length;
 
-  if (isSystem) return null;
+  // Tool outputs are kept in history for LLM context, but hidden from the UI.
+  if (isSystem || isTool) return null;
 
   const copyToClipboard = async () => {
     await Clipboard.setStringAsync(message.content || '');
   };
 
   return (
-    <View style={[
-      styles.container, 
-      isUser ? styles.userContainer : styles.assistantContainer,
-      isTool ? styles.toolContainer : {}
-    ]}>
-      <View style={[
-        styles.bubble,
-        isUser ? styles.userBubble : styles.assistantBubble,
-        isTool ? styles.toolBubble : {}
-      ]}>
-        {hasToolCalls && (
+    <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
+      <View
+        style={[
+          styles.bubble,
+          isUser ? styles.userBubble : styles.assistantBubble,
+          hasToolCalls ? styles.assistantWithTools : undefined,
+        ]}
+      >
+        {hasToolCalls ? (
           <View style={styles.toolCallsContainer}>
-            {message.toolCalls!.map((tc) => (
+            {message.toolCalls!.map(tc => (
               <ToolCallComponent key={tc.id} toolCall={tc} />
             ))}
           </View>
-        )}
+        ) : null}
 
         <View style={styles.textRow}>
           {message.content ? (
-             isUser ? (
-               <Text style={styles.userText}>{message.content}</Text>
-             ) : isTool ? (
-              <Text style={styles.toolText}>Result: {message.content}</Text>
+            isUser ? (
+              <Text style={styles.userText}>{message.content}</Text>
             ) : (
-              <Markdown style={markdownStyles}>
-                {message.content}
-              </Markdown>
+              <Markdown style={markdownStyles}>{message.content}</Markdown>
             )
           ) : null}
-          {isStreaming && !isUser && <StreamingCursor />}
+          {isStreaming && <StreamingCursor color={colors.primary} />}
         </View>
       </View>
-      
+
       <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
-          {!isStreaming && !isTool && message.content && (
-            <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
-              <Copy size={13} color="#666" />
-            </TouchableOpacity>
-          )}
-          {isUser && onEdit && (
-            <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton}>
-              <Edit2 size={13} color="#666" />
-            </TouchableOpacity>
-          )}
+        {!isStreaming && message.content ? (
+          <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
+            <Copy size={13} color={colors.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+        {isUser && onEdit ? (
+          <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton}>
+            <Edit2 size={13} color={colors.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { marginVertical: 6, paddingHorizontal: 12, width: '100%' },
-  userContainer: { alignItems: 'flex-end' },
-  assistantContainer: { alignItems: 'flex-start' },
-  toolContainer: { alignItems: 'center', width: '100%' },
-  bubble: { maxWidth: '85%', padding: 12, borderRadius: 18, minWidth: 40 },
-  userBubble: { backgroundColor: '#007AFF', borderBottomRightRadius: 4 },
-  assistantBubble: { backgroundColor: '#262626', borderBottomLeftRadius: 4 },
-  toolBubble: { backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333', width: '95%' },
-  userText: { color: '#fff', fontSize: 16 },
-  toolText: { color: '#aaa', fontFamily: 'monospace', fontSize: 12 },
-  actions: { flexDirection: 'row', gap: 12, marginTop: 4, paddingHorizontal: 4 },
-  userActions: { alignSelf: 'flex-end', marginRight: 4 },
-  assistantActions: { alignSelf: 'flex-start', marginLeft: 4 },
-  actionButton: { padding: 4 },
-  toolCallsContainer: { marginBottom: 8, width: '100%' },
-  textRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
-  cursor: { width: 8, height: 18, backgroundColor: '#007AFF', marginLeft: 4, borderRadius: 1 }
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: {
+      marginVertical: 6,
+      paddingHorizontal: 12,
+      width: '100%',
+    },
+    userContainer: {
+      alignItems: 'flex-end',
+    },
+    assistantContainer: {
+      alignItems: 'flex-start',
+    },
+    bubble: {
+      maxWidth: '88%',
+      padding: 12,
+      borderRadius: 14,
+      minWidth: 44,
+      borderWidth: 1,
+    },
+    userBubble: {
+      backgroundColor: colors.userBubble,
+      borderBottomRightRadius: 6,
+      borderColor: colors.subtleBorder,
+    },
+    assistantBubble: {
+      backgroundColor: colors.assistantBubble,
+      borderBottomLeftRadius: 6,
+      borderColor: colors.subtleBorder,
+    },
+    assistantWithTools: {
+      width: '96%',
+    },
+    userText: {
+      color: colors.text,
+      fontSize: 15,
+      lineHeight: 22,
+    },
+    actions: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 4,
+      paddingHorizontal: 4,
+    },
+    userActions: {
+      alignSelf: 'flex-end',
+      marginRight: 2,
+    },
+    assistantActions: {
+      alignSelf: 'flex-start',
+      marginLeft: 2,
+    },
+    actionButton: {
+      padding: 4,
+    },
+    toolCallsContainer: {
+      marginBottom: 8,
+      width: '100%',
+    },
+    textRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+    },
+  });
+
+const baseStyles = StyleSheet.create({
+  cursor: {
+    width: 8,
+    height: 17,
+    marginLeft: 4,
+    borderRadius: 2,
+  },
 });
 
-const markdownStyles = {
-  body: { color: '#e5e5e5', fontSize: 16, lineHeight: 24 },
-  code_inline: { backgroundColor: '#333', color: '#ff7b72', fontFamily: 'monospace', borderRadius: 4, paddingHorizontal: 4 },
-  fence: { backgroundColor: '#0d0d0d', color: '#e6edf3', borderColor: '#333', fontFamily: 'monospace', borderRadius: 8, padding: 10, marginVertical: 10 },
-  link: { color: '#58a6ff' }
-};
+const createMarkdownStyles = (colors: any) => ({
+  body: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  heading1: {
+    color: colors.text,
+  },
+  heading2: {
+    color: colors.text,
+  },
+  code_inline: {
+    backgroundColor: colors.codeBackground,
+    color: colors.text,
+    fontFamily: 'monospace',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  fence: {
+    backgroundColor: colors.codeBackground,
+    color: colors.text,
+    borderColor: colors.border,
+    borderWidth: 1,
+    fontFamily: 'monospace',
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 8,
+  },
+  link: {
+    color: colors.link,
+  },
+});

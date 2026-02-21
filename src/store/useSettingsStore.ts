@@ -4,7 +4,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppSettings, LlmProviderConfig, McpServerConfig } from '../types';
 import 'react-native-get-random-values';
-import uuid from 'react-native-uuid';
 
 interface SettingsState extends AppSettings {
   updateProvider: (provider: LlmProviderConfig) => void;
@@ -16,6 +15,7 @@ interface SettingsState extends AppSettings {
   removeMcpServer: (id: string) => void;
 
   updateSystemPrompt: (prompt: string) => void;
+  setTheme: (theme: AppSettings['theme']) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -24,7 +24,7 @@ export const useSettingsStore = create<SettingsState>()(
       providers: [],
       mcpServers: [],
       systemPrompt: 'You are a helpful AI assistant.',
-      theme: 'dark',
+      theme: 'system',
       
       updateProvider: (updatedProvider) => set((state) => ({
         providers: state.providers.map((p) => (p.id === updatedProvider.id ? updatedProvider : p)),
@@ -47,6 +47,7 @@ export const useSettingsStore = create<SettingsState>()(
       })),
       
       updateSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
+      setTheme: (theme) => set({ theme }),
     }),
     {
       name: 'settings-storage',

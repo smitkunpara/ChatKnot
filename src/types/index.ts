@@ -58,5 +58,5 @@ export interface AppSettings {
   providers: LlmProviderConfig[];
   mcpServers: McpServerConfig[];
   systemPrompt: string;
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'system';
 }

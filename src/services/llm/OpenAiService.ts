@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { LlmProviderConfig, Message } from '../../types';
+import { filterModelsForTextOutput } from './modelFilter';
 
 export class OpenAiService {
   private config: LlmProviderConfig;
@@ -31,13 +32,9 @@ export class OpenAiService {
       }
 
       const data = await response.json();
-      // Handle OpenRouter or standard OpenAI model listing
-      if (data.data) {
-          return data.data.map((m: any) => m.id);
-      } else if (Array.isArray(data)) {
-          return data.map((m: any) => m.id || m.name);
-      }
-      return [];
+      const rawModels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+      const supportedModels = filterModelsForTextOutput(rawModels);
+      return supportedModels;
     } catch (error) {
       console.error('Error fetching models:', error);
       return [];
@@ -50,14 +47,19 @@ export class OpenAiService {
     tools: any[],
     onChunk: (content: string, toolCalls?: any[]) => void,
     onComplete: (fullContent: string, fullToolCalls?: any[]) => void,
-    onError: (error: any) => void
+    onError: (error: any) => void,
+    abortSignal?: AbortSignal
   ) {
     try {
       const msgs = [
         { role: 'system', content: systemPrompt },
         ...messages.map(m => {
-          const msg: any = { role: m.role, content: m.content || '' };
-          if (m.toolCalls && m.toolCalls.length > 0) {
+          const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
+          const msg: any = {
+            role: m.role,
+            content: hasToolCalls && m.role === 'assistant' ? (m.content?.trim() ? m.content : null) : (m.content || ''),
+          };
+          if (hasToolCalls) {
             msg.tool_calls = m.toolCalls.map(tc => ({
               id: tc.id,
               type: 'function',
@@ -82,12 +84,22 @@ export class OpenAiService {
 
       if (tools && tools.length > 0) {
         body.tools = tools;
+        body.tool_choice = 'auto';
+        body.parallel_tool_calls = true;
+
+        // Compatibility fallback for OpenAI-like providers that still use legacy function_call.
+        const isLikelyOpenAi = /api\.openai\.com/i.test(this.getBaseUrl());
+        if (!isLikelyOpenAi) {
+          body.functions = tools.map((tool: any) => tool.function);
+          body.function_call = 'auto';
+        }
       }
 
       const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(body),
+        signal: abortSignal,
         // @ts-ignore
         reactNative: { textStreaming: true },
       });
@@ -100,12 +112,35 @@ export class OpenAiService {
       const mergeToolCalls = (current: any[], newCalls: any[]) => {
         if (!newCalls) return current;
         const result = [...current];
-        newCalls.forEach(call => {
-          const index = call.index;
+        const findIndexById = (id: string) => result.findIndex(entry => entry?.id && entry.id === id);
+
+        newCalls.forEach((call, idx) => {
+          let index = typeof call.index === 'number' ? call.index : idx;
+          if (index < 0 && call.id) {
+            const existing = findIndexById(call.id);
+            if (existing >= 0) index = existing;
+          }
+          if (index < 0) {
+            index = result.length;
+          }
+
+          const argsChunk =
+            typeof call.function?.arguments === 'string'
+              ? call.function.arguments
+              : call.function?.arguments
+                ? JSON.stringify(call.function.arguments)
+                : '';
           if (!result[index]) {
-            result[index] = { ...call, function: { ...call.function, arguments: '' } };
+            result[index] = {
+              ...call,
+              function: {
+                ...call.function,
+                arguments: argsChunk,
+              },
+            };
           } else {
-             if (call.function?.arguments) result[index].function.arguments += call.function.arguments;
+             if (!result[index].function) result[index].function = { arguments: '' };
+             if (argsChunk) result[index].function.arguments += argsChunk;
              if (call.function?.name) result[index].function.name = call.function.name;
              if (call.id) result[index].id = call.id;
           }
@@ -116,58 +151,128 @@ export class OpenAiService {
       let fullContent = '';
       let toolCallsBuffer: any[] = [];
       const reader = (response as any).body?.getReader();
+
+      const processDelta = (delta: any) => {
+        if (!delta) return;
+        if (delta.content) {
+          fullContent += delta.content;
+          onChunk(delta.content, undefined);
+        }
+        if (delta.tool_calls) {
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
+          onChunk('', toolCallsBuffer);
+        }
+        if (delta.function_call) {
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
+            {
+              index: 0,
+              id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
+              type: 'function',
+              function: {
+                name: delta.function_call.name,
+                arguments: delta.function_call.arguments || '',
+              },
+            },
+          ]);
+          onChunk('', toolCallsBuffer);
+        }
+      };
+
+      const processSsePayload = (payload: string) => {
+        const cleanPayload = payload.trim();
+        if (!cleanPayload || cleanPayload === '[DONE]') return;
+        try {
+          const json = JSON.parse(cleanPayload);
+          const delta = json.choices?.[0]?.delta;
+          processDelta(delta);
+        } catch (e) {
+          // Ignore partial or non-JSON control events.
+        }
+      };
       
       if (reader) {
         const decoder = new TextDecoder();
+        let pendingBuffer = '';
+
         while (true) {
+          if (abortSignal?.aborted) {
+            throw new Error('Request cancelled by user');
+          }
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            const cleanLine = line.trim();
-            if (cleanLine === '' || cleanLine === 'data: [DONE]') continue;
-            if (cleanLine.startsWith('data: ')) {
-              try {
-                const json = JSON.parse(cleanLine.substring(6));
-                const delta = json.choices[0]?.delta;
-                if (delta?.content) {
-                  fullContent += delta.content;
-                  onChunk(delta.content, undefined);
-                }
-                if (delta?.tool_calls) {
-                  toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
-                  onChunk('', toolCallsBuffer);
-                }
-              } catch (e) {}
+          pendingBuffer += decoder.decode(value, { stream: true });
+          const events = pendingBuffer.split('\n\n');
+          pendingBuffer = events.pop() || '';
+
+          for (const event of events) {
+            const dataLines = event
+              .split('\n')
+              .filter(line => line.startsWith('data:'))
+              .map(line => line.replace(/^data:\s?/, ''));
+            if (dataLines.length > 0) {
+              processSsePayload(dataLines.join('\n'));
             }
+          }
+        }
+
+        if (pendingBuffer.trim().length > 0) {
+          const dataLines = pendingBuffer
+            .split('\n')
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.replace(/^data:\s?/, ''));
+          if (dataLines.length > 0) {
+            processSsePayload(dataLines.join('\n'));
           }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
       } else {
         // Fallback for non-streaming reader (manual processing of the full body)
         const text = await response.text();
-        const lines = text.split('\n');
-        for (const line of lines) {
-           const cleanLine = line.trim();
-           if (cleanLine === '' || cleanLine === 'data: [DONE]') continue;
-           if (cleanLine.startsWith('data: ')) {
-              try {
-                const json = JSON.parse(cleanLine.substring(6));
-                const delta = json.choices[0]?.delta;
-                if (delta?.content) {
-                  fullContent += delta.content;
-                  onChunk(delta.content, undefined);
-                }
-                if (delta?.tool_calls) {
-                  toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
-                }
-              } catch (e) {}
-           }
+        const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+        const sseLines = lines.filter(line => line.startsWith('data:'));
+
+        if (sseLines.length > 0) {
+          for (const line of sseLines) {
+            processSsePayload(line.replace(/^data:\s?/, ''));
+          }
+        } else {
+          try {
+            const json = JSON.parse(text);
+            const choice = json.choices?.[0];
+            const message = choice?.message;
+            if (message?.content) {
+              fullContent = message.content;
+              onChunk(fullContent, undefined);
+            }
+            if (message?.tool_calls) {
+              toolCallsBuffer = mergeToolCalls([], message.tool_calls);
+              onChunk('', toolCallsBuffer);
+            }
+            if (message?.function_call) {
+              toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
+                {
+                  index: 0,
+                  id: 'legacy_function_call_0',
+                  type: 'function',
+                  function: {
+                    name: message.function_call.name,
+                    arguments: message.function_call.arguments || '',
+                  },
+                },
+              ]);
+              onChunk('', toolCallsBuffer);
+            }
+          } catch (e) {
+            throw new Error('Unable to parse model response');
+          }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
       }
     } catch (error) {
+      if ((error as any)?.name === 'AbortError') {
+        onError(new Error('Request cancelled by user'));
+        return;
+      }
       onError(error);
     }
   }

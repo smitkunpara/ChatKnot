@@ -1,49 +1,31 @@
 import React from 'react';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { ChatScreen } from '../screens/ChatScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { Sidebar } from '../components/Sidebar/ConversationList';
-import { useSettingsStore } from '../store/useSettingsStore';
+import { getNavigationTheme, useAppTheme } from '../theme/useAppTheme';
 
 const Drawer = createDrawerNavigator();
 
 export const AppNavigator = () => {
-  const theme = useSettingsStore(state => state.theme);
-  const isDark = theme === 'dark';
-
-  const MyDarkTheme = {
-    ...DarkTheme,
-    colors: {
-      ...DarkTheme.colors,
-      primary: '#007AFF',
-      background: '#121212',
-      card: '#1e1e1e',
-      text: '#ffffff',
-      border: '#333333',
-      notification: '#ff4444',
-    },
-  };
-
-  const MyLightTheme = {
-    ...DefaultTheme,
-    colors: {
-      ...DefaultTheme.colors,
-      primary: '#007AFF',
-    },
-  };
+  const { colors } = useAppTheme();
 
   return (
-    <NavigationContainer theme={isDark ? MyDarkTheme : MyLightTheme}>
+    <NavigationContainer theme={getNavigationTheme(colors)}>
       <Drawer.Navigator 
         initialRouteName="Chat"
         drawerContent={(props) => <Sidebar {...props} />}
         screenOptions={{
           headerShown: false,
+          drawerHideStatusBarOnOpen: false,
           drawerStyle: {
-            backgroundColor: isDark ? '#121212' : '#fff',
+            backgroundColor: colors.background,
             width: 280,
-          }
+          },
+          sceneContainerStyle: {
+            backgroundColor: colors.background,
+          },
         }}
       >
         <Drawer.Screen name="Chat" component={ChatScreen} />

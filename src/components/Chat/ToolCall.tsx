@@ -1,109 +1,163 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { ChevronDown, ChevronUp, Box, CheckCircle, AlertCircle } from 'lucide-react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Hammer } from 'lucide-react-native';
 import { ToolCall as ToolCallType } from '../../types';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 interface ToolCallProps {
   toolCall: ToolCallType;
 }
 
+const safePrettyText = (value?: string): string => {
+  if (!value) return '';
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+};
+
 export const ToolCall: React.FC<ToolCallProps> = ({ toolCall }) => {
+  const { colors } = useAppTheme();
+  const styles = createStyles(colors);
   const [expanded, setExpanded] = useState(false);
+
+  const statusMeta = useMemo(() => {
+    switch (toolCall.status) {
+      case 'running':
+      case 'pending':
+        return { label: 'Running', color: colors.primary };
+      case 'completed':
+        return { label: 'Completed', color: colors.success };
+      case 'failed':
+        return { label: 'Failed', color: colors.danger };
+      default:
+        return { label: 'Unknown', color: colors.textTertiary };
+    }
+  }, [toolCall.status, colors]);
 
   const getStatusIcon = () => {
     switch (toolCall.status) {
       case 'running':
       case 'pending':
-        return <ActivityIndicator size="small" color="#007AFF" />;
+        return <ActivityIndicator size="small" color={colors.primary} />;
       case 'completed':
-        return <CheckCircle size={16} color="#4CAF50" />;
+        return <CheckCircle size={16} color={colors.success} />;
       case 'failed':
-        return <AlertCircle size={16} color="#F44336" />;
+        return <AlertCircle size={16} color={colors.danger} />;
       default:
-        return <Box size={16} color="#888" />;
+        return <Hammer size={16} color={colors.textTertiary} />;
     }
   };
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity 
-        style={styles.header} 
-        onPress={() => setExpanded(!expanded)}
-      >
+      <TouchableOpacity style={styles.header} onPress={() => setExpanded(prev => !prev)}>
         <View style={styles.titleRow}>
           {getStatusIcon()}
-          <Text style={styles.toolName}>Using: {toolCall.name}</Text>
+          <View style={styles.titleTextWrap}>
+            <Text style={styles.toolName} numberOfLines={1}>
+              {toolCall.name}
+            </Text>
+            <Text style={[styles.statusText, { color: statusMeta.color }]}>
+              {statusMeta.label}
+            </Text>
+          </View>
         </View>
-        {expanded ? <ChevronUp size={16} color="#888" /> : <ChevronDown size={16} color="#888" />}
+        {expanded ? (
+          <ChevronUp size={16} color={colors.textTertiary} />
+        ) : (
+          <ChevronDown size={16} color={colors.textTertiary} />
+        )}
       </TouchableOpacity>
 
-      {expanded && (
+      {expanded ? (
         <View style={styles.details}>
-          <Text style={styles.label}>Arguments:</Text>
-          <Text style={styles.code}>{toolCall.arguments}</Text>
-          
-          {toolCall.result && (
+          <Text style={styles.label}>Arguments</Text>
+          <Text style={styles.code}>{safePrettyText(toolCall.arguments)}</Text>
+
+          {toolCall.result ? (
             <>
-              <Text style={styles.label}>Result:</Text>
-              <Text style={styles.code}>{toolCall.result}</Text>
+              <Text style={styles.label}>Result</Text>
+              <Text style={styles.code}>{safePrettyText(toolCall.result)}</Text>
             </>
-          )}
-           {toolCall.error && (
+          ) : null}
+
+          {toolCall.error ? (
             <>
-              <Text style={[styles.label, { color: '#ff4444' }]}>Error:</Text>
+              <Text style={[styles.label, styles.errorLabel]}>Error</Text>
               <Text style={styles.code}>{toolCall.error}</Text>
             </>
-          )}
+          ) : null}
         </View>
-      )}
+      ) : null}
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    marginVertical: 4,
-    backgroundColor: '#1e1e1e',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-    overflow: 'hidden',
-    width: '100%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 10,
-    backgroundColor: '#252525',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toolName: {
-    color: '#ddd',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  details: {
-    padding: 10,
-    backgroundColor: '#1a1a1a',
-  },
-  label: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
-    marginBottom: 2,
-    fontWeight: 'bold',
-  },
-  code: {
-    fontFamily: 'monospace',
-    color: '#ccc',
-    fontSize: 12,
-    backgroundColor: '#111',
-    padding: 6,
-    borderRadius: 4,
-  },
-});
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    container: {
+      marginVertical: 4,
+      backgroundColor: colors.toolCard,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+      width: '100%',
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+      backgroundColor: colors.toolCardHeader,
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
+    },
+    titleTextWrap: {
+      flex: 1,
+    },
+    toolName: {
+      color: colors.text,
+      fontWeight: '700',
+      fontSize: 13,
+    },
+    statusText: {
+      fontSize: 11,
+      marginTop: 2,
+      fontWeight: '600',
+    },
+    details: {
+      paddingHorizontal: 10,
+      paddingBottom: 10,
+      paddingTop: 6,
+      backgroundColor: colors.surface,
+    },
+    label: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      marginTop: 6,
+      marginBottom: 4,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+    },
+    errorLabel: {
+      color: colors.danger,
+    },
+    code: {
+      fontFamily: 'monospace',
+      color: colors.text,
+      fontSize: 12,
+      backgroundColor: colors.codeBackground,
+      padding: 8,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+  });
