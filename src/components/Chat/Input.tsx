@@ -27,6 +27,7 @@ export const Input: React.FC<InputProps> = ({
   const styles = createStyles(colors);
   const [text, setText] = useState('');
   const inputRef = useRef<TextInput>(null);
+  const wasEditingRef = useRef(false);
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -36,6 +37,14 @@ export const Input: React.FC<InputProps> = ({
       }
     }
   }, [initialValue]);
+
+  useEffect(() => {
+    if (wasEditingRef.current && !isEditing) {
+      setText('');
+    }
+
+    wasEditingRef.current = !!isEditing;
+  }, [isEditing]);
 
   const canSend = !!text.trim() && !isLoading;
 
