@@ -12,6 +12,10 @@ import { MessageSquare, PlusCircle, Settings as SettingsIcon, Trash2 } from 'luc
 import { useChatStore } from '../../store/useChatStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAppTheme } from '../../theme/useAppTheme';
+import {
+  getSidebarConversationLabel,
+  getSidebarNewChatCtaLabel,
+} from '../../utils/dateFormat';
 
 export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const { colors } = useAppTheme();
@@ -24,6 +28,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
 
   const providers = useSettingsStore(state => state.providers);
   const systemPrompt = useSettingsStore(state => state.systemPrompt);
+  const newChatLabel = getSidebarNewChatCtaLabel();
 
   const handleCreateConversation = () => {
     const provider = providers.find(p => p.enabled) || providers[0];
@@ -50,7 +55,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
         <Text style={styles.brand}>MCP Connector</Text>
         <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation}>
           <PlusCircle size={20} color={colors.onPrimary} />
-          <Text style={styles.newChatText}>New Chat</Text>
+          <Text style={styles.newChatText}>{newChatLabel}</Text>
         </TouchableOpacity>
       </View>
 
@@ -74,7 +79,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
                 style={[styles.itemText, item.id === activeId ? styles.activeItemText : undefined]}
                 numberOfLines={1}
               >
-                {item.title || 'New Chat'}
+                {getSidebarConversationLabel(item)}
               </Text>
             </View>
             <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn}>

@@ -22,6 +22,7 @@ export interface Conversation {
   messages: Message[];
   providerId: string;
   systemPrompt: string;
+  createdAt?: number;
   updatedAt: number;
 }
 

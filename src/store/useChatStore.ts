@@ -42,13 +42,15 @@ export const useChatStore = create<ChatState>()(
       isLoading: false,
 
       createConversation: (providerId, systemPrompt) => {
+        const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
           messages: [],
           providerId,
           systemPrompt,
-          updatedAt: Date.now(),
+          createdAt: now,
+          updatedAt: now,
         };
         set((state) => ({
           conversations: [newConversation, ...state.conversations],
