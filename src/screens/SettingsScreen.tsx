@@ -1,8 +1,9 @@
 // @ts-nocheck
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -15,8 +16,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { Check, ChevronDown, ChevronLeft, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { LlmProviderConfig, McpServerConfig } from '../types';
@@ -47,6 +48,31 @@ const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }
   { label: 'System', value: 'system' },
   { label: 'Light', value: 'light' },
   { label: 'Dark', value: 'dark' },
+];
+
+type SettingsView = 'index' | 'appearance' | 'prompt' | 'providers' | 'mcpServers';
+
+const SETTINGS_CATEGORIES: Array<{ key: Exclude<SettingsView, 'index'>; title: string; description: string }> = [
+  {
+    key: 'appearance',
+    title: 'Appearance',
+    description: 'Theme preferences and visual behavior.',
+  },
+  {
+    key: 'prompt',
+    title: 'Prompt',
+    description: 'Default system instruction for conversations.',
+  },
+  {
+    key: 'providers',
+    title: 'AI Providers',
+    description: 'Manage provider endpoints, keys, and model visibility.',
+  },
+  {
+    key: 'mcpServers',
+    title: 'MCP Servers',
+    description: 'Manage MCP/OpenAPI servers, validation, and tool permissions.',
+  },
 ];
 
 export const SettingsScreen = () => {
@@ -90,6 +116,45 @@ export const SettingsScreen = () => {
   const [draftAvailableModels, setDraftAvailableModels] = useState<Record<string, string[]>>({});
   const [isEditingSystemPrompt, setIsEditingSystemPrompt] = useState(false);
   const [systemPromptDraft, setSystemPromptDraft] = useState(systemPrompt);
+  const [activeView, setActiveView] = useState<SettingsView>('index');
+  const activeViewRef = useRef<SettingsView>('index');
+
+  useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setActiveView('index');
+
+      const onBackPress = () => {
+        if (activeViewRef.current !== 'index') {
+          setActiveView('index');
+          return true;
+        }
+        return false;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        subscription.remove();
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (activeView === 'index') {
+        return;
+      }
+
+      event.preventDefault();
+      setActiveView('index');
+    });
+
+    return unsubscribe;
+  }, [activeView, navigation]);
 
   useEffect(() => {
     const unsubscribe = McpManager.subscribe(states => {
@@ -500,12 +565,25 @@ export const SettingsScreen = () => {
     setIsEditingSystemPrompt(false);
   };
 
+  const activeCategory = SETTINGS_CATEGORIES.find(category => category.key === activeView);
+  const inCategoryView = activeView !== 'index';
+  const headerTitle = inCategoryView ? activeCategory?.title || 'Settings' : 'Settings';
+
+  const handleHeaderBack = () => {
+    if (inCategoryView) {
+      setActiveView('index');
+      return;
+    }
+
+    navigation.goBack();
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topHeader}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={handleHeaderBack} style={styles.backBtn}>
           <ChevronLeft color={colors.text} size={22} />
-          <Text style={styles.title}>Settings</Text>
+          <Text style={styles.title}>{headerTitle}</Text>
         </TouchableOpacity>
       </View>
 
@@ -513,90 +591,118 @@ export const SettingsScreen = () => {
         contentContainerStyle={styles.content}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
       >
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Appearance</Text>
-          <Text style={styles.sectionHint}>Choose how the app theme is resolved.</Text>
-          <View style={styles.themeRow}>
-            {THEME_OPTIONS.map(option => {
-              const active = themePreference === option.value;
-              return (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[styles.themePill, active ? styles.themePillActive : undefined]}
-                  onPress={() => setTheme(option.value)}
-                >
-                  <Text style={[styles.themePillText, active ? styles.themePillTextActive : undefined]}>
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+        {activeView === 'index' ? (
+          <>
+            <Text style={styles.sectionHeader}>Categories</Text>
+            {SETTINGS_CATEGORIES.map(category => (
+              <TouchableOpacity
+                key={category.key}
+                style={styles.categoryCard}
+                onPress={() => setActiveView(category.key)}
+              >
+                <View style={styles.categoryBody}>
+                  <Text style={styles.categoryTitle}>{category.title}</Text>
+                  <Text style={styles.categoryHint}>{category.description}</Text>
+                </View>
+                <ChevronRight size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ))}
+          </>
+        ) : null}
 
-        <View style={styles.sectionCard}>
-          <View style={styles.row}>
-            <Text style={styles.sectionTitle}>System Prompt</Text>
-            <View style={styles.rowRight}>
-              {isEditingSystemPrompt ? (
-                <>
-                  <TouchableOpacity onPress={saveSystemPromptEdit} style={styles.iconButton}>
-                    <Save size={17} color={colors.primary} />
+        {activeView === 'appearance' ? (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Appearance</Text>
+            <Text style={styles.sectionHint}>Choose how the app theme is resolved.</Text>
+            <View style={styles.themeRow}>
+              {THEME_OPTIONS.map(option => {
+                const active = themePreference === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.themePill, active ? styles.themePillActive : undefined]}
+                    onPress={() => setTheme(option.value)}
+                  >
+                    <Text style={[styles.themePillText, active ? styles.themePillTextActive : undefined]}>
+                      {option.label}
+                    </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={cancelSystemPromptEdit} style={styles.iconButton}>
-                    <X size={17} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <TouchableOpacity onPress={beginSystemPromptEdit} style={styles.iconButton}>
-                  <Pencil size={17} color={colors.primary} />
-                </TouchableOpacity>
-              )}
+                );
+              })}
             </View>
           </View>
-          <TextInput
-            style={[styles.input, styles.textArea, !isEditingSystemPrompt ? styles.inputDisabled : undefined]}
-            multiline
-            editable={isEditingSystemPrompt}
-            value={systemPromptDraft}
-            onChangeText={setSystemPromptDraft}
-            placeholder="Set a default system instruction..."
-            placeholderTextColor={colors.placeholder}
-          />
-        </View>
+        ) : null}
 
-        <Text style={styles.sectionHeader}>AI Providers</Text>
-        <View style={styles.sectionCard}>
-          <Text style={styles.subTitle}>Add Provider</Text>
-          <TextInput
-            style={styles.input}
-            value={newProviderName}
-            onChangeText={setNewProviderName}
-            placeholder="Provider Name"
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={styles.input}
-            value={newBaseUrl}
-            onChangeText={setNewBaseUrl}
-            placeholder="Base URL"
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={styles.input}
-            value={newApiKey}
-            onChangeText={setNewApiKey}
-            placeholder="API Key"
-            placeholderTextColor={colors.placeholder}
-            secureTextEntry
-          />
-          <TouchableOpacity style={styles.primaryButton} onPress={handleAddProvider}>
-            <Plus size={18} color={colors.onPrimary} />
-            <Text style={styles.primaryButtonText}>Add Provider</Text>
-          </TouchableOpacity>
-        </View>
+        {activeView === 'prompt' ? (
+          <View style={styles.sectionCard}>
+            <View style={styles.row}>
+              <Text style={styles.sectionTitle}>System Prompt</Text>
+              <View style={styles.rowRight}>
+                {isEditingSystemPrompt ? (
+                  <>
+                    <TouchableOpacity onPress={saveSystemPromptEdit} style={styles.iconButton}>
+                      <Save size={17} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={cancelSystemPromptEdit} style={styles.iconButton}>
+                      <X size={17} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity onPress={beginSystemPromptEdit} style={styles.iconButton}>
+                    <Pencil size={17} color={colors.primary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+            <TextInput
+              style={[styles.input, styles.textArea, !isEditingSystemPrompt ? styles.inputDisabled : undefined]}
+              multiline
+              editable={isEditingSystemPrompt}
+              value={systemPromptDraft}
+              onChangeText={setSystemPromptDraft}
+              placeholder="Set a default system instruction..."
+              placeholderTextColor={colors.placeholder}
+            />
+          </View>
+        ) : null}
 
-        {providers.map(provider => {
+        {activeView === 'providers' ? (
+          <>
+            <Text style={styles.sectionHeader}>AI Providers</Text>
+            <View style={styles.sectionCard}>
+              <Text style={styles.subTitle}>Add Provider</Text>
+              <TextInput
+                style={styles.input}
+                value={newProviderName}
+                onChangeText={setNewProviderName}
+                placeholder="Provider Name"
+                placeholderTextColor={colors.placeholder}
+              />
+              <TextInput
+                style={styles.input}
+                value={newBaseUrl}
+                onChangeText={setNewBaseUrl}
+                placeholder="Base URL"
+                placeholderTextColor={colors.placeholder}
+              />
+              <TextInput
+                style={styles.input}
+                value={newApiKey}
+                onChangeText={setNewApiKey}
+                placeholder="API Key"
+                placeholderTextColor={colors.placeholder}
+                secureTextEntry
+              />
+              <TouchableOpacity style={styles.primaryButton} onPress={handleAddProvider}>
+                <Plus size={18} color={colors.onPrimary} />
+                <Text style={styles.primaryButtonText}>Add Provider</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : null}
+
+        {activeView === 'providers'
+          ? providers.map(provider => {
           const isEditing = !!editingProviders[provider.id];
           const draft = providerDrafts[provider.id];
           const draftModels = draftAvailableModels[provider.id];
@@ -706,63 +812,66 @@ export const SettingsScreen = () => {
               ) : null}
             </View>
           );
-        })}
+          })
+          : null}
 
-        <Text style={styles.sectionHeader}>MCP Servers</Text>
-        <View style={styles.sectionCard}>
-          <Text style={styles.subTitle}>Add MCP Server</Text>
-          <TextInput
-            style={styles.input}
-            value={newMcpName}
-            onChangeText={setNewMcpName}
-            placeholder="Server Name"
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={styles.input}
-            value={newMcpUrl}
-            onChangeText={text => {
-              setNewMcpUrl(text);
-              if (newMcpValidationError) {
-                setNewMcpValidationError(null);
-              }
-            }}
-            placeholder="Server URL"
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={styles.input}
-            value={newMcpHeaderName}
-            onChangeText={setNewMcpHeaderName}
-            placeholder="Header Name"
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={styles.input}
-            value={newMcpHeaderValue}
-            onChangeText={setNewMcpHeaderValue}
-            placeholder="Header Value"
-            placeholderTextColor={colors.placeholder}
-            secureTextEntry
-          />
-          {newMcpValidationError ? <Text style={styles.warningText}>{newMcpValidationError}</Text> : null}
-          <TouchableOpacity
-            style={[styles.primaryButton, isValidatingNewMcp ? styles.primaryButtonDisabled : undefined]}
-            onPress={() => {
-              void handleAddMcp();
-            }}
-            disabled={isValidatingNewMcp}
-          >
-            {isValidatingNewMcp ? (
-              <ActivityIndicator size="small" color={colors.onPrimary} />
-            ) : (
-              <Plus size={18} color={colors.onPrimary} />
-            )}
-            <Text style={styles.primaryButtonText}>Add MCP Server</Text>
-          </TouchableOpacity>
-        </View>
+        {activeView === 'mcpServers' ? (
+          <>
+            <Text style={styles.sectionHeader}>MCP Servers</Text>
+            <View style={styles.sectionCard}>
+              <Text style={styles.subTitle}>Add MCP Server</Text>
+              <TextInput
+                style={styles.input}
+                value={newMcpName}
+                onChangeText={setNewMcpName}
+                placeholder="Server Name"
+                placeholderTextColor={colors.placeholder}
+              />
+              <TextInput
+                style={styles.input}
+                value={newMcpUrl}
+                onChangeText={text => {
+                  setNewMcpUrl(text);
+                  if (newMcpValidationError) {
+                    setNewMcpValidationError(null);
+                  }
+                }}
+                placeholder="Server URL"
+                placeholderTextColor={colors.placeholder}
+              />
+              <TextInput
+                style={styles.input}
+                value={newMcpHeaderName}
+                onChangeText={setNewMcpHeaderName}
+                placeholder="Header Name"
+                placeholderTextColor={colors.placeholder}
+              />
+              <TextInput
+                style={styles.input}
+                value={newMcpHeaderValue}
+                onChangeText={setNewMcpHeaderValue}
+                placeholder="Header Value"
+                placeholderTextColor={colors.placeholder}
+                secureTextEntry
+              />
+              {newMcpValidationError ? <Text style={styles.warningText}>{newMcpValidationError}</Text> : null}
+              <TouchableOpacity
+                style={[styles.primaryButton, isValidatingNewMcp ? styles.primaryButtonDisabled : undefined]}
+                onPress={() => {
+                  void handleAddMcp();
+                }}
+                disabled={isValidatingNewMcp}
+              >
+                {isValidatingNewMcp ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Plus size={18} color={colors.onPrimary} />
+                )}
+                <Text style={styles.primaryButtonText}>Add MCP Server</Text>
+              </TouchableOpacity>
+            </View>
 
-        {mcpServers.map(server => {
+            {mcpServers.map(server => {
           const isEditing = !!editingServers[server.id];
           const serverDraft = serverDrafts[server.id];
           const effectiveServer =
@@ -801,7 +910,7 @@ export const SettingsScreen = () => {
             new Set([...(runtime?.toolNames || []), ...(effectiveServer.allowedTools || [])])
           );
 
-          return (
+              return (
             <View key={server.id} style={styles.sectionCard}>
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
@@ -1054,7 +1163,9 @@ export const SettingsScreen = () => {
               ) : null}
             </View>
           );
-        })}
+            })}
+          </>
+        ) : null}
 
         <View style={{ height: 96 }} />
       </KeyboardAwareContainer>
@@ -1226,7 +1337,7 @@ const createStyles = (colors: any) =>
     topHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 12,
+      paddingHorizontal: 10,
       paddingVertical: 10,
       backgroundColor: colors.header,
       borderBottomWidth: 1,
@@ -1243,8 +1354,8 @@ const createStyles = (colors: any) =>
       marginLeft: 8,
     },
     content: {
-      paddingHorizontal: 14,
-      paddingTop: 14,
+      paddingHorizontal: 8,
+      paddingTop: 10,
     },
     sectionHeader: {
       color: colors.textTertiary,
@@ -1256,11 +1367,35 @@ const createStyles = (colors: any) =>
     },
     sectionCard: {
       backgroundColor: colors.surface,
-      borderRadius: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 11,
+      marginBottom: 10,
+    },
+    categoryCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
       padding: 12,
-      marginBottom: 12,
+      marginBottom: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    categoryBody: {
+      flex: 1,
+    },
+    categoryTitle: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '700',
+      marginBottom: 3,
+    },
+    categoryHint: {
+      color: colors.textSecondary,
+      fontSize: 12,
     },
     sectionTitle: {
       color: colors.text,
