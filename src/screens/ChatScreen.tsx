@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   View,
   FlatList,
   KeyboardAvoidingView,
@@ -38,6 +39,27 @@ const getErrorMessage = (error: any): string => {
   if (typeof error === 'string') return error;
   if (error.message) return error.message;
   return 'Unexpected error';
+};
+
+const requestToolApproval = (toolName: string, serverName?: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Tool Permission Required',
+      `${serverName || 'MCP server'} requested tool \"${toolName}\". Do you want to allow this call?`,
+      [
+        {
+          text: 'Deny',
+          style: 'cancel',
+          onPress: () => resolve(false),
+        },
+        {
+          text: 'Approve',
+          onPress: () => resolve(true),
+        },
+      ],
+      { cancelable: false }
+    );
+  });
 };
 
 const normalizeToolCalls = (toolCalls: any[] | undefined): Array<{ id: string; name: string; arguments: string }> => {
@@ -652,28 +674,37 @@ export const ChatScreen = () => {
           }
 
           if (!toolPolicy.autoAllow) {
-            const permissionMessage = `Permission required for tool \"${call.name}\" on server \"${toolPolicy.serverName || toolPolicy.serverId}\". Enable Auto Approve in Settings to run this tool automatically.`;
-            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
-              error: permissionMessage,
-            });
+            const approvalPrompt = `Permission requested for tool \"${call.name}\" on server \"${toolPolicy.serverName || toolPolicy.serverId}\".`;
             addMessage(activeConversationId, {
               role: 'assistant',
-              content: permissionMessage,
+              content: approvalPrompt,
             });
-            addMessage(activeConversationId, {
-              role: 'tool',
-              content: JSON.stringify(
-                {
-                  error: 'TOOL_PERMISSION_REQUIRED',
-                  tool: call.name,
-                  message: permissionMessage,
-                },
-                null,
-                2
-              ),
-              toolCallId: call.id,
-            });
-            continue;
+
+            const approved = await requestToolApproval(call.name, toolPolicy.serverName || toolPolicy.serverId);
+            if (!approved) {
+              const deniedMessage = `User denied permission for tool \"${call.name}\".`;
+              updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+                error: deniedMessage,
+              });
+              addMessage(activeConversationId, {
+                role: 'assistant',
+                content: deniedMessage,
+              });
+              addMessage(activeConversationId, {
+                role: 'tool',
+                content: JSON.stringify(
+                  {
+                    error: 'TOOL_PERMISSION_DENIED',
+                    tool: call.name,
+                    message: deniedMessage,
+                  },
+                  null,
+                  2
+                ),
+                toolCallId: call.id,
+              });
+              continue;
+            }
           }
 
           updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'running');
