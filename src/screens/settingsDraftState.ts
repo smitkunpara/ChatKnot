@@ -23,6 +23,7 @@ export interface McpServerDraft {
   enabled: boolean;
   autoAllow: boolean;
   allowedTools: string[];
+  autoApprovedTools: string[];
   headers: McpServerHeaderDraft[];
 }
 
@@ -128,6 +129,7 @@ export const beginServerDraft = (
       enabled: server.enabled,
       autoAllow: server.autoAllow,
       allowedTools: [...(server.allowedTools || [])],
+      autoApprovedTools: [...(server.autoApprovedTools || [])],
       headers: getHeaderDrafts(server.headers),
     },
   };
@@ -149,6 +151,9 @@ export const updateServerDraft = (
       ...currentDraft,
       ...patch,
       allowedTools: patch.allowedTools ? [...patch.allowedTools] : [...(currentDraft.allowedTools || [])],
+      autoApprovedTools: patch.autoApprovedTools
+        ? [...patch.autoApprovedTools]
+        : [...(currentDraft.autoApprovedTools || [])],
       headers: patch.headers
         ? patch.headers.map(header => ({ ...header }))
         : currentDraft.headers.map(header => ({ ...header })),
@@ -193,6 +198,7 @@ export const saveServerDraft = (
     enabled: draft.enabled,
     autoAllow: draft.autoAllow,
     allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
+    autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
   });
 
@@ -235,6 +241,7 @@ export const saveServerDraftWithValidation = async (
     enabled: draft.enabled,
     autoAllow: draft.autoAllow,
     allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
+    autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
   };
 

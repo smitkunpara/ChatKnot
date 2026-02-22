@@ -102,6 +102,7 @@ export interface McpServerConfig {
   tools: McpToolSchema[];
   autoAllow: boolean;
   allowedTools: string[];
+  autoApprovedTools?: string[];
 }
 
 export interface AppSettings {

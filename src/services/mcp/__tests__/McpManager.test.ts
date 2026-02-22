@@ -28,7 +28,7 @@ jest.mock('../McpClient', () => ({
 const createServer = (
   id: string,
   name: string,
-  options: Partial<Pick<McpServerConfig, 'autoAllow' | 'allowedTools'>> = {}
+  options: Partial<Pick<McpServerConfig, 'autoAllow' | 'allowedTools' | 'autoApprovedTools'>> = {}
 ): McpServerConfig => ({
   id,
   name,
@@ -37,6 +37,7 @@ const createServer = (
   tools: [],
   autoAllow: options.autoAllow ?? false,
   allowedTools: options.allowedTools ?? [],
+  autoApprovedTools: options.autoApprovedTools ?? [],
 });
 
 describe('McpManager', () => {
@@ -162,5 +163,29 @@ describe('McpManager', () => {
 
     await McpManager.executeTool('search', { query: 'status' });
     expect(clientsByServerId['server-a'].callTool).toHaveBeenCalledWith('search', { query: 'status' });
+  });
+
+  it('supports per-tool auto-approve even when global autoAllow is off', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'search',
+        description: 'Server A search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server', {
+        autoAllow: false,
+        allowedTools: ['search'],
+        autoApprovedTools: ['search'],
+      }),
+    ]);
+
+    const policy = McpManager.getToolExecutionPolicy('search');
+
+    expect(policy.found).toBe(true);
+    expect(policy.enabled).toBe(true);
+    expect(policy.autoAllow).toBe(true);
   });
 });

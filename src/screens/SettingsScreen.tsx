@@ -243,6 +243,7 @@ export const SettingsScreen = () => {
       tools: [],
       autoAllow: false,
       allowedTools: [],
+      autoApprovedTools: [],
     };
     addMcpServer(server);
     setNewMcpName('');
@@ -529,8 +530,47 @@ export const SettingsScreen = () => {
         nextAllowed = dedupedAllowed;
       }
 
+      const nextAutoApproved = (draft.autoApprovedTools || []).filter(name => {
+        const enabledByList =
+          nextAllowed.length === 0 || nextAllowed.includes(name);
+        return enabledByList;
+      });
+
       return updateServerDraft(prev, serverId, {
         allowedTools: nextAllowed,
+        autoApprovedTools: nextAutoApproved,
+      });
+    });
+  };
+
+  const toggleServerDraftAutoApprovedTool = (serverId: string, toolName: string, allToolNames: string[]) => {
+    setServerDrafts(prev => {
+      const draft = prev[serverId];
+      if (!draft) {
+        return prev;
+      }
+
+      const normalizedAllTools = Array.from(new Set(allToolNames.filter(Boolean)));
+      const allowedTools = draft.allowedTools || [];
+      const toolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
+      const nextAllowed = toolEnabled ? [...allowedTools] : [...allowedTools, toolName];
+
+      const autoApproved = new Set(draft.autoApprovedTools || []);
+      if (autoApproved.has(toolName)) {
+        autoApproved.delete(toolName);
+      } else {
+        autoApproved.add(toolName);
+      }
+
+      const dedupedAllowed = Array.from(new Set(nextAllowed));
+      const allEnabled =
+        normalizedAllTools.length > 0 &&
+        dedupedAllowed.length >= normalizedAllTools.length &&
+        normalizedAllTools.every(name => dedupedAllowed.includes(name));
+
+      return updateServerDraft(prev, serverId, {
+        allowedTools: allEnabled ? [] : dedupedAllowed,
+        autoApprovedTools: Array.from(autoApproved),
       });
     });
   };
@@ -883,6 +923,7 @@ export const SettingsScreen = () => {
                   enabled: serverDraft.enabled,
                   autoAllow: serverDraft.autoAllow,
                   allowedTools: serverDraft.allowedTools,
+                  autoApprovedTools: serverDraft.autoApprovedTools,
                   headers: (serverDraft.headers || []).reduce((acc, header) => {
                     const key = (header.key || '').trim();
                     if (!key) {
@@ -907,7 +948,11 @@ export const SettingsScreen = () => {
                   ? 'Disabled'
                   : 'Connecting...';
           const runtimeToolNames = Array.from(
-            new Set([...(runtime?.toolNames || []), ...(effectiveServer.allowedTools || [])])
+            new Set([
+              ...(runtime?.toolNames || []),
+              ...(effectiveServer.allowedTools || []),
+              ...(effectiveServer.autoApprovedTools || []),
+            ])
           );
 
               return (
@@ -1021,45 +1066,56 @@ export const SettingsScreen = () => {
                     placeholderTextColor={colors.placeholder}
                   />
 
-                  <View style={styles.permissionRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.permissionTitle}>Auto Approve Tools</Text>
-                      <Text style={styles.permissionHint}>
-                        When off, tool calls require permission and chat will show an approval message.
-                      </Text>
-                    </View>
-                    <Switch
-                      value={!!serverDraft?.autoAllow}
-                      onValueChange={autoAllow => {
-                        clearServerValidationError(server.id);
-                        setServerDrafts(prev => updateServerDraft(prev, server.id, { autoAllow }));
-                      }}
-                      trackColor={{ false: colors.border, true: colors.primarySoft }}
-                      thumbColor={serverDraft?.autoAllow ? colors.primary : colors.textTertiary}
-                    />
-                  </View>
-
                   {runtimeToolNames.length > 0 ? (
                     <View style={styles.toolPermissionWrap}>
-                      <Text style={styles.permissionTitle}>Enabled Tools</Text>
+                      <Text style={styles.permissionTitle}>Tool Controls</Text>
+                      <Text style={styles.permissionHint}>Enable and auto-approve tools individually.</Text>
                       {runtimeToolNames.map(toolName => {
                         const allowedTools = serverDraft?.allowedTools || [];
                         const isEnabled =
                           allowedTools.length === 0 || allowedTools.includes(toolName);
+                        const isAutoApproved = (serverDraft?.autoApprovedTools || []).includes(toolName);
                         return (
                           <View key={`${server.id}-tool-perm-${toolName}`} style={styles.toolPermissionRow}>
                             <Text style={styles.toolPermissionName} numberOfLines={1}>
                               {toolName}
                             </Text>
-                            <Switch
-                              value={isEnabled}
-                              onValueChange={() => {
-                                clearServerValidationError(server.id);
-                                toggleServerDraftAllowedTool(server.id, toolName, runtimeToolNames);
-                              }}
-                              trackColor={{ false: colors.border, true: colors.primarySoft }}
-                              thumbColor={isEnabled ? colors.primary : colors.textTertiary}
-                            />
+                            <View style={styles.toolPermissionActions}>
+                              <TouchableOpacity
+                                style={[styles.checkboxPill, isEnabled ? styles.checkboxPillActive : undefined]}
+                                onPress={() => {
+                                  clearServerValidationError(server.id);
+                                  toggleServerDraftAllowedTool(server.id, toolName, runtimeToolNames);
+                                }}
+                              >
+                                <Check size={12} color={isEnabled ? colors.onPrimary : colors.textTertiary} />
+                                <Text
+                                  style={[
+                                    styles.checkboxPillText,
+                                    isEnabled ? styles.checkboxPillTextActive : undefined,
+                                  ]}
+                                >
+                                  Enabled
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.checkboxPill, isAutoApproved ? styles.checkboxPillActive : undefined]}
+                                onPress={() => {
+                                  clearServerValidationError(server.id);
+                                  toggleServerDraftAutoApprovedTool(server.id, toolName, runtimeToolNames);
+                                }}
+                              >
+                                <Check size={12} color={isAutoApproved ? colors.onPrimary : colors.textTertiary} />
+                                <Text
+                                  style={[
+                                    styles.checkboxPillText,
+                                    isAutoApproved ? styles.checkboxPillTextActive : undefined,
+                                  ]}
+                                >
+                                  Auto
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         );
                       })}
@@ -1705,6 +1761,35 @@ const createStyles = (colors: any) =>
       color: colors.text,
       fontSize: 12,
       flex: 1,
+    },
+    toolPermissionActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    checkboxPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    checkboxPillActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary,
+    },
+    checkboxPillText: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+    },
+    checkboxPillTextActive: {
+      color: colors.onPrimary,
     },
     toolTagWrap: {
       flexDirection: 'row',

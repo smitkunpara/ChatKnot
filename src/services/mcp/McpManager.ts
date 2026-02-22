@@ -250,10 +250,15 @@ class McpManagerService {
 
     const serverConfig = this.serverConfigs.get(entry.serverId);
     const allowedTools = serverConfig?.allowedTools || [];
+    const autoApprovedTools = serverConfig?.autoApprovedTools || [];
     const enabled =
       allowedTools.length === 0 ||
       allowedTools.includes(entry.tool.name) ||
       allowedTools.includes(entry.originalToolName);
+    const autoAllow =
+      !!serverConfig?.autoAllow ||
+      autoApprovedTools.includes(entry.tool.name) ||
+      autoApprovedTools.includes(entry.originalToolName);
 
     return {
       found: true,
@@ -262,7 +267,7 @@ class McpManagerService {
       exposedToolName: entry.tool.name,
       originalToolName: entry.originalToolName,
       enabled,
-      autoAllow: serverConfig?.autoAllow ?? false,
+      autoAllow,
     };
   }
 

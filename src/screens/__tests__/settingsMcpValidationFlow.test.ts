@@ -17,6 +17,7 @@ const createServer = (): McpServerConfig => ({
   tools: [],
   autoAllow: false,
   allowedTools: [],
+  autoApprovedTools: [],
 });
 
 describe('settings MCP validation flow', () => {

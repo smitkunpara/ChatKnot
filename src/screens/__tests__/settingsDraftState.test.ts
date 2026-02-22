@@ -32,6 +32,7 @@ const createServer = (): McpServerConfig => ({
   tools: [],
   autoAllow: false,
   allowedTools: [],
+  autoApprovedTools: [],
 });
 
 describe('settingsDraftState', () => {
@@ -150,6 +151,7 @@ describe('settingsDraftState', () => {
     drafts = updateServerDraft(drafts, server.id, {
       autoAllow: true,
       allowedTools: ['alpha.search', 'beta.lookup'],
+      autoApprovedTools: ['beta.lookup'],
     });
 
     const nextDrafts = saveServerDraft(drafts, server, commit);
@@ -159,6 +161,7 @@ describe('settingsDraftState', () => {
       ...server,
       autoAllow: true,
       allowedTools: ['alpha.search', 'beta.lookup'],
+      autoApprovedTools: ['beta.lookup'],
       headers: { Authorization: 'Bearer persisted-token' },
     });
     expect(nextDrafts[server.id]).toBeUndefined();
