@@ -19,7 +19,6 @@ export default function App() {
     const bootstrapStorageHardening = async () => {
       try {
         const result = await executeStorageHardeningBootstrap({
-          logger: console,
         });
 
         if (result.errors.length > 0) {

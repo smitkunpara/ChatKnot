@@ -160,8 +160,8 @@ export class OpenAiService {
         if (!contentChunk) return;
 
         // Split larger chunks so UI updates stay visibly progressive even when providers batch tokens.
-        const segments = contentChunk.length > 28
-          ? contentChunk.match(/.{1,28}/g) || [contentChunk]
+        const segments = contentChunk.length > 12
+          ? contentChunk.match(/.{1,12}/g) || [contentChunk]
           : [contentChunk];
 
         for (const segment of segments) {
@@ -171,7 +171,7 @@ export class OpenAiService {
 
           fullContent += segment;
           onChunk(segment, undefined);
-          await new Promise(resolve => setTimeout(resolve, 0));
+          await new Promise(resolve => setTimeout(resolve, 12));
         }
       };
 

@@ -29,9 +29,7 @@ const settingsPersistStorage = {
     }
 
     try {
-      return await hydratePersistedSettingsPayload(rawValue, {
-        logger: console,
-      });
+      return await hydratePersistedSettingsPayload(rawValue);
     } catch (error) {
       console.error('Failed to hydrate settings secrets from vault refs; using raw persisted state.', error);
       return rawValue;
@@ -39,9 +37,7 @@ const settingsPersistStorage = {
   },
   setItem: async (name: string, value: string): Promise<void> => {
     try {
-      const migratedValue = await migratePersistedSettingsPayload(value, {
-        logger: console,
-      });
+      const migratedValue = await migratePersistedSettingsPayload(value);
       await rawSettingsPersistStorage.setItem(name, migratedValue);
       return;
     } catch (error) {
