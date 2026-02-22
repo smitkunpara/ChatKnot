@@ -55,6 +55,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     [allAvailableModels, search]
   );
 
+  const closeModal = () => {
+    setModalVisible(false);
+    setSearch('');
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.selector} onPress={() => setModalVisible(true)}>
@@ -72,12 +77,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         visible={modalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={closeModal}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+          onPress={closeModal}
         >
           <View style={styles.modalContent}>
             <View style={styles.searchBar}>
@@ -116,7 +121,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                       style={[styles.item, isActive ? styles.activeItem : undefined]}
                       onPress={() => {
                         onSelect(item.providerId, item.model);
-                        setModalVisible(false);
+                        closeModal();
                       }}
                     >
                       <View style={{ flex: 1 }}>

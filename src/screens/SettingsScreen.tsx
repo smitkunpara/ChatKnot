@@ -118,16 +118,31 @@ export const SettingsScreen = () => {
   const [activeView, setActiveView] = useState<SettingsView>('index');
   const activeViewRef = useRef<SettingsView>('index');
 
+  const closeAllEditModes = React.useCallback(() => {
+    setEditingProviders({});
+    setEditingServers({});
+    setProviderDrafts({});
+    setServerDrafts({});
+    setDraftAvailableModels({});
+    setModelPickerVisible(false);
+    setActiveProviderIdForPicker(null);
+    setModelSearch('');
+    setIsEditingSystemPrompt(false);
+    setSystemPromptDraft(systemPrompt);
+  }, [systemPrompt]);
+
   useEffect(() => {
     activeViewRef.current = activeView;
   }, [activeView]);
 
   useFocusEffect(
     React.useCallback(() => {
+      closeAllEditModes();
       setActiveView('index');
 
       const onBackPress = () => {
         if (activeViewRef.current !== 'index') {
+          closeAllEditModes();
           setActiveView('index');
           return true;
         }
@@ -139,7 +154,7 @@ export const SettingsScreen = () => {
       return () => {
         subscription.remove();
       };
-    }, [])
+    }, [closeAllEditModes])
   );
 
   useEffect(() => {
@@ -149,11 +164,12 @@ export const SettingsScreen = () => {
       }
 
       event.preventDefault();
+      closeAllEditModes();
       setActiveView('index');
     });
 
     return unsubscribe;
-  }, [activeView, navigation]);
+  }, [activeView, closeAllEditModes, navigation]);
 
   useEffect(() => {
     const unsubscribe = McpManager.subscribe(states => {
@@ -610,11 +626,17 @@ export const SettingsScreen = () => {
 
   const handleHeaderBack = () => {
     if (inCategoryView) {
+      closeAllEditModes();
       setActiveView('index');
       return;
     }
 
     navigation.goBack();
+  };
+
+  const navigateToView = (nextView: SettingsView) => {
+    closeAllEditModes();
+    setActiveView(nextView);
   };
 
   return (
@@ -637,7 +659,7 @@ export const SettingsScreen = () => {
               <TouchableOpacity
                 key={category.key}
                 style={styles.categoryCard}
-                onPress={() => setActiveView(category.key)}
+                onPress={() => navigateToView(category.key)}
               >
                 <View style={styles.categoryBody}>
                   <Text style={styles.categoryTitle}>{category.title}</Text>
