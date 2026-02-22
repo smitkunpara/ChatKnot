@@ -108,7 +108,6 @@ export const SettingsScreen = () => {
   const [activeProviderIdForPicker, setActiveProviderIdForPicker] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState('');
   const [mcpRuntimeById, setMcpRuntimeById] = useState<Record<string, McpServerRuntimeState>>({});
-  const [expandedInstructions, setExpandedInstructions] = useState<Record<string, boolean>>({});
   const [providerDrafts, setProviderDrafts] = useState<ProviderDraftMap>({});
   const [serverDrafts, setServerDrafts] = useState<McpServerDraftMap>({});
   const [editingProviders, setEditingProviders] = useState<Record<string, boolean>>({});
@@ -937,7 +936,6 @@ export const SettingsScreen = () => {
               : server;
 
           const runtime = mcpRuntimeById[server.id];
-          const isInstructionExpanded = !!expandedInstructions[server.id];
           const status = runtime?.status || (effectiveServer.enabled ? 'connecting' : 'disabled');
           const statusLabel =
             status === 'connected'
@@ -1182,32 +1180,6 @@ export const SettingsScreen = () => {
                           </Text>
                         </View>
                       ))}
-                    </View>
-                  ) : null}
-
-                  {runtime?.instruction ? (
-                    <View style={styles.instructionWrap}>
-                      <View style={styles.instructionHeader}>
-                        <Text style={styles.instructionTitle}>MCP Tool Instructions</Text>
-                        <TouchableOpacity
-                          onPress={() =>
-                            setExpandedInstructions(prev => ({
-                              ...prev,
-                              [server.id]: !prev[server.id],
-                            }))
-                          }
-                        >
-                          <Text style={styles.instructionToggle}>
-                            {isInstructionExpanded ? 'Collapse' : 'Expand'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text
-                        style={styles.instructionText}
-                        numberOfLines={isInstructionExpanded ? undefined : 5}
-                      >
-                        {runtime.instruction}
-                      </Text>
                     </View>
                   ) : null}
 
