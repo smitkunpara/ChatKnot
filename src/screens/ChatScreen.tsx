@@ -332,34 +332,14 @@ const buildToolExecutionQueue = (
   return queue;
 };
 
-const buildMergedSystemPrompt = ({
+const buildEffectiveSystemPrompt = ({
   conversationPrompt,
   globalPrompt,
 }: {
   conversationPrompt?: string;
   globalPrompt?: string;
 }): string => {
-  const normalizedConversationPrompt = conversationPrompt?.trim();
-  const normalizedGlobalPrompt = globalPrompt?.trim();
-
-  const parts: string[] = [];
-  if (normalizedConversationPrompt) {
-    parts.push(`User system prompt:\n${normalizedConversationPrompt}`);
-  } else if (normalizedGlobalPrompt) {
-    parts.push(`User system prompt:\n${normalizedGlobalPrompt}`);
-  } else {
-    parts.push('User system prompt:\nYou are a helpful AI assistant.');
-  }
-
-  if (
-    normalizedGlobalPrompt &&
-    normalizedConversationPrompt &&
-    normalizedGlobalPrompt !== normalizedConversationPrompt
-  ) {
-    parts.push(`Global defaults:\n${normalizedGlobalPrompt}`);
-  }
-
-  return parts.join('\n\n');
+  return conversationPrompt?.trim() || globalPrompt?.trim() || 'You are a helpful AI assistant.';
 };
 
 export const ChatScreen = () => {
@@ -567,7 +547,7 @@ export const ChatScreen = () => {
         const assistantMsgId = uuid.v4() as string;
         addMessage(activeConversationId, { id: assistantMsgId, role: 'assistant', content: '' });
 
-        const finalSystemPrompt = buildMergedSystemPrompt({
+        const finalSystemPrompt = buildEffectiveSystemPrompt({
           conversationPrompt: currentConv.systemPrompt,
           globalPrompt: systemPrompt,
         });
