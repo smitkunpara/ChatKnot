@@ -698,21 +698,11 @@ export const ChatScreen = () => {
           }
 
           if (!toolPolicy.autoAllow) {
-            const approvalPrompt = `Permission requested for tool \"${call.name}\" on server \"${toolPolicy.serverName || toolPolicy.serverId}\".`;
-            addMessage(activeConversationId, {
-              role: 'assistant',
-              content: approvalPrompt,
-            });
-
             const approved = await waitForInlineToolApproval(call.id);
             if (!approved) {
               const deniedMessage = `User denied permission for tool \"${call.name}\".`;
               updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
                 error: deniedMessage,
-              });
-              addMessage(activeConversationId, {
-                role: 'assistant',
-                content: deniedMessage,
               });
               addMessage(activeConversationId, {
                 role: 'tool',

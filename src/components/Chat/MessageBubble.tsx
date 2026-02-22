@@ -62,6 +62,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           hasToolCalls ? styles.assistantWithTools : undefined,
         ]}
       >
+        <View style={styles.textRow}>
+          {message.content ? (
+            isUser ? (
+              <Text style={styles.userText}>{message.content}</Text>
+            ) : (
+              <Markdown style={markdownStyles}>{message.content}</Markdown>
+            )
+          ) : null}
+          {isStreaming && <StreamingCursor color={colors.primary} />}
+        </View>
+
         {hasToolCalls ? (
           <View style={styles.toolCallsContainer}>
             {message.toolCalls!.map(tc => (
@@ -75,17 +86,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             ))}
           </View>
         ) : null}
-
-        <View style={styles.textRow}>
-          {message.content ? (
-            isUser ? (
-              <Text style={styles.userText}>{message.content}</Text>
-            ) : (
-              <Markdown style={markdownStyles}>{message.content}</Markdown>
-            )
-          ) : null}
-          {isStreaming && <StreamingCursor color={colors.primary} />}
-        </View>
       </View>
 
       <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
