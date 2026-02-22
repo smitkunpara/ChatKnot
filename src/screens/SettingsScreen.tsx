@@ -34,10 +34,14 @@ import {
   McpServerDraftMap,
   ProviderDraftMap,
   saveProviderDraft,
-  saveServerDraft,
+  saveServerDraftWithValidation,
   updateProviderDraft,
   updateServerDraft,
 } from './settingsDraftState';
+import {
+  formatOpenApiValidationError,
+  validateOpenApiEndpoint,
+} from '../services/mcp/OpenApiValidationService';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -70,6 +74,10 @@ export const SettingsScreen = () => {
   const [newMcpUrl, setNewMcpUrl] = useState('');
   const [newMcpHeaderName, setNewMcpHeaderName] = useState('');
   const [newMcpHeaderValue, setNewMcpHeaderValue] = useState('');
+  const [newMcpValidationError, setNewMcpValidationError] = useState<string | null>(null);
+  const [serverValidationErrors, setServerValidationErrors] = useState<Record<string, string>>({});
+  const [isValidatingNewMcp, setIsValidatingNewMcp] = useState(false);
+  const [validatingServerId, setValidatingServerId] = useState<string | null>(null);
   const [isFetchingModels, setIsFetchingModels] = useState<string | null>(null);
   const [modelPickerVisible, setModelPickerVisible] = useState(false);
   const [activeProviderIdForPicker, setActiveProviderIdForPicker] = useState<string | null>(null);
@@ -124,23 +132,47 @@ export const SettingsScreen = () => {
     if (provider.apiKey) fetchModels(provider, { persistProvider: true });
   };
 
-  const handleAddMcp = () => {
+  const clearServerValidationError = (serverId: string) => {
+    setServerValidationErrors(prev => {
+      if (!prev[serverId]) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[serverId];
+      return next;
+    });
+  };
+
+  const handleAddMcp = async () => {
     if (!newMcpUrl.trim()) {
-      Alert.alert('Missing URL', 'Please provide an MCP server URL.');
+      setNewMcpValidationError('Server URL: Please provide an MCP server URL.');
       return;
     }
-    const normalizedUrl = /^https?:\/\//i.test(newMcpUrl.trim())
-      ? newMcpUrl.trim()
-      : `https://${newMcpUrl.trim()}`;
+
     const headers: Record<string, string> = {};
     if (newMcpHeaderName.trim() && newMcpHeaderValue.trim()) {
       headers[newMcpHeaderName.trim()] = newMcpHeaderValue.trim();
     }
 
+    setIsValidatingNewMcp(true);
+    setNewMcpValidationError(null);
+
+    const validation = await validateOpenApiEndpoint({
+      url: newMcpUrl,
+      headers,
+    });
+
+    if (!validation.ok) {
+      setNewMcpValidationError(formatOpenApiValidationError(validation.error));
+      setIsValidatingNewMcp(false);
+      return;
+    }
+
     const server: McpServerConfig = {
       id: uuid.v4() as string,
       name: newMcpName.trim() || 'New Server',
-      url: normalizedUrl,
+      url: validation.normalizedInputUrl,
       headers,
       token: undefined,
       enabled: true,
@@ -153,6 +185,8 @@ export const SettingsScreen = () => {
     setNewMcpUrl('');
     setNewMcpHeaderName('');
     setNewMcpHeaderValue('');
+    setNewMcpValidationError(null);
+    setIsValidatingNewMcp(false);
   };
 
   const fetchModels = async (
@@ -285,6 +319,7 @@ export const SettingsScreen = () => {
   };
 
   const beginServerEdit = (server: McpServerConfig) => {
+    clearServerValidationError(server.id);
     setServerDrafts(prev => beginServerDraft(prev, server));
     setEditingServers(prev => ({
       ...prev,
@@ -293,6 +328,7 @@ export const SettingsScreen = () => {
   };
 
   const cancelServerEdit = (serverId: string) => {
+    clearServerValidationError(serverId);
     setServerDrafts(prev => discardServerDraft(prev, serverId));
     setEditingServers(prev => ({
       ...prev,
@@ -300,12 +336,31 @@ export const SettingsScreen = () => {
     }));
   };
 
-  const saveServerEdit = (server: McpServerConfig) => {
-    setServerDrafts(prev => saveServerDraft(prev, server, updateMcpServer));
+  const saveServerEdit = async (server: McpServerConfig) => {
+    setValidatingServerId(server.id);
+    clearServerValidationError(server.id);
+
+    const result = await saveServerDraftWithValidation({
+      drafts: serverDrafts,
+      server,
+      commit: updateMcpServer,
+    });
+
+    if (result.error) {
+      setServerValidationErrors(prev => ({
+        ...prev,
+        [server.id]: result.errorMessage || formatOpenApiValidationError(result.error),
+      }));
+      setValidatingServerId(null);
+      return;
+    }
+
+    setServerDrafts(result.drafts);
     setEditingServers(prev => ({
       ...prev,
       [server.id]: false,
     }));
+    setValidatingServerId(null);
   };
 
   const openModelPicker = (provider: LlmProviderConfig) => {
@@ -570,7 +625,12 @@ export const SettingsScreen = () => {
           <TextInput
             style={styles.input}
             value={newMcpUrl}
-            onChangeText={setNewMcpUrl}
+            onChangeText={text => {
+              setNewMcpUrl(text);
+              if (newMcpValidationError) {
+                setNewMcpValidationError(null);
+              }
+            }}
             placeholder="Server URL"
             placeholderTextColor={colors.placeholder}
           />
@@ -589,8 +649,19 @@ export const SettingsScreen = () => {
             placeholderTextColor={colors.placeholder}
             secureTextEntry
           />
-          <TouchableOpacity style={styles.primaryButton} onPress={handleAddMcp}>
-            <Plus size={18} color={colors.onPrimary} />
+          {newMcpValidationError ? <Text style={styles.warningText}>{newMcpValidationError}</Text> : null}
+          <TouchableOpacity
+            style={[styles.primaryButton, isValidatingNewMcp ? styles.primaryButtonDisabled : undefined]}
+            onPress={() => {
+              void handleAddMcp();
+            }}
+            disabled={isValidatingNewMcp}
+          >
+            {isValidatingNewMcp ? (
+              <ActivityIndicator size="small" color={colors.onPrimary} />
+            ) : (
+              <Plus size={18} color={colors.onPrimary} />
+            )}
             <Text style={styles.primaryButtonText}>Add MCP Server</Text>
           </TouchableOpacity>
         </View>
@@ -661,8 +732,18 @@ export const SettingsScreen = () => {
                   />
                   {isEditing ? (
                     <>
-                      <TouchableOpacity onPress={() => saveServerEdit(server)} style={styles.iconButton}>
-                        <Save size={17} color={colors.primary} />
+                      <TouchableOpacity
+                        onPress={() => {
+                          void saveServerEdit(server);
+                        }}
+                        style={styles.iconButton}
+                        disabled={validatingServerId === server.id}
+                      >
+                        {validatingServerId === server.id ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <Save size={17} color={colors.primary} />
+                        )}
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => cancelServerEdit(server.id)} style={styles.iconButton}>
                         <X size={17} color={colors.textTertiary} />
@@ -717,6 +798,7 @@ export const SettingsScreen = () => {
                     style={styles.input}
                     value={serverDraft?.url || ''}
                     onChangeText={url => {
+                      clearServerValidationError(server.id);
                       setServerDrafts(prev => updateServerDraft(prev, server.id, { url }));
                     }}
                     placeholder="Server URL"
@@ -727,6 +809,7 @@ export const SettingsScreen = () => {
                       style={[styles.input, styles.inlineInput]}
                       value={serverDraft?.headerKey || ''}
                       onChangeText={headerKey => {
+                        clearServerValidationError(server.id);
                         setServerDrafts(prev => updateServerDraft(prev, server.id, { headerKey }));
                       }}
                       placeholder="Header Name"
@@ -736,6 +819,7 @@ export const SettingsScreen = () => {
                       style={[styles.input, styles.inlineInput]}
                       value={serverDraft?.headerValue || ''}
                       onChangeText={headerValue => {
+                        clearServerValidationError(server.id);
                         setServerDrafts(prev => updateServerDraft(prev, server.id, { headerValue }));
                       }}
                       placeholder="Header Value"
@@ -789,6 +873,9 @@ export const SettingsScreen = () => {
                   ) : null}
 
                   {runtime?.error ? <Text style={styles.warningText}>{runtime.error}</Text> : null}
+                  {serverValidationErrors[server.id] ? (
+                    <Text style={styles.warningText}>{serverValidationErrors[server.id]}</Text>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -1022,6 +1109,9 @@ const createStyles = (colors: any) =>
       alignItems: 'center',
       gap: 6,
       marginTop: 2,
+    },
+    primaryButtonDisabled: {
+      opacity: 0.72,
     },
     primaryButtonText: {
       color: colors.onPrimary,

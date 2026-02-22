@@ -1,4 +1,13 @@
-import { LlmProviderConfig, McpServerConfig } from '../types';
+import {
+  LlmProviderConfig,
+  McpServerConfig,
+  OpenApiValidationError,
+  OpenApiValidationResult,
+} from '../types';
+import {
+  formatOpenApiValidationError,
+  validateOpenApiEndpoint,
+} from '../services/mcp/OpenApiValidationService';
 
 export interface ProviderDraft {
   baseUrl: string;
@@ -168,6 +177,69 @@ export const saveServerDraft = (
   });
 
   return discardServerDraft(drafts, server.id);
+};
+
+export interface SaveServerDraftWithValidationInput {
+  drafts: McpServerDraftMap;
+  server: McpServerConfig;
+  commit: (server: McpServerConfig) => void;
+  validateEndpoint?: (input: {
+    url: string;
+    headers?: Record<string, string>;
+  }) => Promise<OpenApiValidationResult>;
+}
+
+export interface SaveServerDraftWithValidationResult {
+  drafts: McpServerDraftMap;
+  error: OpenApiValidationError | null;
+  errorMessage: string | null;
+}
+
+export const saveServerDraftWithValidation = async (
+  input: SaveServerDraftWithValidationInput
+): Promise<SaveServerDraftWithValidationResult> => {
+  const { drafts, server, commit } = input;
+  const draft = drafts[server.id];
+  if (!draft) {
+    return {
+      drafts,
+      error: null,
+      errorMessage: null,
+    };
+  }
+
+  const nextServer: McpServerConfig = {
+    ...server,
+    name: draft.name,
+    url: draft.url,
+    enabled: draft.enabled,
+    headers: draftToHeaders(draft),
+  };
+
+  const validateEndpoint = input.validateEndpoint || validateOpenApiEndpoint;
+  const validation = await validateEndpoint({
+    url: nextServer.url,
+    headers: nextServer.headers,
+  });
+
+  if (!validation.ok) {
+    return {
+      drafts,
+      error: validation.error,
+      errorMessage: formatOpenApiValidationError(validation.error),
+    };
+  }
+
+  commit({
+    ...nextServer,
+    url: validation.normalizedInputUrl,
+  });
+
+  return {
+    drafts: discardServerDraft(drafts, server.id),
+    error: null,
+    errorMessage: null,
+  };
 };
 
 export const clearAllDrafts = <TDraft extends Record<string, unknown>>(drafts: TDraft): TDraft => {

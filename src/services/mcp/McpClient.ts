@@ -1,6 +1,10 @@
 import EventSource from 'react-native-sse';
 import { McpServerConfig, McpToolSchema } from '../../types';
 import uuid from 'react-native-uuid';
+import {
+  formatOpenApiValidationError,
+  validateOpenApiEndpoint,
+} from './OpenApiValidationService';
 
 type OpenApiToolMeta = {
   path: string;
@@ -35,29 +39,32 @@ export class McpClient {
   }
 
   async connect(): Promise<void> {
-    const baseUrl = this.normalizedBaseUrl.replace(/\/$/, '');
-    
-    // First, try fetching openapi.json
-    try {
-      const openApiUrl = `${baseUrl}/openapi.json`;
-      console.log(`Checking for OpenAPI spec at: ${openApiUrl}`);
-      
-      const response = await fetch(openApiUrl, {
-        headers: this.config.headers || {}
-      });
+    const openApiValidation = await validateOpenApiEndpoint({
+      url: this.config.url,
+      headers: this.config.headers || {},
+    });
 
-      if (response.ok) {
-        const spec = await response.json();
-        this.openapiSpec = spec;
-        this.isOpenApi = true;
-        this.tools = this.parseOpenApi(spec);
-        this.isConnected = true;
-        console.log(`Successfully loaded OpenAPI spec for ${this.config.name} with ${this.tools.length} tools`);
-        return;
-      }
-    } catch (e: any) {
-      console.log('Not an OpenAPI server or fetch failed, falling back to SSE MCP:', e.message);
+    if (openApiValidation.ok) {
+      this.openapiSpec = openApiValidation.spec;
+      this.isOpenApi = true;
+      this.tools = openApiValidation.tools;
+      this.normalizedBaseUrl = openApiValidation.resolvedBaseUrl;
+      this.config = {
+        ...this.config,
+        url: openApiValidation.normalizedInputUrl,
+      };
+      this.isConnected = true;
+      console.log(
+        `Successfully loaded OpenAPI spec for ${this.config.name} from ${openApiValidation.resolvedSpecUrl} with ${this.tools.length} tools`
+      );
+      return;
     }
+
+    console.log(
+      `OpenAPI validation failed for ${this.config.name}, falling back to SSE MCP: ${formatOpenApiValidationError(
+        openApiValidation.error
+      )}`
+    );
 
     return new Promise((resolve, reject) => {
       try {
@@ -190,54 +197,6 @@ export class McpClient {
     return result;
   }
 
-  private parseOpenApi(spec: any): McpToolSchema[] {
-    const tools: McpToolSchema[] = [];
-    const schemas = spec.components?.schemas || {};
-    const globalSecurity = this.extractSecuritySchemeNames(spec?.security);
-
-    Object.entries(spec.paths || {}).forEach(([path, methods]: [string, any]) => {
-      Object.entries(methods).forEach(([method, operation]: [string, any]) => {
-        if (['get', 'post', 'put', 'delete'].includes(method)) {
-          const name = operation.operationId || `${method}_${path.replace(/\//g, '_')}`;
-          
-          let inputSchema: any = { type: 'object', properties: {}, required: [] };
-          
-          // Handle Request Body (mostly for POST)
-          if (operation.requestBody?.content?.['application/json']?.schema) {
-            const schemaRef = operation.requestBody.content['application/json'].schema;
-            inputSchema = this.resolveSchema(schemaRef, schemas);
-            if (!inputSchema.required) inputSchema.required = [];
-            if (!inputSchema.properties) inputSchema.properties = {};
-          }
-
-          // Handle Parameters (Query, Path, Headers)
-          if (operation.parameters) {
-             operation.parameters.forEach((param: any) => {
-                if (param.schema) {
-                   inputSchema.properties[param.name] = param.schema;
-                   if (param.required && !inputSchema.required.includes(param.name)) {
-                     inputSchema.required.push(param.name);
-                   }
-                }
-             });
-          }
-
-          const operationSecurity = this.extractSecuritySchemeNames(operation?.security);
-          const appliedSecurity = operationSecurity.length > 0 ? operationSecurity : globalSecurity;
-          const securityHeaders = this.extractSecurityHeaders(spec, appliedSecurity);
-
-          tools.push({
-            name,
-            description: operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
-            inputSchema: inputSchema,
-            _meta: { path, method, baseUrl: spec.servers?.[0]?.url, securityHeaders } as OpenApiToolMeta
-          } as any);
-        }
-      });
-    });
-    return tools;
-  }
-
   private extractSecuritySchemeNames(security: any): string[] {
     if (!Array.isArray(security)) return [];
     const names: string[] = [];
@@ -266,14 +225,6 @@ export class McpClient {
     }
 
     return headers;
-  }
-
-  private resolveSchema(schema: any, components: any): any {
-    if (schema.$ref) {
-      const refName = schema.$ref.split('/').pop();
-      return components[refName] || { type: 'object' };
-    }
-    return schema;
   }
 
   private resolveToolBaseUrl(baseUrl?: string): string {
