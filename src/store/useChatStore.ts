@@ -1,9 +1,14 @@
 // @ts-nocheck
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Message, Conversation, ToolCall } from '../types';
 import uuid from 'react-native-uuid';
+import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+
+const chatPersistStorage = createEncryptedStateStorage({
+  id: 'chat-storage',
+  keyAlias: 'chat-storage:encryption-key',
+});
 
 interface ChatState {
   conversations: Conversation[];
@@ -171,7 +176,7 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: 'chat-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => chatPersistStorage),
     }
   )
 );

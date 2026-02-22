@@ -31,6 +31,7 @@ export interface LlmProviderConfig {
   type: 'custom-openai';
   baseUrl: string;
   apiKey: string;
+  apiKeyRef?: string;
   model: string;
   availableModels?: string[]; // Added to store fetched models
   enabled: boolean;
@@ -47,7 +48,9 @@ export interface McpServerConfig {
   name: string;
   url: string;
   token?: string;
+  tokenRef?: string;
   headers?: Record<string, string>;
+  headerRefs?: Record<string, string>;
   enabled: boolean;
   tools: McpToolSchema[];
   autoAllow: boolean;

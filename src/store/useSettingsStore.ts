@@ -1,9 +1,15 @@
 // @ts-nocheck
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppSettings, LlmProviderConfig, McpServerConfig } from '../types';
+import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+import { ensureMcpServerSecretRefs, ensureProviderSecretRef } from '../services/storage/migrations';
 import 'react-native-get-random-values';
+
+const settingsPersistStorage = createEncryptedStateStorage({
+  id: 'settings-storage',
+  keyAlias: 'settings-storage:encryption-key',
+});
 
 interface SettingsState extends AppSettings {
   updateProvider: (provider: LlmProviderConfig) => void;
@@ -27,20 +33,24 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'system',
       
       updateProvider: (updatedProvider) => set((state) => ({
-        providers: state.providers.map((p) => (p.id === updatedProvider.id ? updatedProvider : p)),
+        providers: state.providers.map((p) =>
+          p.id === updatedProvider.id ? ensureProviderSecretRef(updatedProvider) : p
+        ),
       })),
       addProvider: (provider) => set((state) => ({
-        providers: [...state.providers, provider],
+        providers: [...state.providers, ensureProviderSecretRef(provider)],
       })),
       removeProvider: (id) => set((state) => ({
         providers: state.providers.filter((p) => p.id !== id),
       })),
 
       updateMcpServer: (updatedServer) => set((state) => ({
-        mcpServers: state.mcpServers.map((s) => (s.id === updatedServer.id ? updatedServer : s)),
+        mcpServers: state.mcpServers.map((s) =>
+          s.id === updatedServer.id ? ensureMcpServerSecretRefs(updatedServer) : s
+        ),
       })),
       addMcpServer: (server) => set((state) => ({
-        mcpServers: [...state.mcpServers, server],
+        mcpServers: [...state.mcpServers, ensureMcpServerSecretRefs(server)],
       })),
       removeMcpServer: (id) => set((state) => ({
         mcpServers: state.mcpServers.filter((s) => s.id !== id),
@@ -51,7 +61,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => settingsPersistStorage),
     }
   )
 );
