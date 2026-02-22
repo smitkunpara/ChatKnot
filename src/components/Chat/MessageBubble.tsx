@@ -12,6 +12,8 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   onEdit?: (id: string, content: string) => void;
+  pendingToolApprovalIds?: Record<string, true>;
+  onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
 }
 
 const StreamingCursor = ({ color }: { color: string }) => {
@@ -29,7 +31,13 @@ const StreamingCursor = ({ color }: { color: string }) => {
   return <Animated.View style={[baseStyles.cursor, { opacity, backgroundColor: color }]} />;
 };
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, onEdit }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  isStreaming,
+  onEdit,
+  pendingToolApprovalIds,
+  onToolApprovalDecision,
+}) => {
   const { colors } = useAppTheme();
   const styles = createStyles(colors);
   const markdownStyles = createMarkdownStyles(colors);
@@ -57,7 +65,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
         {hasToolCalls ? (
           <View style={styles.toolCallsContainer}>
             {message.toolCalls!.map(tc => (
-              <ToolCallComponent key={tc.id} toolCall={tc} />
+              <ToolCallComponent
+                key={tc.id}
+                toolCall={tc}
+                requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
+                onApprove={() => onToolApprovalDecision?.(tc.id, true)}
+                onDeny={() => onToolApprovalDecision?.(tc.id, false)}
+              />
             ))}
           </View>
         ) : null}

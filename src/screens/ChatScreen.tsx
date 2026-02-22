@@ -1,7 +1,6 @@
 // @ts-nocheck
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   View,
   FlatList,
   KeyboardAvoidingView,
@@ -39,27 +38,6 @@ const getErrorMessage = (error: any): string => {
   if (typeof error === 'string') return error;
   if (error.message) return error.message;
   return 'Unexpected error';
-};
-
-const requestToolApproval = (toolName: string, serverName?: string): Promise<boolean> => {
-  return new Promise((resolve) => {
-    Alert.alert(
-      'Tool Permission Required',
-      `${serverName || 'MCP server'} requested tool \"${toolName}\". Do you want to allow this call?`,
-      [
-        {
-          text: 'Deny',
-          style: 'cancel',
-          onPress: () => resolve(false),
-        },
-        {
-          text: 'Approve',
-          onPress: () => resolve(true),
-        },
-      ],
-      { cancelable: false }
-    );
-  });
 };
 
 const normalizeToolCalls = (toolCalls: any[] | undefined): Array<{ id: string; name: string; arguments: string }> => {
@@ -390,6 +368,45 @@ export const ChatScreen = () => {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string | undefined>(undefined);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
+  const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
+
+  const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
+    approvalResolversRef.current.forEach((resolve) => {
+      resolve(defaultDecision);
+    });
+    approvalResolversRef.current.clear();
+    setPendingToolApprovalIds({});
+  }, []);
+
+  const resolveToolApproval = React.useCallback((toolCallId: string, approved: boolean) => {
+    const resolver = approvalResolversRef.current.get(toolCallId);
+    if (resolver) {
+      resolver(approved);
+      approvalResolversRef.current.delete(toolCallId);
+    }
+
+    setPendingToolApprovalIds((prev) => {
+      if (!prev[toolCallId]) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[toolCallId];
+      return next;
+    });
+  }, []);
+
+  const waitForInlineToolApproval = React.useCallback((toolCallId: string): Promise<boolean> => {
+    setPendingToolApprovalIds((prev) => ({
+      ...prev,
+      [toolCallId]: true,
+    }));
+
+    return new Promise((resolve) => {
+      approvalResolversRef.current.set(toolCallId, resolve);
+    });
+  }, []);
 
   const activeConversation = useMemo(
     () => conversations.find(c => c.id === activeConversationId),
@@ -458,6 +475,12 @@ export const ChatScreen = () => {
     setLastUsedModel,
   ]);
 
+  useEffect(() => {
+    return () => {
+      clearPendingToolApprovals(false);
+    };
+  }, [clearPendingToolApprovals]);
+
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
@@ -466,6 +489,7 @@ export const ChatScreen = () => {
 
   const handleStop = () => {
     stopRequestedRef.current = true;
+    clearPendingToolApprovals(false);
     activeRequestControllerRef.current?.abort();
     setLoading(false);
     setChatError('Stopped.');
@@ -680,7 +704,7 @@ export const ChatScreen = () => {
               content: approvalPrompt,
             });
 
-            const approved = await requestToolApproval(call.name, toolPolicy.serverName || toolPolicy.serverId);
+            const approved = await waitForInlineToolApproval(call.id);
             if (!approved) {
               const deniedMessage = `User denied permission for tool \"${call.name}\".`;
               updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
@@ -760,6 +784,7 @@ export const ChatScreen = () => {
       }
     } finally {
       activeRequestControllerRef.current = null;
+      clearPendingToolApprovals(false);
       setLoading(false);
 
       if (!stopRequestedRef.current && !hasFinalAnswer && maxIterationsReached && activeConversationId) {
@@ -830,6 +855,10 @@ export const ChatScreen = () => {
                   message={item}
                   onEdit={handleEdit}
                   isStreaming={isLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
+                  pendingToolApprovalIds={pendingToolApprovalIds}
+                  onToolApprovalDecision={(toolCallId, approved) => {
+                    resolveToolApproval(toolCallId, approved);
+                  }}
                 />
               )}
               contentContainerStyle={styles.listContent}

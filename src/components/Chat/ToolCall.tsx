@@ -6,6 +6,9 @@ import { useAppTheme } from '../../theme/useAppTheme';
 
 interface ToolCallProps {
   toolCall: ToolCallType;
+  requiresApproval?: boolean;
+  onApprove?: () => void;
+  onDeny?: () => void;
 }
 
 const safePrettyText = (value?: string): string => {
@@ -17,12 +20,21 @@ const safePrettyText = (value?: string): string => {
   }
 };
 
-export const ToolCall: React.FC<ToolCallProps> = ({ toolCall }) => {
+export const ToolCall: React.FC<ToolCallProps> = ({
+  toolCall,
+  requiresApproval,
+  onApprove,
+  onDeny,
+}) => {
   const { colors } = useAppTheme();
   const styles = createStyles(colors);
   const [expanded, setExpanded] = useState(false);
 
   const statusMeta = useMemo(() => {
+    if (requiresApproval && toolCall.status === 'pending') {
+      return { label: 'Awaiting Approval', color: colors.warning || colors.primary };
+    }
+
     switch (toolCall.status) {
       case 'running':
       case 'pending':
@@ -34,7 +46,7 @@ export const ToolCall: React.FC<ToolCallProps> = ({ toolCall }) => {
       default:
         return { label: 'Unknown', color: colors.textTertiary };
     }
-  }, [toolCall.status, colors]);
+  }, [toolCall.status, colors, requiresApproval]);
 
   const getStatusIcon = () => {
     switch (toolCall.status) {
@@ -89,6 +101,17 @@ export const ToolCall: React.FC<ToolCallProps> = ({ toolCall }) => {
               <Text style={styles.code}>{toolCall.error}</Text>
             </>
           ) : null}
+        </View>
+      ) : null}
+
+      {requiresApproval ? (
+        <View style={styles.approvalActions}>
+          <TouchableOpacity style={[styles.approvalBtn, styles.approveBtn]} onPress={onApprove}>
+            <Text style={[styles.approvalBtnText, styles.approveBtnText]}>Approve</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.approvalBtn, styles.denyBtn]} onPress={onDeny}>
+            <Text style={[styles.approvalBtnText, styles.denyBtnText]}>Deny</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
     </View>
@@ -159,5 +182,39 @@ const createStyles = (colors: any) =>
       borderRadius: 6,
       borderWidth: 1,
       borderColor: colors.border,
+    },
+    approvalActions: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingBottom: 10,
+      backgroundColor: colors.surface,
+    },
+    approvalBtn: {
+      flex: 1,
+      borderRadius: 8,
+      borderWidth: 1,
+      paddingVertical: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    approveBtn: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+    },
+    denyBtn: {
+      borderColor: colors.danger,
+      backgroundColor: colors.dangerSoft,
+    },
+    approvalBtnText: {
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+    },
+    approveBtnText: {
+      color: colors.primary,
+    },
+    denyBtnText: {
+      color: colors.danger,
     },
   });
