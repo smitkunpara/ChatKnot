@@ -23,15 +23,15 @@ export default function App() {
         });
 
         if (result.errors.length > 0) {
-          console.error('Storage hardening bootstrap completed with recoverable errors.', result.errors);
+          console.warn('Storage hardening bootstrap completed with recoverable warnings.', result.errors);
         }
       } catch (error) {
-        console.error('Storage hardening bootstrap failed. Continuing with compatibility path.', error);
+        console.warn('Storage hardening bootstrap failed. Continuing with compatibility path.', error);
       } finally {
         try {
           await useSettingsStore.persist.rehydrate();
         } catch (error) {
-          console.error('Settings rehydration after bootstrap failed. Continuing app startup.', error);
+          console.warn('Settings rehydration after bootstrap failed. Continuing app startup.', error);
         }
 
         if (isMounted) {

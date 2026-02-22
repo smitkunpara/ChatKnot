@@ -32,12 +32,6 @@ import {
 const MAX_TOOL_ITERATIONS = 8;
 const FALLBACK_FINAL_TEXT =
   'I could not finish after multiple tool calls. Please check your MCP tools or try a more specific prompt.';
-const TOOL_CALL_PROTOCOL = `Tool calling protocol:
-- If tools are available, call them using native function/tool calls.
-- Never emit XML markup to request tools.
-- Tool arguments must be valid JSON object.
-- If multiple tools are needed, emit multiple tool calls in a single response when possible.
-- After receiving tool results, provide a normal assistant text response without tool calls unless more tools are still required.`;
 
 const getErrorMessage = (error: any): string => {
   if (!error) return 'Unknown error';
@@ -341,11 +335,9 @@ const buildToolExecutionQueue = (
 const buildMergedSystemPrompt = ({
   conversationPrompt,
   globalPrompt,
-  openApiContext,
 }: {
   conversationPrompt?: string;
   globalPrompt?: string;
-  openApiContext?: string;
 }): string => {
   const normalizedConversationPrompt = conversationPrompt?.trim();
   const normalizedGlobalPrompt = globalPrompt?.trim();
@@ -365,11 +357,6 @@ const buildMergedSystemPrompt = ({
     normalizedGlobalPrompt !== normalizedConversationPrompt
   ) {
     parts.push(`Global defaults:\n${normalizedGlobalPrompt}`);
-  }
-
-  parts.push(TOOL_CALL_PROTOCOL);
-  if (openApiContext?.trim()) {
-    parts.push(`MCP tool context:\n${openApiContext.trim()}`);
   }
 
   return parts.join('\n\n');
@@ -567,7 +554,6 @@ export const ChatScreen = () => {
 
         const service = ProviderFactory.create(effectiveConfig);
         const mcpTools = McpManager.getTools();
-        const openApiContext = McpManager.getOpenApiContexts();
 
         const openAiTools = mcpTools.map(t => ({
           type: 'function',
@@ -584,7 +570,6 @@ export const ChatScreen = () => {
         const finalSystemPrompt = buildMergedSystemPrompt({
           conversationPrompt: currentConv.systemPrompt,
           globalPrompt: systemPrompt,
-          openApiContext,
         });
 
         let streamedContent = '';

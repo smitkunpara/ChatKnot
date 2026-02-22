@@ -525,6 +525,12 @@ export const executeStorageHardeningBootstrap = async (
   };
 
   try {
+    if (!canPersistSecrets(vault)) {
+      logger.info('Storage hardening bootstrap skipped: secure secret vault is unavailable.');
+      result.skipped = true;
+      return result;
+    }
+
     const marker = await encryptedSettingsStorage.getItem(markerKey);
     if (marker) {
       result.skipped = true;

@@ -208,7 +208,9 @@ class McpManagerService {
   }
 
   getTools(): McpToolSchema[] {
-    return Array.from(this.tools.values()).map(t => t.tool);
+    return Array.from(this.tools.entries())
+      .filter(([toolName]) => this.getToolExecutionPolicy(toolName).enabled)
+      .map(([, value]) => value.tool);
   }
 
   getOpenApiContexts(): string {

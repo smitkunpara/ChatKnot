@@ -273,7 +273,7 @@ describe('storage migrations foundation helpers', () => {
     expect(secondRun.markerWritten).toBe(false);
   });
 
-  it('does not write completion marker when secret migration reports errors', async () => {
+  it('skips bootstrap without marker writes when secure vault is unavailable', async () => {
     const legacyStorage = createStorage({
       'settings-storage': toPersistedState({
         providers: [
@@ -297,8 +297,9 @@ describe('storage migrations foundation helpers', () => {
       vault,
     });
 
+    expect(firstRun.skipped).toBe(true);
     expect(firstRun.markerWritten).toBe(false);
-    expect(firstRun.errors.length).toBeGreaterThan(0);
+    expect(firstRun.errors).toEqual([]);
 
     const marker = await encryptedSettingsStorage.getItem('storage-hardening:migration:v1');
     expect(marker).toBeNull();
