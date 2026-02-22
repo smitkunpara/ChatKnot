@@ -446,6 +446,11 @@ export const ChatScreen = () => {
   }, [activeConversation?.messages.length, activeConversationId]);
 
   useEffect(() => {
+    setEditingMessageId(null);
+    setEditingContent(undefined);
+  }, [activeConversationId]);
+
+  useEffect(() => {
     if (!activeConversation || !modelResolution.selection) {
       return;
     }
@@ -881,7 +886,11 @@ export const ChatScreen = () => {
                   onToolApprovalDecision={(toolCallId, approved) => {
                     resolveToolApproval(toolCallId, approved);
                   }}
-                  onRetryAssistant={handleRetryAssistant}
+                  onRetryAssistant={
+                    item.role === 'assistant' && item.id === lastAssistantMessageId
+                      ? handleRetryAssistant
+                      : undefined
+                  }
                 />
               )}
               contentContainerStyle={styles.listContent}
