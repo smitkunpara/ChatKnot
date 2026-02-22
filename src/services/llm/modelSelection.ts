@@ -34,10 +34,6 @@ const getProviderModelCandidates = (provider: LlmProviderConfig): string[] => {
     return provider.availableModels;
   }
 
-  if (normalize(provider.model)) {
-    return [provider.model];
-  }
-
   return [];
 };
 
