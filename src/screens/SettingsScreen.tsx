@@ -208,9 +208,16 @@ export const SettingsScreen = () => {
 
       if (models.length > 0) {
         if (persistProvider) {
+          const normalizedHidden = (provider.hiddenModels || []).filter(modelId => models.includes(modelId));
+          const hiddenModels =
+            normalizedHidden.length > 0 || !!provider.model
+              ? normalizedHidden
+              : [...models];
+
           const nextProvider = {
             ...provider,
             availableModels: models,
+            hiddenModels,
           };
           const visibleModels = getProviderVisibleModels(nextProvider);
           const selectedModel =
@@ -1002,6 +1009,55 @@ export const SettingsScreen = () => {
                 />
               </View>
 
+              <View style={styles.modelBulkActionRow}>
+                <TouchableOpacity
+                  style={styles.modelBulkActionBtn}
+                  onPress={() => {
+                    if (!activeProviderForPicker || !activeProviderDraftForPicker) {
+                      return;
+                    }
+
+                    const allModels = Array.from(
+                      new Set(activeProviderModelsForPicker.filter(model => isModelIdLikelyTextOutput(model)))
+                    );
+
+                    setProviderDrafts(prev =>
+                      updateProviderDraft(prev, activeProviderForPicker.id, {
+                        hiddenModels: allModels,
+                        model:
+                          activeProviderDraftForPicker.model && allModels.includes(activeProviderDraftForPicker.model)
+                            ? ''
+                            : activeProviderDraftForPicker.model,
+                      })
+                    );
+                  }}
+                >
+                  <Text style={styles.modelBulkActionText}>Hide All</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modelBulkActionBtn}
+                  onPress={() => {
+                    if (!activeProviderForPicker || !activeProviderDraftForPicker) {
+                      return;
+                    }
+
+                    const allModels = Array.from(
+                      new Set(activeProviderModelsForPicker.filter(model => isModelIdLikelyTextOutput(model)))
+                    );
+
+                    setProviderDrafts(prev =>
+                      updateProviderDraft(prev, activeProviderForPicker.id, {
+                        hiddenModels: [],
+                        model: activeProviderDraftForPicker.model || allModels[0] || '',
+                      })
+                    );
+                  }}
+                >
+                  <Text style={styles.modelBulkActionText}>Unhide All</Text>
+                </TouchableOpacity>
+              </View>
+
               <FlatList
                 keyboardShouldPersistTaps="handled"
                 data={Array.from(
@@ -1497,5 +1553,26 @@ const createStyles = (colors: any) =>
       fontSize: 14,
       flex: 1,
       marginRight: 10,
+    },
+    modelBulkActionRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 10,
+    },
+    modelBulkActionBtn: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 10,
+      paddingVertical: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modelBulkActionText: {
+      color: colors.text,
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
     },
   });

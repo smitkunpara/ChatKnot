@@ -98,11 +98,29 @@ In **Settings -> AI Providers**:
 4. Fetch/select model
 5. Use eye toggles to control which models are visible in chat
 
+### Provider UI Details
+
+- Provider edits are draft-based:
+  - Use the pencil icon to edit
+  - Use save icon to commit
+  - Use X icon to discard
+- Unsaved edits are not persisted.
+- Model picker includes:
+  - Per-model eye/eye-off visibility
+  - **Hide All** / **Unhide All** bulk controls
+
+### Default Model Visibility Behavior
+
+- By default, fetched provider models are hidden from chat until user unhides.
+- This is useful for providers with very large model lists (for example OpenRouter).
+- Chat only shows models that are explicitly visible and provider-configured.
+
 Behavior:
 
 - If provider/API/model is not configured, chat shows a clear setup error
 - No hardcoded model is forced
 - First visible configured model is auto-selected when needed
+- Last used model is remembered globally across app restarts
 
 ## Configure MCP Servers
 
@@ -111,6 +129,13 @@ In **Settings -> MCP Servers**:
 1. Add server name + URL
 2. Add one or multiple headers (if needed)
 3. Save
+
+### MCP UI Details
+
+- Server edits are draft-based with edit/save/cancel controls.
+- Disabled servers remain editable so broken endpoints can be repaired.
+- Multi-header editing is supported in server drafts.
+- Save runs validation before persisting enabled servers.
 
 Save-time validation:
 
