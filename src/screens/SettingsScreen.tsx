@@ -646,9 +646,32 @@ export const SettingsScreen = () => {
   const handleExportSettings = async () => {
     const settingsSnapshot = useSettingsStore.getState();
     const compactProviders = settingsSnapshot.providers.map((provider) => ({
-      ...provider,
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      apiKeyRef: provider.apiKeyRef,
+      model: provider.model,
+      hiddenModels: provider.hiddenModels || [],
+      enabled: !!provider.enabled,
       // Models are fetched dynamically from provider endpoint; no need to export cache.
       availableModels: [],
+    }));
+
+    const compactMcpServers = settingsSnapshot.mcpServers.map((server) => ({
+      id: server.id,
+      name: server.name,
+      url: server.url,
+      headers: server.headers || {},
+      headerRefs: server.headerRefs || {},
+      token: server.token,
+      tokenRef: server.tokenRef,
+      enabled: !!server.enabled,
+      tools: server.tools || [],
+      autoAllow: !!server.autoAllow,
+      allowedTools: server.allowedTools || [],
+      autoApprovedTools: server.autoApprovedTools || [],
     }));
 
     const payload = {
@@ -656,7 +679,7 @@ export const SettingsScreen = () => {
       exportedAt: new Date().toISOString(),
       settings: {
         providers: compactProviders,
-        mcpServers: settingsSnapshot.mcpServers,
+        mcpServers: compactMcpServers,
         systemPrompt: settingsSnapshot.systemPrompt,
         theme: settingsSnapshot.theme,
         lastUsedModel: settingsSnapshot.lastUsedModel,
