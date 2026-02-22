@@ -47,9 +47,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isTool = message.role === 'tool';
   const isSystem = message.role === 'system';
   const hasToolCalls = !!message.toolCalls?.length;
+  const hasText = !!message.content?.trim();
+  const shouldRenderBubble = hasText || hasToolCalls || !!isStreaming;
 
   // Tool outputs are kept in history for LLM context, but hidden from the UI.
   if (isSystem || isTool) return null;
+  if (!shouldRenderBubble) return null;
 
   const copyToClipboard = async () => {
     await Clipboard.setStringAsync(message.content || '');

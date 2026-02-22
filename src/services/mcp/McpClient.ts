@@ -1,10 +1,7 @@
 import EventSource from 'react-native-sse';
 import { McpServerConfig, McpToolSchema } from '../../types';
 import uuid from 'react-native-uuid';
-import {
-  formatOpenApiValidationError,
-  validateOpenApiEndpoint,
-} from './OpenApiValidationService';
+import { validateOpenApiEndpoint } from './OpenApiValidationService';
 
 type OpenApiToolMeta = {
   path: string;
@@ -54,17 +51,8 @@ export class McpClient {
         url: openApiValidation.normalizedInputUrl,
       };
       this.isConnected = true;
-      console.log(
-        `Successfully loaded OpenAPI spec for ${this.config.name} from ${openApiValidation.resolvedSpecUrl} with ${this.tools.length} tools`
-      );
       return;
     }
-
-    console.log(
-      `OpenAPI validation failed for ${this.config.name}, falling back to SSE MCP: ${formatOpenApiValidationError(
-        openApiValidation.error
-      )}`
-    );
 
     return new Promise((resolve, reject) => {
       try {
@@ -83,9 +71,7 @@ export class McpClient {
           headers: cleanHeaders,
         });
 
-        this.eventSource.addEventListener('open', () => {
-          console.log(`Connected to MCP SSE: ${this.config.url}`);
-        });
+        this.eventSource.addEventListener('open', () => {});
 
         this.eventSource.addEventListener('endpoint' as any, (event: any) => {
           try {

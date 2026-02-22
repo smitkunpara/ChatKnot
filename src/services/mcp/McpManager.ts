@@ -188,7 +188,6 @@ class McpManagerService {
           securityHeaders: openApiMeta?.securityHeaders || [],
         });
         this.rebuildToolRegistry();
-        console.log(`MCP Server ${config.name} connected with ${tools.length} tools.`);
       } catch (error) {
         this.connectedToolsByServer.delete(config.id);
         this.runtimeStates.set(config.id, {
