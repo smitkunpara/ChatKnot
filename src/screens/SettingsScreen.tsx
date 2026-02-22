@@ -645,11 +645,17 @@ export const SettingsScreen = () => {
 
   const handleExportSettings = async () => {
     const settingsSnapshot = useSettingsStore.getState();
+    const compactProviders = settingsSnapshot.providers.map((provider) => ({
+      ...provider,
+      // Models are fetched dynamically from provider endpoint; no need to export cache.
+      availableModels: [],
+    }));
+
     const payload = {
       schema: 'mcp-connector-settings-v1',
       exportedAt: new Date().toISOString(),
       settings: {
-        providers: settingsSnapshot.providers,
+        providers: compactProviders,
         mcpServers: settingsSnapshot.mcpServers,
         systemPrompt: settingsSnapshot.systemPrompt,
         theme: settingsSnapshot.theme,
