@@ -1,7 +1,12 @@
 // @ts-nocheck
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { AppSettings, LlmProviderConfig, McpServerConfig } from '../types';
+import {
+  AppSettings,
+  LastUsedModelPreference,
+  LlmProviderConfig,
+  McpServerConfig,
+} from '../types';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import {
   ensureMcpServerSecretRefs,
@@ -53,6 +58,10 @@ interface SettingsState extends AppSettings {
   updateProvider: (provider: LlmProviderConfig) => void;
   addProvider: (provider: LlmProviderConfig) => void;
   removeProvider: (id: string) => void;
+  toggleModelVisibility: (providerId: string, model: string) => void;
+  setModelVisibility: (providerId: string, model: string, visible: boolean) => void;
+  setLastUsedModel: (providerId: string, model: string) => void;
+  clearLastUsedModel: () => void;
   
   updateMcpServer: (server: McpServerConfig) => void;
   addMcpServer: (server: McpServerConfig) => void;
@@ -62,6 +71,47 @@ interface SettingsState extends AppSettings {
   setTheme: (theme: AppSettings['theme']) => void;
 }
 
+const normalizeProviderConfig = (provider: LlmProviderConfig): LlmProviderConfig => {
+  const normalizedHidden = Array.isArray(provider.hiddenModels)
+    ? Array.from(new Set(provider.hiddenModels.filter(Boolean)))
+    : [];
+
+  return {
+    ...ensureProviderSecretRef(provider),
+    hiddenModels: normalizedHidden,
+  };
+};
+
+const shouldClearLastUsedModel = (
+  lastUsedModel: LastUsedModelPreference | null,
+  providerId: string,
+  model: string
+): boolean => {
+  return !!(
+    lastUsedModel &&
+    lastUsedModel.providerId === providerId &&
+    lastUsedModel.model === model
+  );
+};
+
+const applyModelVisibility = (
+  provider: LlmProviderConfig,
+  model: string,
+  visible: boolean
+): LlmProviderConfig => {
+  const hidden = new Set(provider.hiddenModels || []);
+  if (visible) {
+    hidden.delete(model);
+  } else {
+    hidden.add(model);
+  }
+
+  return {
+    ...provider,
+    hiddenModels: Array.from(hidden),
+  };
+};
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -69,18 +119,65 @@ export const useSettingsStore = create<SettingsState>()(
       mcpServers: [],
       systemPrompt: 'You are a helpful AI assistant.',
       theme: 'system',
+      lastUsedModel: null,
       
       updateProvider: (updatedProvider) => set((state) => ({
         providers: state.providers.map((p) =>
-          p.id === updatedProvider.id ? ensureProviderSecretRef(updatedProvider) : p
+          p.id === updatedProvider.id ? normalizeProviderConfig(updatedProvider) : p
         ),
       })),
       addProvider: (provider) => set((state) => ({
-        providers: [...state.providers, ensureProviderSecretRef(provider)],
+        providers: [...state.providers, normalizeProviderConfig(provider)],
       })),
       removeProvider: (id) => set((state) => ({
         providers: state.providers.filter((p) => p.id !== id),
+        lastUsedModel:
+          state.lastUsedModel?.providerId === id ? null : state.lastUsedModel,
       })),
+
+      toggleModelVisibility: (providerId, model) =>
+        set((state) => {
+          const provider = state.providers.find((p) => p.id === providerId);
+          if (!provider) return state;
+
+          const isCurrentlyVisible = !(provider.hiddenModels || []).includes(model);
+          const nextProviders = state.providers.map((p) =>
+            p.id === providerId
+              ? normalizeProviderConfig(applyModelVisibility(p, model, !isCurrentlyVisible))
+              : p
+          );
+
+          return {
+            providers: nextProviders,
+            lastUsedModel: shouldClearLastUsedModel(state.lastUsedModel, providerId, model)
+              ? null
+              : state.lastUsedModel,
+          };
+        }),
+
+      setModelVisibility: (providerId, model, visible) =>
+        set((state) => {
+          const nextProviders = state.providers.map((p) =>
+            p.id === providerId
+              ? normalizeProviderConfig(applyModelVisibility(p, model, visible))
+              : p
+          );
+
+          return {
+            providers: nextProviders,
+            lastUsedModel:
+              visible || !shouldClearLastUsedModel(state.lastUsedModel, providerId, model)
+                ? state.lastUsedModel
+                : null,
+          };
+        }),
+
+      setLastUsedModel: (providerId, model) =>
+        set({
+          lastUsedModel: providerId && model ? { providerId, model } : null,
+        }),
+
+      clearLastUsedModel: () => set({ lastUsedModel: null }),
 
       updateMcpServer: (updatedServer) => set((state) => ({
         mcpServers: state.mcpServers.map((s) =>

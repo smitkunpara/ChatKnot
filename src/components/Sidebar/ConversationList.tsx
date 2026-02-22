@@ -12,6 +12,7 @@ import { MessageSquare, PlusCircle, Settings as SettingsIcon, Trash2 } from 'luc
 import { useChatStore } from '../../store/useChatStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { resolveModelSelection } from '../../services/llm/modelSelection';
 import {
   getSidebarConversationLabel,
   getSidebarNewChatCtaLabel,
@@ -28,12 +29,22 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
 
   const providers = useSettingsStore(state => state.providers);
   const systemPrompt = useSettingsStore(state => state.systemPrompt);
+  const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const newChatLabel = getSidebarNewChatCtaLabel();
 
   const handleCreateConversation = () => {
-    const provider = providers.find(p => p.enabled) || providers[0];
-    const providerId = provider?.id || 'openai';
-    createNew(providerId, systemPrompt || 'You are a helpful assistant.');
+    const modelResolution = resolveModelSelection({
+      providers,
+      selectedProviderId: '',
+      selectedModel: '',
+      lastUsedModel,
+    });
+
+    createNew(
+      modelResolution.selection?.providerId || '',
+      systemPrompt || 'You are a helpful assistant.',
+      modelResolution.selection?.model
+    );
     props.navigation.navigate('Chat');
     props.navigation.closeDrawer();
   };

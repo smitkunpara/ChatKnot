@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Check, ChevronDown, ChevronLeft, Plus, Search, Trash } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronLeft, Eye, EyeOff, Plus, Search, Trash } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { LlmProviderConfig, McpServerConfig } from '../types';
@@ -23,6 +23,7 @@ import { OpenAiService } from '../services/llm/OpenAiService';
 import { useAppTheme } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
 import { McpManager, McpServerRuntimeState } from '../services/mcp/McpManager';
+import { getProviderVisibleModels } from '../services/llm/modelSelection';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -39,6 +40,8 @@ export const SettingsScreen = () => {
     updateProvider,
     addProvider,
     removeProvider,
+    toggleModelVisibility,
+    setLastUsedModel,
     mcpServers,
     addMcpServer,
     removeMcpServer,
@@ -58,7 +61,7 @@ export const SettingsScreen = () => {
   const [newMcpHeaderValue, setNewMcpHeaderValue] = useState('');
   const [isFetchingModels, setIsFetchingModels] = useState<string | null>(null);
   const [modelPickerVisible, setModelPickerVisible] = useState(false);
-  const [activeProviderForPicker, setActiveProviderForPicker] = useState<LlmProviderConfig | null>(null);
+  const [activeProviderIdForPicker, setActiveProviderIdForPicker] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState('');
   const [mcpRuntimeById, setMcpRuntimeById] = useState<Record<string, McpServerRuntimeState>>({});
   const [expandedInstructions, setExpandedInstructions] = useState<Record<string, boolean>>({});
@@ -87,6 +90,7 @@ export const SettingsScreen = () => {
       apiKey: newApiKey.trim(),
       model: '',
       availableModels: [],
+      hiddenModels: [],
       enabled: true,
     };
     addProvider(provider);
@@ -134,11 +138,17 @@ export const SettingsScreen = () => {
       const service = new OpenAiService(provider);
       const models = await service.listModels();
       if (models.length > 0) {
-        const selectedModel =
-          provider.model && models.includes(provider.model) ? provider.model : models[0];
-        updateProvider({
+        const nextProvider = {
           ...provider,
           availableModels: models,
+        };
+        const visibleModels = getProviderVisibleModels(nextProvider);
+        const selectedModel =
+          provider.model && visibleModels.includes(provider.model)
+            ? provider.model
+            : visibleModels[0] || '';
+        updateProvider({
+          ...nextProvider,
           model: selectedModel,
         });
       } else {
@@ -164,8 +174,13 @@ export const SettingsScreen = () => {
     [providers, providerSearch]
   );
 
+  const activeProviderForPicker = useMemo(
+    () => providers.find((provider) => provider.id === activeProviderIdForPicker) || null,
+    [providers, activeProviderIdForPicker]
+  );
+
   const openModelPicker = (provider: LlmProviderConfig) => {
-    setActiveProviderForPicker(provider);
+    setActiveProviderIdForPicker(provider.id);
     setModelSearch('');
     setModelPickerVisible(true);
     if (!provider.availableModels || provider.availableModels.length === 0) {
@@ -515,13 +530,21 @@ export const SettingsScreen = () => {
         visible={modelPickerVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setModelPickerVisible(false)}
+        onRequestClose={() => {
+          setModelPickerVisible(false);
+          setActiveProviderIdForPicker(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Model</Text>
-              <TouchableOpacity onPress={() => setModelPickerVisible(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setModelPickerVisible(false);
+                  setActiveProviderIdForPicker(null);
+                }}
+              >
                 <Text style={styles.modalClose}>Close</Text>
               </TouchableOpacity>
             </View>
@@ -538,7 +561,12 @@ export const SettingsScreen = () => {
             </View>
 
             <FlatList
-              data={(activeProviderForPicker?.availableModels || [])
+              data={Array.from(
+                new Set([
+                  ...(activeProviderForPicker?.availableModels || []),
+                  ...(activeProviderForPicker?.model ? [activeProviderForPicker.model] : []),
+                ])
+              )
                 .filter(model => isModelIdLikelyTextOutput(model))
                 .filter(model => model.toLowerCase().includes(modelSearch.toLowerCase()))}
               keyExtractor={item => item}
@@ -546,12 +574,38 @@ export const SettingsScreen = () => {
                 <TouchableOpacity
                   style={styles.modelRow}
                   onPress={() => {
-                    updateProvider({ ...activeProviderForPicker!, model: item });
+                    if (!activeProviderForPicker) return;
+
+                    const nextHiddenModels = (activeProviderForPicker.hiddenModels || []).filter(
+                      modelId => modelId !== item
+                    );
+                    updateProvider({
+                      ...activeProviderForPicker,
+                      model: item,
+                      hiddenModels: nextHiddenModels,
+                    });
+                    setLastUsedModel(activeProviderForPicker.id, item);
                     setModelPickerVisible(false);
+                    setActiveProviderIdForPicker(null);
                   }}
                 >
                   <Text style={styles.modelRowText}>{item}</Text>
-                  {activeProviderForPicker?.model === item ? <Check size={18} color={colors.primary} /> : null}
+                  <View style={styles.modelRowActions}>
+                    <TouchableOpacity
+                      style={styles.modelEyeButton}
+                      onPress={() => {
+                        if (!activeProviderForPicker) return;
+                        toggleModelVisibility(activeProviderForPicker.id, item);
+                      }}
+                    >
+                      {(activeProviderForPicker?.hiddenModels || []).includes(item) ? (
+                        <EyeOff size={18} color={colors.textTertiary} />
+                      ) : (
+                        <Eye size={18} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                    {activeProviderForPicker?.model === item ? <Check size={18} color={colors.primary} /> : null}
+                  </View>
                 </TouchableOpacity>
               )}
             />
@@ -916,6 +970,21 @@ const createStyles = (colors: any) =>
       paddingVertical: 13,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+    },
+    modelRowActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    modelEyeButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     modelRowText: {
       color: colors.text,

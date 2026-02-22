@@ -21,9 +21,15 @@ export interface Conversation {
   title: string;
   messages: Message[];
   providerId: string;
+  modelOverride?: string;
   systemPrompt: string;
   createdAt?: number;
   updatedAt: number;
+}
+
+export interface LastUsedModelPreference {
+  providerId: string;
+  model: string;
 }
 
 export interface LlmProviderConfig {
@@ -35,6 +41,7 @@ export interface LlmProviderConfig {
   apiKeyRef?: string;
   model: string;
   availableModels?: string[]; // Added to store fetched models
+  hiddenModels?: string[];
   enabled: boolean;
 }
 
@@ -63,4 +70,5 @@ export interface AppSettings {
   mcpServers: McpServerConfig[];
   systemPrompt: string;
   theme: 'light' | 'dark' | 'system';
+  lastUsedModel: LastUsedModelPreference | null;
 }

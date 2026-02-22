@@ -15,7 +15,7 @@ interface ChatState {
   activeConversationId: string | null;
   isLoading: boolean;
   
-  createConversation: (providerId: string, systemPrompt: string) => void;
+  createConversation: (providerId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
   updateProviderInConversation: (conversationId: string, providerId: string) => void;
@@ -41,13 +41,14 @@ export const useChatStore = create<ChatState>()(
       activeConversationId: null,
       isLoading: false,
 
-      createConversation: (providerId, systemPrompt) => {
+      createConversation: (providerId, systemPrompt, modelOverride) => {
         const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
           messages: [],
           providerId,
+          modelOverride,
           systemPrompt,
           createdAt: now,
           updatedAt: now,

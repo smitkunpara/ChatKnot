@@ -24,6 +24,10 @@ import { Input } from '../components/Chat/Input';
 import { ModelSelector } from '../components/Chat/ModelSelector';
 import { ToolCall } from '../types';
 import { useAppTheme } from '../theme/useAppTheme';
+import {
+  CHAT_NO_MODEL_AVAILABLE_MESSAGE,
+  resolveModelSelection,
+} from '../services/llm/modelSelection';
 
 const MAX_TOOL_ITERATIONS = 8;
 const FALLBACK_FINAL_TEXT =
@@ -389,8 +393,10 @@ export const ChatScreen = () => {
   const updateToolCallStatus = useChatStore(state => state.updateToolCallStatus);
   const updateModelInConversation = useChatStore(state => state.updateModelInConversation);
   const setLoading = useChatStore(state => state.setLoading);
-  const providers = useSettingsStore(state => state.providers);
   const systemPrompt = useSettingsStore(state => state.systemPrompt);
+  const providers = useSettingsStore(state => state.providers);
+  const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
+  const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string | undefined>(undefined);
@@ -400,6 +406,23 @@ export const ChatScreen = () => {
     () => conversations.find(c => c.id === activeConversationId),
     [conversations, activeConversationId]
   );
+
+  const modelResolution = useMemo(
+    () =>
+      resolveModelSelection({
+        providers,
+        selectedProviderId: activeConversation?.providerId || '',
+        selectedModel: activeConversation?.modelOverride || '',
+        lastUsedModel,
+      }),
+    [providers, activeConversation?.providerId, activeConversation?.modelOverride, lastUsedModel]
+  );
+
+  const noModelAvailableMessage = activeConversation
+    ? modelResolution.selection
+      ? null
+      : modelResolution.message || CHAT_NO_MODEL_AVAILABLE_MESSAGE
+    : null;
 
   const lastAssistantMessageId = useMemo(() => {
     if (!activeConversation?.messages) return null;
@@ -416,6 +439,35 @@ export const ChatScreen = () => {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 90);
     }
   }, [activeConversation?.messages.length, activeConversationId]);
+
+  useEffect(() => {
+    if (!activeConversation || !modelResolution.selection) {
+      return;
+    }
+
+    const currentProviderId = activeConversation.providerId || '';
+    const currentModel = activeConversation.modelOverride || '';
+    const nextProviderId = modelResolution.selection.providerId;
+    const nextModel = modelResolution.selection.model;
+
+    if (currentProviderId !== nextProviderId || currentModel !== nextModel) {
+      updateModelInConversation(activeConversation.id, nextProviderId, nextModel);
+    }
+
+    if (
+      lastUsedModel?.providerId !== nextProviderId ||
+      lastUsedModel?.model !== nextModel
+    ) {
+      setLastUsedModel(nextProviderId, nextModel);
+    }
+  }, [
+    activeConversation,
+    modelResolution.selection,
+    updateModelInConversation,
+    lastUsedModel?.providerId,
+    lastUsedModel?.model,
+    setLastUsedModel,
+  ]);
 
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
@@ -436,6 +488,11 @@ export const ChatScreen = () => {
 
   const handleSend = async (text: string) => {
     if (!activeConversationId) return;
+
+    if (!modelResolution.selection) {
+      setChatError(noModelAvailableMessage || CHAT_NO_MODEL_AVAILABLE_MESSAGE);
+      return;
+    }
 
     setChatError(null);
     stopRequestedRef.current = false;
@@ -467,19 +524,45 @@ export const ChatScreen = () => {
           .conversations.find(c => c.id === activeConversationId);
         if (!currentConv) break;
 
-        let providerConfig = providers.find(p => p.id === currentConv.providerId);
-        if (!providerConfig) {
-          providerConfig = providers.find(p => p.enabled) || providers[0];
+        const settingsState = useSettingsStore.getState();
+        const modelSelection = resolveModelSelection({
+          providers: settingsState.providers,
+          selectedProviderId: currentConv.providerId,
+          selectedModel: currentConv.modelOverride || '',
+          lastUsedModel: settingsState.lastUsedModel,
+        });
+
+        if (!modelSelection.selection) {
+          setChatError(modelSelection.message || CHAT_NO_MODEL_AVAILABLE_MESSAGE);
+          break;
         }
 
-        if (!providerConfig || (!providerConfig.model && !currentConv.modelOverride)) {
-          setChatError('No model selected. Open Settings and choose a model.');
+        const selectedProviderId = modelSelection.selection.providerId;
+        const selectedModel = modelSelection.selection.model;
+
+        if (
+          currentConv.providerId !== selectedProviderId ||
+          (currentConv.modelOverride || '') !== selectedModel
+        ) {
+          updateModelInConversation(currentConv.id, selectedProviderId, selectedModel);
+        }
+
+        if (
+          settingsState.lastUsedModel?.providerId !== selectedProviderId ||
+          settingsState.lastUsedModel?.model !== selectedModel
+        ) {
+          setLastUsedModel(selectedProviderId, selectedModel);
+        }
+
+        const providerConfig = settingsState.providers.find((provider) => provider.id === selectedProviderId);
+        if (!providerConfig) {
+          setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
           break;
         }
 
         const effectiveConfig = {
           ...providerConfig,
-          model: currentConv.modelOverride || providerConfig.model,
+          model: selectedModel,
         };
 
         const service = ProviderFactory.create(effectiveConfig);
@@ -650,6 +733,8 @@ export const ChatScreen = () => {
     }
   };
 
+  const bannerMessage = noModelAvailableMessage || chatError;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -661,7 +746,10 @@ export const ChatScreen = () => {
             <ModelSelector
               activeProviderId={activeConversation.providerId}
               activeModel={activeConversation.modelOverride || ''}
-              onSelect={(pid, model) => updateModelInConversation(activeConversation.id, pid, model)}
+              onSelect={(pid, model) => {
+                updateModelInConversation(activeConversation.id, pid, model);
+                setLastUsedModel(pid, model);
+              }}
             />
           </View>
         )}
@@ -679,11 +767,11 @@ export const ChatScreen = () => {
           </View>
         ) : (
           <>
-            {chatError ? (
+            {bannerMessage ? (
               <View style={styles.errorBanner}>
                 <AlertTriangle size={16} color={colors.danger} />
                 <Text style={styles.errorText} numberOfLines={2}>
-                  {chatError}
+                  {bannerMessage}
                 </Text>
               </View>
             ) : null}
