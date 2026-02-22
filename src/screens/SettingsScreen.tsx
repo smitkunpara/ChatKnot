@@ -4,8 +4,9 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
-  ScrollView,
+  Platform,
   StyleSheet,
   Switch,
   Text,
@@ -15,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Check, ChevronDown, ChevronLeft, Eye, EyeOff, Plus, Search, Trash } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronLeft, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { LlmProviderConfig, McpServerConfig } from '../types';
@@ -24,6 +25,19 @@ import { useAppTheme } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
 import { McpManager, McpServerRuntimeState } from '../services/mcp/McpManager';
 import { getProviderVisibleModels } from '../services/llm/modelSelection';
+import { KeyboardAwareContainer } from '../components/Common/KeyboardAwareContainer';
+import {
+  beginProviderDraft,
+  beginServerDraft,
+  discardProviderDraft,
+  discardServerDraft,
+  McpServerDraftMap,
+  ProviderDraftMap,
+  saveProviderDraft,
+  saveServerDraft,
+  updateProviderDraft,
+  updateServerDraft,
+} from './settingsDraftState';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -40,14 +54,11 @@ export const SettingsScreen = () => {
     updateProvider,
     addProvider,
     removeProvider,
-    toggleModelVisibility,
-    setLastUsedModel,
     mcpServers,
     addMcpServer,
     removeMcpServer,
     updateMcpServer,
     systemPrompt,
-    updateSystemPrompt,
     setTheme,
   } = useSettingsStore();
 
@@ -65,6 +76,13 @@ export const SettingsScreen = () => {
   const [modelSearch, setModelSearch] = useState('');
   const [mcpRuntimeById, setMcpRuntimeById] = useState<Record<string, McpServerRuntimeState>>({});
   const [expandedInstructions, setExpandedInstructions] = useState<Record<string, boolean>>({});
+  const [providerDrafts, setProviderDrafts] = useState<ProviderDraftMap>({});
+  const [serverDrafts, setServerDrafts] = useState<McpServerDraftMap>({});
+  const [editingProviders, setEditingProviders] = useState<Record<string, boolean>>({});
+  const [editingServers, setEditingServers] = useState<Record<string, boolean>>({});
+  const [draftAvailableModels, setDraftAvailableModels] = useState<Record<string, string[]>>({});
+  const [isEditingSystemPrompt, setIsEditingSystemPrompt] = useState(false);
+  const [systemPromptDraft, setSystemPromptDraft] = useState(systemPrompt);
 
   useEffect(() => {
     const unsubscribe = McpManager.subscribe(states => {
@@ -76,6 +94,12 @@ export const SettingsScreen = () => {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!isEditingSystemPrompt) {
+      setSystemPromptDraft(systemPrompt);
+    }
+  }, [isEditingSystemPrompt, systemPrompt]);
 
   const handleAddProvider = () => {
     if (!newProviderName.trim() || !newBaseUrl.trim()) {
@@ -97,7 +121,7 @@ export const SettingsScreen = () => {
     setNewProviderName('');
     setNewBaseUrl('https://api.openai.com/v1');
     setNewApiKey('');
-    if (provider.apiKey) fetchModels(provider);
+    if (provider.apiKey) fetchModels(provider, { persistProvider: true });
   };
 
   const handleAddMcp = () => {
@@ -131,32 +155,49 @@ export const SettingsScreen = () => {
     setNewMcpHeaderValue('');
   };
 
-  const fetchModels = async (provider: LlmProviderConfig) => {
+  const fetchModels = async (
+    provider: LlmProviderConfig,
+    options: {
+      persistProvider?: boolean;
+    } = {}
+  ) => {
     if (!provider.apiKey || !provider.baseUrl) return;
+
+    const persistProvider = options.persistProvider ?? false;
     setIsFetchingModels(provider.id);
     try {
       const service = new OpenAiService(provider);
       const models = await service.listModels();
+      setDraftAvailableModels(prev => ({
+        ...prev,
+        [provider.id]: models,
+      }));
+
       if (models.length > 0) {
-        const nextProvider = {
-          ...provider,
-          availableModels: models,
-        };
-        const visibleModels = getProviderVisibleModels(nextProvider);
-        const selectedModel =
-          provider.model && visibleModels.includes(provider.model)
-            ? provider.model
-            : visibleModels[0] || '';
-        updateProvider({
-          ...nextProvider,
-          model: selectedModel,
-        });
+        if (persistProvider) {
+          const nextProvider = {
+            ...provider,
+            availableModels: models,
+          };
+          const visibleModels = getProviderVisibleModels(nextProvider);
+          const selectedModel =
+            provider.model && visibleModels.includes(provider.model)
+              ? provider.model
+              : visibleModels[0] || '';
+          updateProvider({
+            ...nextProvider,
+            model: selectedModel,
+          });
+        }
       } else {
-        updateProvider({
-          ...provider,
-          availableModels: [],
-          model: '',
-        });
+        if (persistProvider) {
+          updateProvider({
+            ...provider,
+            availableModels: [],
+            model: '',
+          });
+        }
+
         Alert.alert(
           'No Text Models Found',
           'No text-output models were found for this provider. Verify the endpoint and model availability.'
@@ -179,13 +220,122 @@ export const SettingsScreen = () => {
     [providers, activeProviderIdForPicker]
   );
 
+  const activeProviderDraftForPicker = useMemo(
+    () =>
+      activeProviderIdForPicker
+        ? providerDrafts[activeProviderIdForPicker] || null
+        : null,
+    [activeProviderIdForPicker, providerDrafts]
+  );
+
+  const activeProviderModelsForPicker = useMemo(() => {
+    if (!activeProviderForPicker) {
+      return [];
+    }
+
+    return draftAvailableModels[activeProviderForPicker.id] || activeProviderForPicker.availableModels || [];
+  }, [activeProviderForPicker, draftAvailableModels]);
+
+  const beginProviderEdit = (provider: LlmProviderConfig) => {
+    setProviderDrafts(prev => beginProviderDraft(prev, provider));
+    setDraftAvailableModels(prev => ({
+      ...prev,
+      [provider.id]: provider.availableModels || [],
+    }));
+    setEditingProviders(prev => ({
+      ...prev,
+      [provider.id]: true,
+    }));
+  };
+
+  const cancelProviderEdit = (providerId: string) => {
+    setProviderDrafts(prev => discardProviderDraft(prev, providerId));
+    setEditingProviders(prev => ({
+      ...prev,
+      [providerId]: false,
+    }));
+    setDraftAvailableModels(prev => {
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
+
+    if (activeProviderIdForPicker === providerId) {
+      setModelPickerVisible(false);
+      setActiveProviderIdForPicker(null);
+    }
+  };
+
+  const saveProviderEdit = (provider: LlmProviderConfig) => {
+    const providerWithDraftModels = {
+      ...provider,
+      availableModels: draftAvailableModels[provider.id] || provider.availableModels,
+    };
+
+    setProviderDrafts(prev => saveProviderDraft(prev, providerWithDraftModels, updateProvider));
+    setEditingProviders(prev => ({
+      ...prev,
+      [provider.id]: false,
+    }));
+    setDraftAvailableModels(prev => {
+      const next = { ...prev };
+      delete next[provider.id];
+      return next;
+    });
+  };
+
+  const beginServerEdit = (server: McpServerConfig) => {
+    setServerDrafts(prev => beginServerDraft(prev, server));
+    setEditingServers(prev => ({
+      ...prev,
+      [server.id]: true,
+    }));
+  };
+
+  const cancelServerEdit = (serverId: string) => {
+    setServerDrafts(prev => discardServerDraft(prev, serverId));
+    setEditingServers(prev => ({
+      ...prev,
+      [serverId]: false,
+    }));
+  };
+
+  const saveServerEdit = (server: McpServerConfig) => {
+    setServerDrafts(prev => saveServerDraft(prev, server, updateMcpServer));
+    setEditingServers(prev => ({
+      ...prev,
+      [server.id]: false,
+    }));
+  };
+
   const openModelPicker = (provider: LlmProviderConfig) => {
+    if (!editingProviders[provider.id]) {
+      return;
+    }
+
     setActiveProviderIdForPicker(provider.id);
     setModelSearch('');
     setModelPickerVisible(true);
-    if (!provider.availableModels || provider.availableModels.length === 0) {
-      fetchModels(provider);
+
+    const currentModels = draftAvailableModels[provider.id] || provider.availableModels || [];
+    if (currentModels.length === 0) {
+      fetchModels(provider, { persistProvider: false });
     }
+  };
+
+  const beginSystemPromptEdit = () => {
+    setSystemPromptDraft(systemPrompt);
+    setIsEditingSystemPrompt(true);
+  };
+
+  const cancelSystemPromptEdit = () => {
+    setSystemPromptDraft(systemPrompt);
+    setIsEditingSystemPrompt(false);
+  };
+
+  const saveSystemPromptEdit = () => {
+    useSettingsStore.getState().updateSystemPrompt(systemPromptDraft);
+    setIsEditingSystemPrompt(false);
   };
 
   return (
@@ -197,7 +347,10 @@ export const SettingsScreen = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareContainer
+        contentContainerStyle={styles.content}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+      >
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Appearance</Text>
           <Text style={styles.sectionHint}>Choose how the app theme is resolved.</Text>
@@ -220,12 +373,31 @@ export const SettingsScreen = () => {
         </View>
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>System Prompt</Text>
+          <View style={styles.row}>
+            <Text style={styles.sectionTitle}>System Prompt</Text>
+            <View style={styles.rowRight}>
+              {isEditingSystemPrompt ? (
+                <>
+                  <TouchableOpacity onPress={saveSystemPromptEdit} style={styles.iconButton}>
+                    <Save size={17} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={cancelSystemPromptEdit} style={styles.iconButton}>
+                    <X size={17} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity onPress={beginSystemPromptEdit} style={styles.iconButton}>
+                  <Pencil size={17} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, !isEditingSystemPrompt ? styles.inputDisabled : undefined]}
             multiline
-            value={systemPrompt}
-            onChangeText={updateSystemPrompt}
+            editable={isEditingSystemPrompt}
+            value={systemPromptDraft}
+            onChangeText={setSystemPromptDraft}
             placeholder="Set a default system instruction..."
             placeholderTextColor={colors.placeholder}
           />
@@ -273,60 +445,117 @@ export const SettingsScreen = () => {
           />
         </View>
 
-        {filteredProviders.map(provider => (
-          <View key={provider.id} style={styles.sectionCard}>
-            <View style={styles.row}>
-              <Text style={styles.providerName}>{provider.name}</Text>
-              <View style={styles.rowRight}>
-                <Switch
-                  value={provider.enabled}
-                  onValueChange={enabled => updateProvider({ ...provider, enabled })}
-                  trackColor={{ false: colors.border, true: colors.primarySoft }}
-                  thumbColor={provider.enabled ? colors.primary : colors.textTertiary}
-                />
-                <TouchableOpacity onPress={() => removeProvider(provider.id)} style={styles.iconButton}>
-                  <Trash size={17} color={colors.danger} />
-                </TouchableOpacity>
-              </View>
-            </View>
+        {filteredProviders.map(provider => {
+          const isEditing = !!editingProviders[provider.id];
+          const draft = providerDrafts[provider.id];
+          const draftModels = draftAvailableModels[provider.id];
+          const effectiveProvider =
+            isEditing && draft
+              ? {
+                  ...provider,
+                  baseUrl: draft.baseUrl,
+                  apiKey: draft.apiKey,
+                  model: draft.model,
+                  hiddenModels: draft.hiddenModels,
+                  enabled: draft.enabled,
+                  availableModels: draftModels || provider.availableModels,
+                }
+              : provider;
 
-            {provider.enabled ? (
-              <>
-                <TextInput
-                  style={styles.input}
-                  value={provider.baseUrl}
-                  onChangeText={value => updateProvider({ ...provider, baseUrl: value })}
-                  placeholder="Base URL"
-                  placeholderTextColor={colors.placeholder}
-                />
-                <TextInput
-                  style={styles.input}
-                  value={provider.apiKey}
-                  onChangeText={value => updateProvider({ ...provider, apiKey: value })}
-                  placeholder="API Key"
-                  placeholderTextColor={colors.placeholder}
-                  secureTextEntry
-                />
-                {provider.model && !isModelIdLikelyTextOutput(provider.model) ? (
-                  <Text style={styles.warningText}>
-                    Current model may not be text-output capable. Pick from the filtered model list.
-                  </Text>
-                ) : null}
-                <TouchableOpacity style={styles.modelPickerBtn} onPress={() => openModelPicker(provider)}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modelLabel}>Model</Text>
-                    <Text style={styles.modelText}>{provider.model || 'Select model'}</Text>
-                  </View>
-                  {isFetchingModels === provider.id ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+          return (
+            <View key={provider.id} style={styles.sectionCard}>
+              <View style={styles.row}>
+                <Text style={styles.providerName}>{provider.name}</Text>
+                <View style={styles.rowRight}>
+                  <Switch
+                    value={effectiveProvider.enabled}
+                    disabled={!isEditing}
+                    onValueChange={enabled => {
+                      if (!isEditing) {
+                        return;
+                      }
+
+                      setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
+                    }}
+                    trackColor={{ false: colors.border, true: colors.primarySoft }}
+                    thumbColor={effectiveProvider.enabled ? colors.primary : colors.textTertiary}
+                  />
+                  {isEditing ? (
+                    <>
+                      <TouchableOpacity onPress={() => saveProviderEdit(provider)} style={styles.iconButton}>
+                        <Save size={17} color={colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => cancelProviderEdit(provider.id)} style={styles.iconButton}>
+                        <X size={17} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    </>
                   ) : (
-                    <ChevronDown size={18} color={colors.textTertiary} />
+                    <TouchableOpacity onPress={() => beginProviderEdit(provider)} style={styles.iconButton}>
+                      <Pencil size={17} color={colors.primary} />
+                    </TouchableOpacity>
                   )}
-                </TouchableOpacity>
-              </>
-            ) : null}
-          </View>
-        ))}
+                  <TouchableOpacity onPress={() => removeProvider(provider.id)} style={styles.iconButton}>
+                    <Trash size={17} color={colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {effectiveProvider.enabled ? (
+                <>
+                  <TextInput
+                    style={[styles.input, !isEditing ? styles.inputDisabled : undefined]}
+                    editable={isEditing}
+                    value={effectiveProvider.baseUrl}
+                    onChangeText={value => {
+                      if (!isEditing) {
+                        return;
+                      }
+
+                      setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { baseUrl: value }));
+                    }}
+                    placeholder="Base URL"
+                    placeholderTextColor={colors.placeholder}
+                  />
+                  <TextInput
+                    style={[styles.input, !isEditing ? styles.inputDisabled : undefined]}
+                    editable={isEditing}
+                    value={effectiveProvider.apiKey}
+                    onChangeText={value => {
+                      if (!isEditing) {
+                        return;
+                      }
+
+                      setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { apiKey: value }));
+                    }}
+                    placeholder="API Key"
+                    placeholderTextColor={colors.placeholder}
+                    secureTextEntry
+                  />
+                  {effectiveProvider.model && !isModelIdLikelyTextOutput(effectiveProvider.model) ? (
+                    <Text style={styles.warningText}>
+                      Current model may not be text-output capable. Pick from the filtered model list.
+                    </Text>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.modelPickerBtn, !isEditing ? styles.modelPickerBtnDisabled : undefined]}
+                    disabled={!isEditing}
+                    onPress={() => openModelPicker(effectiveProvider)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modelLabel}>Model</Text>
+                      <Text style={styles.modelText}>{effectiveProvider.model || 'Select model'}</Text>
+                    </View>
+                    {isFetchingModels === provider.id ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <ChevronDown size={18} color={colors.textTertiary} />
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : null}
+            </View>
+          );
+        })}
 
         <Text style={styles.sectionHeader}>MCP Servers</Text>
         <View style={styles.sectionCard}>
@@ -367,9 +596,24 @@ export const SettingsScreen = () => {
         </View>
 
         {mcpServers.map(server => {
+          const isEditing = !!editingServers[server.id];
+          const serverDraft = serverDrafts[server.id];
+          const effectiveServer =
+            isEditing && serverDraft
+              ? {
+                  ...server,
+                  name: serverDraft.name,
+                  url: serverDraft.url,
+                  enabled: serverDraft.enabled,
+                  headers: serverDraft.headerKey
+                    ? { [serverDraft.headerKey]: serverDraft.headerValue }
+                    : {},
+                }
+              : server;
+
           const runtime = mcpRuntimeById[server.id];
           const isInstructionExpanded = !!expandedInstructions[server.id];
-          const status = runtime?.status || (server.enabled ? 'connecting' : 'disabled');
+          const status = runtime?.status || (effectiveServer.enabled ? 'connecting' : 'disabled');
           const statusLabel =
             status === 'connected'
               ? `${runtime?.protocol === 'openapi' ? 'OpenAPI' : 'MCP'} • ${runtime?.toolsCount || 0} tools`
@@ -384,23 +628,51 @@ export const SettingsScreen = () => {
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
                   <TextInput
-                    style={styles.serverNameInput}
-                    value={server.name}
-                    onChangeText={name => updateMcpServer({ ...server, name })}
+                    style={[styles.serverNameInput, !isEditing ? styles.inputDisabled : undefined]}
+                    editable={isEditing}
+                    value={effectiveServer.name}
+                    onChangeText={name => {
+                      if (!isEditing) {
+                        return;
+                      }
+
+                      setServerDrafts(prev => updateServerDraft(prev, server.id, { name }));
+                    }}
                     placeholder="Server Name"
                     placeholderTextColor={colors.placeholder}
                   />
                   <Text style={styles.serverSub} numberOfLines={1}>
-                    {server.url}
+                    {effectiveServer.url}
                   </Text>
                 </View>
                 <View style={styles.rowRight}>
                   <Switch
-                    value={server.enabled}
-                    onValueChange={enabled => updateMcpServer({ ...server, enabled })}
+                    value={effectiveServer.enabled}
+                    disabled={!isEditing}
+                    onValueChange={enabled => {
+                      if (!isEditing) {
+                        return;
+                      }
+
+                      setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
+                    }}
                     trackColor={{ false: colors.border, true: colors.primarySoft }}
-                    thumbColor={server.enabled ? colors.primary : colors.textTertiary}
+                    thumbColor={effectiveServer.enabled ? colors.primary : colors.textTertiary}
                   />
+                  {isEditing ? (
+                    <>
+                      <TouchableOpacity onPress={() => saveServerEdit(server)} style={styles.iconButton}>
+                        <Save size={17} color={colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => cancelServerEdit(server.id)} style={styles.iconButton}>
+                        <X size={17} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity onPress={() => beginServerEdit(server)} style={styles.iconButton}>
+                      <Pencil size={17} color={colors.primary} />
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity onPress={() => removeMcpServer(server.id)} style={styles.iconButton}>
                     <Trash size={17} color={colors.danger} />
                   </TouchableOpacity>
@@ -439,32 +711,32 @@ export const SettingsScreen = () => {
                 ) : null}
               </View>
 
-              {server.enabled ? (
+              {isEditing ? (
                 <View style={styles.serverEditWrap}>
                   <TextInput
                     style={styles.input}
-                    value={server.url}
-                    onChangeText={url => updateMcpServer({ ...server, url })}
+                    value={serverDraft?.url || ''}
+                    onChangeText={url => {
+                      setServerDrafts(prev => updateServerDraft(prev, server.id, { url }));
+                    }}
                     placeholder="Server URL"
                     placeholderTextColor={colors.placeholder}
                   />
                   <View style={styles.inlineInputs}>
                     <TextInput
                       style={[styles.input, styles.inlineInput]}
-                      value={Object.keys(server.headers || {})[0] || ''}
-                      onChangeText={key => {
-                        const val = Object.values(server.headers || {})[0] || '';
-                        updateMcpServer({ ...server, headers: key ? { [key]: val } : {} });
+                      value={serverDraft?.headerKey || ''}
+                      onChangeText={headerKey => {
+                        setServerDrafts(prev => updateServerDraft(prev, server.id, { headerKey }));
                       }}
                       placeholder="Header Name"
                       placeholderTextColor={colors.placeholder}
                     />
                     <TextInput
                       style={[styles.input, styles.inlineInput]}
-                      value={Object.values(server.headers || {})[0] || ''}
-                      onChangeText={value => {
-                        const key = Object.keys(server.headers || {})[0] || 'Authorization';
-                        updateMcpServer({ ...server, headers: { [key]: value } });
+                      value={serverDraft?.headerValue || ''}
+                      onChangeText={headerValue => {
+                        setServerDrafts(prev => updateServerDraft(prev, server.id, { headerValue }));
                       }}
                       placeholder="Header Value"
                       placeholderTextColor={colors.placeholder}
@@ -524,7 +796,7 @@ export const SettingsScreen = () => {
         })}
 
         <View style={{ height: 96 }} />
-      </ScrollView>
+      </KeyboardAwareContainer>
 
       <Modal
         visible={modelPickerVisible}
@@ -536,80 +808,99 @@ export const SettingsScreen = () => {
         }}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Model</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModelPickerVisible(false);
-                  setActiveProviderIdForPicker(null);
-                }}
-              >
-                <Text style={styles.modalClose}>Close</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.searchBar}>
-              <Search size={16} color={colors.textTertiary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search models..."
-                placeholderTextColor={colors.placeholder}
-                value={modelSearch}
-                onChangeText={setModelSearch}
-              />
-            </View>
-
-            <FlatList
-              data={Array.from(
-                new Set([
-                  ...(activeProviderForPicker?.availableModels || []),
-                  ...(activeProviderForPicker?.model ? [activeProviderForPicker.model] : []),
-                ])
-              )
-                .filter(model => isModelIdLikelyTextOutput(model))
-                .filter(model => model.toLowerCase().includes(modelSearch.toLowerCase()))}
-              keyExtractor={item => item}
-              renderItem={({ item }) => (
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardAvoiding}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Model</Text>
                 <TouchableOpacity
-                  style={styles.modelRow}
                   onPress={() => {
-                    if (!activeProviderForPicker) return;
-
-                    const nextHiddenModels = (activeProviderForPicker.hiddenModels || []).filter(
-                      modelId => modelId !== item
-                    );
-                    updateProvider({
-                      ...activeProviderForPicker,
-                      model: item,
-                      hiddenModels: nextHiddenModels,
-                    });
-                    setLastUsedModel(activeProviderForPicker.id, item);
                     setModelPickerVisible(false);
                     setActiveProviderIdForPicker(null);
                   }}
                 >
-                  <Text style={styles.modelRowText}>{item}</Text>
-                  <View style={styles.modelRowActions}>
-                    <TouchableOpacity
-                      style={styles.modelEyeButton}
-                      onPress={() => {
-                        if (!activeProviderForPicker) return;
-                        toggleModelVisibility(activeProviderForPicker.id, item);
-                      }}
-                    >
-                      {(activeProviderForPicker?.hiddenModels || []).includes(item) ? (
-                        <EyeOff size={18} color={colors.textTertiary} />
-                      ) : (
-                        <Eye size={18} color={colors.primary} />
-                      )}
-                    </TouchableOpacity>
-                    {activeProviderForPicker?.model === item ? <Check size={18} color={colors.primary} /> : null}
-                  </View>
+                  <Text style={styles.modalClose}>Close</Text>
                 </TouchableOpacity>
-              )}
-            />
-          </View>
+              </View>
+
+              <View style={styles.searchBar}>
+                <Search size={16} color={colors.textTertiary} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search models..."
+                  placeholderTextColor={colors.placeholder}
+                  value={modelSearch}
+                  onChangeText={setModelSearch}
+                />
+              </View>
+
+              <FlatList
+                keyboardShouldPersistTaps="handled"
+                data={Array.from(
+                  new Set([
+                    ...activeProviderModelsForPicker,
+                    ...(activeProviderDraftForPicker?.model ? [activeProviderDraftForPicker.model] : []),
+                  ])
+                )
+                  .filter(model => isModelIdLikelyTextOutput(model))
+                  .filter(model => model.toLowerCase().includes(modelSearch.toLowerCase()))}
+                keyExtractor={item => item}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modelRow}
+                    onPress={() => {
+                      if (!activeProviderForPicker || !activeProviderDraftForPicker) return;
+
+                      const nextHiddenModels = (activeProviderDraftForPicker.hiddenModels || []).filter(
+                        modelId => modelId !== item
+                      );
+                      setProviderDrafts(prev =>
+                        updateProviderDraft(prev, activeProviderForPicker.id, {
+                          model: item,
+                          hiddenModels: nextHiddenModels,
+                        })
+                      );
+                      setModelPickerVisible(false);
+                      setActiveProviderIdForPicker(null);
+                    }}
+                  >
+                    <Text style={styles.modelRowText}>{item}</Text>
+                    <View style={styles.modelRowActions}>
+                      <TouchableOpacity
+                        style={styles.modelEyeButton}
+                        onPress={() => {
+                          if (!activeProviderForPicker || !activeProviderDraftForPicker) return;
+
+                          const hiddenModels = new Set(activeProviderDraftForPicker.hiddenModels || []);
+                          if (hiddenModels.has(item)) {
+                            hiddenModels.delete(item);
+                          } else {
+                            hiddenModels.add(item);
+                          }
+
+                          setProviderDrafts(prev =>
+                            updateProviderDraft(prev, activeProviderForPicker.id, {
+                              hiddenModels: Array.from(hiddenModels),
+                            })
+                          );
+                        }}
+                      >
+                        {(activeProviderDraftForPicker?.hiddenModels || []).includes(item) ? (
+                          <EyeOff size={18} color={colors.textTertiary} />
+                        ) : (
+                          <Eye size={18} color={colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                      {activeProviderDraftForPicker?.model === item ? <Check size={18} color={colors.primary} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -715,6 +1006,9 @@ const createStyles = (colors: any) =>
       borderWidth: 1,
       borderColor: colors.inputBorder,
     },
+    inputDisabled: {
+      opacity: 0.72,
+    },
     textArea: {
       minHeight: 96,
       textAlignVertical: 'top',
@@ -790,6 +1084,9 @@ const createStyles = (colors: any) =>
       paddingVertical: 10,
       borderRadius: 10,
       marginTop: 2,
+    },
+    modelPickerBtnDisabled: {
+      opacity: 0.72,
     },
     modelLabel: {
       color: colors.textTertiary,
@@ -934,6 +1231,9 @@ const createStyles = (colors: any) =>
       flex: 1,
       backgroundColor: colors.overlay,
       justifyContent: 'flex-end',
+    },
+    modalKeyboardAvoiding: {
+      width: '100%',
     },
     modalContent: {
       backgroundColor: colors.surface,
