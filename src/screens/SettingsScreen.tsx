@@ -66,7 +66,6 @@ export const SettingsScreen = () => {
     setTheme,
   } = useSettingsStore();
 
-  const [providerSearch, setProviderSearch] = useState('');
   const [newProviderName, setNewProviderName] = useState('');
   const [newBaseUrl, setNewBaseUrl] = useState('https://api.openai.com/v1');
   const [newApiKey, setNewApiKey] = useState('');
@@ -243,11 +242,6 @@ export const SettingsScreen = () => {
       setIsFetchingModels(null);
     }
   };
-
-  const filteredProviders = useMemo(
-    () => providers.filter(provider => provider.name.toLowerCase().includes(providerSearch.toLowerCase())),
-    [providers, providerSearch]
-  );
 
   const activeProviderForPicker = useMemo(
     () => providers.find((provider) => provider.id === activeProviderIdForPicker) || null,
@@ -557,18 +551,7 @@ export const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.searchBar}>
-          <Search size={16} color={colors.textTertiary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search providers..."
-            placeholderTextColor={colors.placeholder}
-            value={providerSearch}
-            onChangeText={setProviderSearch}
-          />
-        </View>
-
-        {filteredProviders.map(provider => {
+        {providers.map(provider => {
           const isEditing = !!editingProviders[provider.id];
           const draft = providerDrafts[provider.id];
           const draftModels = draftAvailableModels[provider.id];
