@@ -3,13 +3,51 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { AppSettings, LlmProviderConfig, McpServerConfig } from '../types';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
-import { ensureMcpServerSecretRefs, ensureProviderSecretRef } from '../services/storage/migrations';
+import {
+  ensureMcpServerSecretRefs,
+  ensureProviderSecretRef,
+  hydratePersistedSettingsPayload,
+  migratePersistedSettingsPayload,
+} from '../services/storage/migrations';
 import 'react-native-get-random-values';
 
-const settingsPersistStorage = createEncryptedStateStorage({
+const rawSettingsPersistStorage = createEncryptedStateStorage({
   id: 'settings-storage',
   keyAlias: 'settings-storage:encryption-key',
 });
+
+const settingsPersistStorage = {
+  getItem: async (name: string): Promise<string | null> => {
+    const rawValue = await rawSettingsPersistStorage.getItem(name);
+    if (!rawValue) {
+      return rawValue;
+    }
+
+    try {
+      return await hydratePersistedSettingsPayload(rawValue, {
+        logger: console,
+      });
+    } catch (error) {
+      console.error('Failed to hydrate settings secrets from vault refs; using raw persisted state.', error);
+      return rawValue;
+    }
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    try {
+      const migratedValue = await migratePersistedSettingsPayload(value, {
+        logger: console,
+      });
+      await rawSettingsPersistStorage.setItem(name, migratedValue);
+      return;
+    } catch (error) {
+      console.error('Failed to harden settings payload; storing compatibility fallback payload.', error);
+      await rawSettingsPersistStorage.setItem(name, value);
+    }
+  },
+  removeItem: async (name: string): Promise<void> => {
+    await rawSettingsPersistStorage.removeItem(name);
+  },
+};
 
 interface SettingsState extends AppSettings {
   updateProvider: (provider: LlmProviderConfig) => void;
