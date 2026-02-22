@@ -9,6 +9,8 @@ interface ToolCallProps {
   requiresApproval?: boolean;
   onApprove?: () => void;
   onDeny?: () => void;
+  queueIndex?: number;
+  queueTotal?: number;
 }
 
 const safePrettyText = (value?: string): string => {
@@ -25,6 +27,8 @@ export const ToolCall: React.FC<ToolCallProps> = ({
   requiresApproval,
   onApprove,
   onDeny,
+  queueIndex,
+  queueTotal,
 }) => {
   const { colors } = useAppTheme();
   const styles = createStyles(colors);
@@ -74,6 +78,9 @@ export const ToolCall: React.FC<ToolCallProps> = ({
             <Text style={[styles.statusText, { color: statusMeta.color }]}>
               {statusMeta.label}
             </Text>
+            {typeof queueIndex === 'number' && typeof queueTotal === 'number' ? (
+              <Text style={styles.queueText}>{`Tool ${queueIndex + 1}/${queueTotal}`}</Text>
+            ) : null}
           </View>
         </View>
         {expanded ? (
@@ -153,6 +160,12 @@ const createStyles = (colors: any) =>
     },
     statusText: {
       fontSize: 11,
+      marginTop: 2,
+      fontWeight: '600',
+    },
+    queueText: {
+      color: colors.textTertiary,
+      fontSize: 10,
       marginTop: 2,
       fontWeight: '600',
     },

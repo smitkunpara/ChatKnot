@@ -75,13 +75,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {hasToolCalls ? (
           <View style={styles.toolCallsContainer}>
-            {message.toolCalls!.map(tc => (
+            {message.toolCalls!.map((tc, index) => (
               <ToolCallComponent
                 key={tc.id}
                 toolCall={tc}
                 requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
                 onApprove={() => onToolApprovalDecision?.(tc.id, true)}
                 onDeny={() => onToolApprovalDecision?.(tc.id, false)}
+                queueIndex={index}
+                queueTotal={message.toolCalls!.length}
               />
             ))}
           </View>
