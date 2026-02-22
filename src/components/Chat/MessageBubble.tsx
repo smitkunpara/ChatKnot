@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, Edit2 } from 'lucide-react-native';
+import { Copy, Edit2, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
@@ -14,6 +14,7 @@ interface MessageBubbleProps {
   onEdit?: (id: string, content: string) => void;
   pendingToolApprovalIds?: Record<string, true>;
   onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
+  onRetryAssistant?: (messageId: string) => void;
 }
 
 const StreamingCursor = ({ color }: { color: string }) => {
@@ -37,6 +38,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onEdit,
   pendingToolApprovalIds,
   onToolApprovalDecision,
+  onRetryAssistant,
 }) => {
   const { colors } = useAppTheme();
   const styles = createStyles(colors);
@@ -94,6 +96,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         {!isStreaming && message.content ? (
           <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
             <Copy size={13} color={colors.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+        {!isUser && !isStreaming && onRetryAssistant ? (
+          <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton}>
+            <RotateCcw size={13} color={colors.textTertiary} />
           </TouchableOpacity>
         ) : null}
         {isUser && onEdit ? (

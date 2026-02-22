@@ -480,6 +480,20 @@ export const ChatScreen = () => {
     };
   }, [clearPendingToolApprovals]);
 
+  useEffect(() => {
+    if (!chatError) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setChatError(null);
+    }, 3000);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [chatError]);
+
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
@@ -496,6 +510,25 @@ export const ChatScreen = () => {
 
   const handleInputFocus = () => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 220);
+  };
+
+  const handleRetryAssistant = (assistantMessageId: string) => {
+    if (!activeConversation || !activeConversationId || isLoading) {
+      return;
+    }
+
+    const assistantIndex = activeConversation.messages.findIndex(message => message.id === assistantMessageId);
+    if (assistantIndex < 0) {
+      return;
+    }
+
+    for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+      const candidate = activeConversation.messages[i];
+      if (candidate.role === 'user' && candidate.content?.trim()) {
+        void handleSend(candidate.content);
+        return;
+      }
+    }
   };
 
   const handleSend = async (text: string) => {
@@ -848,6 +881,7 @@ export const ChatScreen = () => {
                   onToolApprovalDecision={(toolCallId, approved) => {
                     resolveToolApproval(toolCallId, approved);
                   }}
+                  onRetryAssistant={handleRetryAssistant}
                 />
               )}
               contentContainerStyle={styles.listContent}

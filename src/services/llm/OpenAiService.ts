@@ -156,11 +156,29 @@ export class OpenAiService {
       let toolCallsBuffer: any[] = [];
       const reader = (response as any).body?.getReader();
 
-      const processDelta = (delta: any) => {
+      const emitContentChunk = async (contentChunk: string) => {
+        if (!contentChunk) return;
+
+        // Split larger chunks so UI updates stay visibly progressive even when providers batch tokens.
+        const segments = contentChunk.length > 28
+          ? contentChunk.match(/.{1,28}/g) || [contentChunk]
+          : [contentChunk];
+
+        for (const segment of segments) {
+          if (abortSignal?.aborted) {
+            throw new Error('Request cancelled by user');
+          }
+
+          fullContent += segment;
+          onChunk(segment, undefined);
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      };
+
+      const processDelta = async (delta: any) => {
         if (!delta) return;
         if (delta.content) {
-          fullContent += delta.content;
-          onChunk(delta.content, undefined);
+          await emitContentChunk(delta.content);
         }
         if (delta.tool_calls) {
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
@@ -182,13 +200,13 @@ export class OpenAiService {
         }
       };
 
-      const processSsePayload = (payload: string) => {
+      const processSsePayload = async (payload: string) => {
         const cleanPayload = payload.trim();
         if (!cleanPayload || cleanPayload === '[DONE]') return;
         try {
           const json = JSON.parse(cleanPayload);
           const delta = json.choices?.[0]?.delta;
-          processDelta(delta);
+          await processDelta(delta);
         } catch (e) {
           // Ignore partial or non-JSON control events.
         }
@@ -214,7 +232,7 @@ export class OpenAiService {
               .filter(line => line.startsWith('data:'))
               .map(line => line.replace(/^data:\s?/, ''));
             if (dataLines.length > 0) {
-              processSsePayload(dataLines.join('\n'));
+              await processSsePayload(dataLines.join('\n'));
             }
           }
         }
@@ -225,7 +243,7 @@ export class OpenAiService {
             .filter(line => line.startsWith('data:'))
             .map(line => line.replace(/^data:\s?/, ''));
           if (dataLines.length > 0) {
-            processSsePayload(dataLines.join('\n'));
+            await processSsePayload(dataLines.join('\n'));
           }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
@@ -237,7 +255,7 @@ export class OpenAiService {
 
         if (sseLines.length > 0) {
           for (const line of sseLines) {
-            processSsePayload(line.replace(/^data:\s?/, ''));
+            await processSsePayload(line.replace(/^data:\s?/, ''));
           }
         } else {
           try {
@@ -245,8 +263,7 @@ export class OpenAiService {
             const choice = json.choices?.[0];
             const message = choice?.message;
             if (message?.content) {
-              fullContent = message.content;
-              onChunk(fullContent, undefined);
+              await emitContentChunk(message.content);
             }
             if (message?.tool_calls) {
               toolCallsBuffer = mergeToolCalls([], message.tool_calls);
