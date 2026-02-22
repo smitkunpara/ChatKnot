@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
+import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { LlmProviderConfig, McpServerConfig } from '../types';
 import { OpenAiService } from '../services/llm/OpenAiService';
@@ -90,6 +91,7 @@ export const SettingsScreen = () => {
     updateMcpServer,
     systemPrompt,
     setTheme,
+    replaceAllSettings,
   } = useSettingsStore();
 
   const [newProviderName, setNewProviderName] = useState('');
@@ -116,6 +118,8 @@ export const SettingsScreen = () => {
   const [isEditingSystemPrompt, setIsEditingSystemPrompt] = useState(false);
   const [systemPromptDraft, setSystemPromptDraft] = useState(systemPrompt);
   const [activeView, setActiveView] = useState<SettingsView>('index');
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importPayloadText, setImportPayloadText] = useState('');
   const activeViewRef = useRef<SettingsView>('index');
 
   const closeAllEditModes = React.useCallback(() => {
@@ -639,6 +643,53 @@ export const SettingsScreen = () => {
     setActiveView(nextView);
   };
 
+  const handleExportSettings = async () => {
+    const settingsSnapshot = useSettingsStore.getState();
+    const payload = {
+      schema: 'mcp-connector-settings-v1',
+      exportedAt: new Date().toISOString(),
+      settings: {
+        providers: settingsSnapshot.providers,
+        mcpServers: settingsSnapshot.mcpServers,
+        systemPrompt: settingsSnapshot.systemPrompt,
+        theme: settingsSnapshot.theme,
+        lastUsedModel: settingsSnapshot.lastUsedModel,
+      },
+    };
+
+    await Clipboard.setStringAsync(JSON.stringify(payload, null, 2));
+    Alert.alert('Settings Exported', 'Settings JSON has been copied to your clipboard.');
+  };
+
+  const handleImportSettings = () => {
+    const raw = importPayloadText.trim();
+    if (!raw) {
+      Alert.alert('Import Error', 'Paste exported settings JSON first.');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const settings = parsed?.settings || parsed;
+
+      replaceAllSettings({
+        providers: settings?.providers,
+        mcpServers: settings?.mcpServers,
+        systemPrompt: settings?.systemPrompt,
+        theme: settings?.theme,
+        lastUsedModel: settings?.lastUsedModel,
+      });
+
+      setImportPayloadText('');
+      setImportModalVisible(false);
+      closeAllEditModes();
+      setActiveView('index');
+      Alert.alert('Settings Imported', 'Settings have been restored successfully.');
+    } catch {
+      Alert.alert('Import Error', 'Invalid JSON format. Please paste a valid exported payload.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topHeader}>
@@ -668,6 +719,19 @@ export const SettingsScreen = () => {
                 <ChevronRight size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             ))}
+
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Settings Backup</Text>
+              <Text style={styles.sectionHint}>Export or import full app settings (providers, MCP, visibility, theme).</Text>
+              <View style={styles.inlineInputs}>
+                <TouchableOpacity style={[styles.themePill, styles.themePillActive]} onPress={() => void handleExportSettings()}>
+                  <Text style={[styles.themePillText, styles.themePillTextActive]}>Export</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.themePill} onPress={() => setImportModalVisible(true)}>
+                  <Text style={styles.themePillText}>Import</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </>
         ) : null}
 
@@ -1372,6 +1436,38 @@ export const SettingsScreen = () => {
               />
             </View>
           </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={importModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Import Settings JSON</Text>
+              <TouchableOpacity onPress={() => setImportModalVisible(false)}>
+                <Text style={styles.modalClose}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              multiline
+              value={importPayloadText}
+              onChangeText={setImportPayloadText}
+              placeholder="Paste exported settings JSON..."
+              placeholderTextColor={colors.placeholder}
+            />
+
+            <TouchableOpacity style={styles.primaryButton} onPress={handleImportSettings}>
+              <Save size={16} color={colors.onPrimary} />
+              <Text style={styles.primaryButtonText}>Import Settings</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>

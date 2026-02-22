@@ -65,6 +65,7 @@ interface SettingsState extends AppSettings {
 
   updateSystemPrompt: (prompt: string) => void;
   setTheme: (theme: AppSettings['theme']) => void;
+  replaceAllSettings: (settings: Partial<AppSettings>) => void;
 }
 
 const normalizeProviderConfig = (provider: LlmProviderConfig): LlmProviderConfig => {
@@ -189,6 +190,38 @@ export const useSettingsStore = create<SettingsState>()(
       
       updateSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
       setTheme: (theme) => set({ theme }),
+      replaceAllSettings: (settings) =>
+        set(() => {
+          const nextProviders = Array.isArray(settings.providers)
+            ? settings.providers.map(normalizeProviderConfig)
+            : [];
+          const nextMcpServers = Array.isArray(settings.mcpServers)
+            ? settings.mcpServers.map(ensureMcpServerSecretRefs)
+            : [];
+
+          const nextTheme =
+            settings.theme === 'light' || settings.theme === 'dark' || settings.theme === 'system'
+              ? settings.theme
+              : 'system';
+
+          const nextLastUsedModel =
+            settings.lastUsedModel &&
+            typeof settings.lastUsedModel.providerId === 'string' &&
+            typeof settings.lastUsedModel.model === 'string'
+              ? settings.lastUsedModel
+              : null;
+
+          return {
+            providers: nextProviders,
+            mcpServers: nextMcpServers,
+            systemPrompt:
+              typeof settings.systemPrompt === 'string' && settings.systemPrompt.trim().length > 0
+                ? settings.systemPrompt
+                : 'You are a helpful AI assistant.',
+            theme: nextTheme,
+            lastUsedModel: nextLastUsedModel,
+          };
+        }),
     }),
     {
       name: 'settings-storage',

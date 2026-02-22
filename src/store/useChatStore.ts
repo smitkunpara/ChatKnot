@@ -180,6 +180,24 @@ export const useChatStore = create<ChatState>()(
     {
       name: 'chat-storage',
       storage: createJSONStorage(() => chatPersistStorage),
+      version: 2,
+      migrate: (persistedState: any) => {
+        if (!persistedState || typeof persistedState !== 'object') {
+          return {
+            conversations: [],
+            activeConversationId: null,
+            isLoading: false,
+          };
+        }
+
+        return {
+          conversations: Array.isArray(persistedState.conversations)
+            ? persistedState.conversations
+            : [],
+          activeConversationId: persistedState.activeConversationId || null,
+          isLoading: false,
+        };
+      },
     }
   )
 );
