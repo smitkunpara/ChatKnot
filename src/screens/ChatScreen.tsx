@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -854,12 +853,6 @@ export const ChatScreen = () => {
               contentContainerStyle={styles.listContent}
             />
 
-            {isLoading && (
-              <View style={styles.loadingIndicator}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.loadingText}>Running tools and composing response...</Text>
-              </View>
-            )}
           </>
         )}
 
@@ -935,23 +928,6 @@ const createStyles = (colors: any) =>
       color: colors.textSecondary,
       fontSize: 14,
       textAlign: 'center',
-    },
-    loadingIndicator: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-      marginHorizontal: 12,
-      marginBottom: 8,
-      borderRadius: 12,
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: 8,
-    },
-    loadingText: {
-      color: colors.textSecondary,
-      fontSize: 12,
     },
     errorBanner: {
       flexDirection: 'row',
