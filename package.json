@@ -1,12 +1,16 @@
 {
   "name": "mcp-connector-app",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "android:apk:release": "cd android && ./gradlew --no-daemon clean assembleRelease",
+    "android:aab:release": "cd android && ./gradlew --no-daemon clean bundleRelease",
+    "version:check": "node scripts/check-version-consistency.mjs",
+    "test": "node scripts/check-version-consistency.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
