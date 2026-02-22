@@ -113,7 +113,7 @@ const createStyles = (colors: any) =>
     userBubble: {
       backgroundColor: colors.userBubble,
       borderBottomRightRadius: 6,
-      borderColor: colors.subtleBorder,
+      borderColor: colors.primary,
     },
     assistantBubble: {
       backgroundColor: colors.assistantBubble,
@@ -124,7 +124,7 @@ const createStyles = (colors: any) =>
       width: '96%',
     },
     userText: {
-      color: colors.text,
+      color: colors.onPrimary,
       fontSize: 15,
       lineHeight: 22,
     },
