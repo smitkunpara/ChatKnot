@@ -744,8 +744,8 @@ export const ChatScreen = () => {
         {activeConversation && (
           <View style={styles.selectorWrapper}>
             <ModelSelector
-              activeProviderId={activeConversation.providerId}
-              activeModel={activeConversation.modelOverride || ''}
+              activeProviderId={modelResolution.selection?.providerId || activeConversation.providerId}
+              activeModel={modelResolution.selection?.model || activeConversation.modelOverride || ''}
               onSelect={(pid, model) => {
                 updateModelInConversation(activeConversation.id, pid, model);
                 setLastUsedModel(pid, model);

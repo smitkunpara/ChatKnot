@@ -101,4 +101,37 @@ describe('settings MCP validation flow', () => {
     expect(result.errorMessage).toBeNull();
     expect(result.drafts[server.id]).toBeUndefined();
   });
+
+  it('allows saving disabled servers without forcing endpoint validation', async () => {
+    const server = {
+      ...createServer(),
+      enabled: false,
+      url: 'https://broken.invalid-host',
+    };
+    const commit = jest.fn();
+    const drafts = beginServerDraft({}, server);
+    const validateEndpoint = jest.fn();
+
+    const result = await saveServerDraftWithValidation({
+      drafts,
+      server,
+      commit,
+      validateEndpoint,
+    });
+
+    expect(validateEndpoint).not.toHaveBeenCalled();
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith({
+      ...server,
+      name: 'Server One',
+      url: 'https://broken.invalid-host',
+      enabled: false,
+      headers: {
+        Authorization: 'Bearer persisted-token',
+      },
+    });
+    expect(result.error).toBeNull();
+    expect(result.errorMessage).toBeNull();
+    expect(result.drafts[server.id]).toBeUndefined();
+  });
 });

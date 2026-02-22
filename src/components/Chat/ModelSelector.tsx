@@ -9,6 +9,7 @@ import {
   getChatAvailableModels,
   resolveModelSelection,
 } from '../../services/llm/modelSelection';
+import { isModelOptionActive } from './modelSelectorState';
 
 interface ModelSelectorProps {
   activeProviderId: string;
@@ -104,7 +105,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 data={filteredModels}
                 keyExtractor={(item, index) => `${item.providerId}-${item.model}-${index}`}
                 renderItem={({ item }) => {
-                  const isActive = item.providerId === activeProviderId && item.model === activeModel;
+                  const isActive = isModelOptionActive({
+                    option: item,
+                    activeProviderId,
+                    activeModel,
+                    resolvedSelection: activeEntry,
+                  });
                   return (
                     <TouchableOpacity
                       style={[styles.item, isActive ? styles.activeItem : undefined]}

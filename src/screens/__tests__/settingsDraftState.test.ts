@@ -89,8 +89,10 @@ describe('settingsDraftState', () => {
 
     drafts = updateServerDraft(drafts, server.id, {
       url: 'https://draft-mcp.example.com',
-      headerKey: 'X-Api-Key',
-      headerValue: 'draft-header',
+      headers: [
+        { id: 'header-1', key: 'X-Api-Key', value: 'draft-header' },
+        { id: 'header-2', key: 'X-Trace', value: 'trace-123' },
+      ],
     });
 
     expect(server.url).toBe('https://mcp.example.com');
@@ -107,8 +109,11 @@ describe('settingsDraftState', () => {
     let drafts = beginServerDraft({}, server);
     drafts = updateServerDraft(drafts, server.id, {
       name: 'Edited Name',
-      headerKey: 'X-Token',
-      headerValue: 'token-123',
+      headers: [
+        { id: 'header-1', key: 'X-Token', value: 'token-123' },
+        { id: 'header-2', key: '', value: 'should-be-dropped' },
+        { id: 'header-3', key: 'X-Trace', value: 'trace-abc' },
+      ],
     });
 
     const nextDrafts = saveServerDraft(drafts, server, commit);
@@ -117,8 +122,23 @@ describe('settingsDraftState', () => {
     expect(commit).toHaveBeenCalledWith({
       ...server,
       name: 'Edited Name',
-      headers: { 'X-Token': 'token-123' },
+      headers: { 'X-Token': 'token-123', 'X-Trace': 'trace-abc' },
     });
     expect(nextDrafts[server.id]).toBeUndefined();
+  });
+
+  it('begins server draft with all existing headers, not just the first header', () => {
+    const server = createServer();
+    server.headers = {
+      Authorization: 'Bearer persisted-token',
+      'X-Api-Key': 'abc123',
+    };
+
+    const drafts = beginServerDraft({}, server);
+
+    expect(drafts[server.id]?.headers).toEqual([
+      { id: 'Authorization', key: 'Authorization', value: 'Bearer persisted-token' },
+      { id: 'X-Api-Key', key: 'X-Api-Key', value: 'abc123' },
+    ]);
   });
 });

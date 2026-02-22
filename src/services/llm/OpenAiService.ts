@@ -28,7 +28,7 @@ export class OpenAiService {
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.statusText}`);
+        throw new Error(`Failed to fetch models (${response.status}${response.statusText ? ` ${response.statusText}` : ''})`);
       }
 
       const data = await response.json();
@@ -37,7 +37,11 @@ export class OpenAiService {
       return supportedModels;
     } catch (error) {
       console.error('Error fetching models:', error);
-      return [];
+      if (error instanceof Error) {
+        throw new Error(`Unable to fetch models: ${error.message}`);
+      }
+
+      throw new Error('Unable to fetch models due to an unknown error.');
     }
   }
 

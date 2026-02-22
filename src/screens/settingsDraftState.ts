@@ -21,8 +21,13 @@ export interface McpServerDraft {
   name: string;
   url: string;
   enabled: boolean;
-  headerKey: string;
-  headerValue: string;
+  headers: McpServerHeaderDraft[];
+}
+
+export interface McpServerHeaderDraft {
+  id: string;
+  key: string;
+  value: string;
 }
 
 export type ProviderDraftMap = Record<string, ProviderDraft>;
@@ -32,13 +37,17 @@ const cloneHiddenModels = (hiddenModels?: string[]): string[] => {
   return Array.isArray(hiddenModels) ? [...hiddenModels] : [];
 };
 
-const getHeaderPair = (headers?: Record<string, string>): { headerKey: string; headerValue: string } => {
-  const firstEntry = Object.entries(headers || {})[0];
-  if (!firstEntry) {
-    return { headerKey: '', headerValue: '' };
+const getHeaderDrafts = (headers?: Record<string, string>): McpServerHeaderDraft[] => {
+  const entries = Object.entries(headers || {});
+  if (entries.length === 0) {
+    return [{ id: 'header-1', key: '', value: '' }];
   }
 
-  return { headerKey: firstEntry[0], headerValue: firstEntry[1] };
+  return entries.map(([key, value], index) => ({
+    id: key || `header-${index + 1}`,
+    key,
+    value,
+  }));
 };
 
 export const beginProviderDraft = (
@@ -109,16 +118,13 @@ export const beginServerDraft = (
   drafts: McpServerDraftMap,
   server: McpServerConfig
 ): McpServerDraftMap => {
-  const { headerKey, headerValue } = getHeaderPair(server.headers);
-
   return {
     ...drafts,
     [server.id]: {
       name: server.name,
       url: server.url,
       enabled: server.enabled,
-      headerKey,
-      headerValue,
+      headers: getHeaderDrafts(server.headers),
     },
   };
 };
@@ -138,6 +144,9 @@ export const updateServerDraft = (
     [serverId]: {
       ...currentDraft,
       ...patch,
+      headers: patch.headers
+        ? patch.headers.map(header => ({ ...header }))
+        : currentDraft.headers.map(header => ({ ...header })),
     },
   };
 };
@@ -149,13 +158,17 @@ export const discardServerDraft = (drafts: McpServerDraftMap, serverId: string):
 };
 
 const draftToHeaders = (draft: McpServerDraft): Record<string, string> => {
-  if (!draft.headerKey.trim()) {
-    return {};
+  const headers: Record<string, string> = {};
+  for (const header of draft.headers || []) {
+    const key = (header.key || '').trim();
+    if (!key) {
+      continue;
+    }
+
+    headers[key] = header.value || '';
   }
 
-  return {
-    [draft.headerKey.trim()]: draft.headerValue,
-  };
+  return headers;
 };
 
 export const saveServerDraft = (
@@ -215,6 +228,15 @@ export const saveServerDraftWithValidation = async (
     enabled: draft.enabled,
     headers: draftToHeaders(draft),
   };
+
+  if (!nextServer.enabled) {
+    commit(nextServer);
+    return {
+      drafts: discardServerDraft(drafts, server.id),
+      error: null,
+      errorMessage: null,
+    };
+  }
 
   const validateEndpoint = input.validateEndpoint || validateOpenApiEndpoint;
   const validation = await validateEndpoint({

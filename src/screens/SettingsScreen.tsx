@@ -363,6 +363,74 @@ export const SettingsScreen = () => {
     setValidatingServerId(null);
   };
 
+  const updateServerDraftHeader = (serverId: string, headerId: string, patch: { key?: string; value?: string }) => {
+    setServerDrafts(prev => {
+      const draft = prev[serverId];
+      if (!draft) {
+        return prev;
+      }
+
+      const nextHeaders = (draft.headers || []).map(header =>
+        header.id === headerId
+          ? {
+              ...header,
+              ...patch,
+            }
+          : header
+      );
+
+      return updateServerDraft(prev, serverId, {
+        headers: nextHeaders,
+      });
+    });
+  };
+
+  const addServerDraftHeader = (serverId: string) => {
+    setServerDrafts(prev => {
+      const draft = prev[serverId];
+      if (!draft) {
+        return prev;
+      }
+
+      return updateServerDraft(prev, serverId, {
+        headers: [
+          ...(draft.headers || []),
+          {
+            id: uuid.v4() as string,
+            key: '',
+            value: '',
+          },
+        ],
+      });
+    });
+  };
+
+  const removeServerDraftHeader = (serverId: string, headerId: string) => {
+    setServerDrafts(prev => {
+      const draft = prev[serverId];
+      if (!draft) {
+        return prev;
+      }
+
+      const existingHeaders = draft.headers || [];
+      if (existingHeaders.length <= 1) {
+        return updateServerDraft(prev, serverId, {
+          headers: [
+            {
+              ...(existingHeaders[0] || { id: uuid.v4() as string }),
+              key: '',
+              value: '',
+            },
+          ],
+        });
+      }
+
+      return updateServerDraft(prev, serverId, {
+        headers: existingHeaders.filter(header => header.id !== headerId),
+      });
+    });
+  };
+
   const openModelPicker = (provider: LlmProviderConfig) => {
     if (!editingProviders[provider.id]) {
       return;
@@ -676,9 +744,15 @@ export const SettingsScreen = () => {
                   name: serverDraft.name,
                   url: serverDraft.url,
                   enabled: serverDraft.enabled,
-                  headers: serverDraft.headerKey
-                    ? { [serverDraft.headerKey]: serverDraft.headerValue }
-                    : {},
+                  headers: (serverDraft.headers || []).reduce((acc, header) => {
+                    const key = (header.key || '').trim();
+                    if (!key) {
+                      return acc;
+                    }
+
+                    acc[key] = header.value || '';
+                    return acc;
+                  }, {} as Record<string, string>),
                 }
               : server;
 
@@ -804,29 +878,50 @@ export const SettingsScreen = () => {
                     placeholder="Server URL"
                     placeholderTextColor={colors.placeholder}
                   />
-                  <View style={styles.inlineInputs}>
-                    <TextInput
-                      style={[styles.input, styles.inlineInput]}
-                      value={serverDraft?.headerKey || ''}
-                      onChangeText={headerKey => {
-                        clearServerValidationError(server.id);
-                        setServerDrafts(prev => updateServerDraft(prev, server.id, { headerKey }));
-                      }}
-                      placeholder="Header Name"
-                      placeholderTextColor={colors.placeholder}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.inlineInput]}
-                      value={serverDraft?.headerValue || ''}
-                      onChangeText={headerValue => {
-                        clearServerValidationError(server.id);
-                        setServerDrafts(prev => updateServerDraft(prev, server.id, { headerValue }));
-                      }}
-                      placeholder="Header Value"
-                      placeholderTextColor={colors.placeholder}
-                      secureTextEntry
-                    />
-                  </View>
+                  {(serverDraft?.headers || []).map((header, headerIndex) => (
+                    <View key={`${server.id}-${header.id || headerIndex}`} style={styles.headerRow}>
+                      <TextInput
+                        style={[styles.input, styles.headerInput]}
+                        value={header.key}
+                        onChangeText={value => {
+                          clearServerValidationError(server.id);
+                          updateServerDraftHeader(server.id, header.id, { key: value });
+                        }}
+                        placeholder="Header Name"
+                        placeholderTextColor={colors.placeholder}
+                      />
+                      <TextInput
+                        style={[styles.input, styles.headerInput]}
+                        value={header.value}
+                        onChangeText={value => {
+                          clearServerValidationError(server.id);
+                          updateServerDraftHeader(server.id, header.id, { value });
+                        }}
+                        placeholder="Header Value"
+                        placeholderTextColor={colors.placeholder}
+                        secureTextEntry
+                      />
+                      <TouchableOpacity
+                        onPress={() => {
+                          clearServerValidationError(server.id);
+                          removeServerDraftHeader(server.id, header.id);
+                        }}
+                        style={styles.headerRemoveButton}
+                      >
+                        <Trash size={15} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <TouchableOpacity
+                    style={styles.addHeaderButton}
+                    onPress={() => {
+                      clearServerValidationError(server.id);
+                      addServerDraftHeader(server.id);
+                    }}
+                  >
+                    <Plus size={14} color={colors.primary} />
+                    <Text style={styles.addHeaderButtonText}>Add Header</Text>
+                  </TouchableOpacity>
 
                   {runtime?.securityHeaders?.length ? (
                     <Text style={styles.serverHint}>
@@ -1256,6 +1351,44 @@ const createStyles = (colors: any) =>
     inlineInputs: {
       flexDirection: 'row',
       gap: 8,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    headerInput: {
+      flex: 1,
+    },
+    headerRemoveButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 10,
+    },
+    addHeaderButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: -2,
+      marginBottom: 10,
+      alignSelf: 'flex-start',
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: colors.surfaceAlt,
+    },
+    addHeaderButtonText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '700',
     },
     inlineInput: {
       flex: 1,

@@ -19,9 +19,93 @@ export interface McpServerRuntimeState {
 
 class McpManagerService {
   private clients: Map<string, McpClient> = new Map();
-  private tools: Map<string, { tool: McpToolSchema, serverId: string }> = new Map();
+  private tools: Map<string, { tool: McpToolSchema; serverId: string; originalToolName: string }> = new Map();
+  private connectedToolsByServer: Map<string, McpToolSchema[]> = new Map();
   private runtimeStates: Map<string, McpServerRuntimeState> = new Map();
   private listeners: Set<(states: McpServerRuntimeState[]) => void> = new Set();
+
+  private sanitizeNamespace(serverName: string): string {
+    const normalized = (serverName || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return normalized || 'server';
+  }
+
+  private buildUniqueToolName(candidate: string, usedNames: Set<string>): string {
+    if (!usedNames.has(candidate)) {
+      return candidate;
+    }
+
+    let suffix = 2;
+    let next = `${candidate}_${suffix}`;
+    while (usedNames.has(next)) {
+      suffix += 1;
+      next = `${candidate}_${suffix}`;
+    }
+
+    return next;
+  }
+
+  private rebuildToolRegistry() {
+    this.tools.clear();
+
+    const rawNameCounts = new Map<string, number>();
+    this.connectedToolsByServer.forEach(serverTools => {
+      serverTools.forEach(tool => {
+        rawNameCounts.set(tool.name, (rawNameCounts.get(tool.name) || 0) + 1);
+      });
+    });
+
+    const usedNames = new Set<string>();
+    const toolNamesByServer = new Map<string, string[]>();
+
+    this.connectedToolsByServer.forEach((serverTools, serverId) => {
+      const runtime = this.runtimeStates.get(serverId);
+      const serverName = runtime?.serverName || serverId;
+      const namespace = this.sanitizeNamespace(serverName);
+      const exposedNames: string[] = [];
+
+      serverTools.forEach(tool => {
+        const hasCollision = (rawNameCounts.get(tool.name) || 0) > 1;
+        const candidateName = hasCollision ? `${namespace}.${tool.name}` : tool.name;
+        const exposedName = this.buildUniqueToolName(candidateName, usedNames);
+        usedNames.add(exposedName);
+
+        const exposedTool: McpToolSchema = {
+          ...tool,
+          name: exposedName,
+          description: hasCollision ? `[${serverName}] ${tool.description || tool.name}` : tool.description,
+        };
+
+        this.tools.set(exposedName, {
+          tool: exposedTool,
+          serverId,
+          originalToolName: tool.name,
+        });
+        exposedNames.push(exposedName);
+      });
+
+      toolNamesByServer.set(serverId, exposedNames);
+    });
+
+    this.runtimeStates.forEach((state, serverId) => {
+      if (state.status !== 'connected') {
+        return;
+      }
+
+      const serverToolNames = toolNamesByServer.get(serverId) || [];
+      this.runtimeStates.set(serverId, {
+        ...state,
+        toolsCount: serverToolNames.length,
+        toolNames: serverToolNames,
+      });
+    });
+
+    this.notify();
+  }
 
   private notify() {
     const snapshot = this.getRuntimeStates();
@@ -44,6 +128,7 @@ class McpManagerService {
     }
     this.clients.clear();
     this.tools.clear();
+    this.connectedToolsByServer.clear();
     this.runtimeStates.clear();
 
     configs.forEach(config => {
@@ -68,9 +153,7 @@ class McpManagerService {
         this.clients.set(config.id, client);
         
         const tools = client.getTools();
-        tools.forEach(tool => {
-          this.tools.set(tool.name, { tool, serverId: config.id });
-        });
+        this.connectedToolsByServer.set(config.id, tools);
 
         const protocol = client.getProtocol();
         const openApiMeta = client.getOpenApiMetadata();
@@ -80,17 +163,18 @@ class McpManagerService {
           enabled: true,
           status: 'connected',
           protocol,
-          toolsCount: tools.length,
-          toolNames: tools.map(tool => tool.name),
+          toolsCount: 0,
+          toolNames: [],
           instruction: client.getOpenApiContext() || undefined,
           openApiTitle: openApiMeta?.title,
           openApiVersion: openApiMeta?.version,
           openApiServerUrl: openApiMeta?.serverUrl,
           securityHeaders: openApiMeta?.securityHeaders || [],
         });
-        this.notify();
+        this.rebuildToolRegistry();
         console.log(`MCP Server ${config.name} connected with ${tools.length} tools.`);
       } catch (error) {
+        this.connectedToolsByServer.delete(config.id);
         this.runtimeStates.set(config.id, {
           serverId: config.id,
           serverName: config.name,
@@ -131,7 +215,7 @@ class McpManagerService {
       throw new Error(`MCP Client for tool ${name} not found`);
     }
 
-    return await client.callTool(name, args);
+    return await client.callTool(entry.originalToolName, args);
   }
 
   getRuntimeStates(): McpServerRuntimeState[] {
