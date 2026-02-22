@@ -432,6 +432,44 @@ export const SettingsScreen = () => {
     });
   };
 
+  const toggleServerDraftAllowedTool = (serverId: string, toolName: string, allToolNames: string[]) => {
+    setServerDrafts(prev => {
+      const draft = prev[serverId];
+      if (!draft) {
+        return prev;
+      }
+
+      const normalizedAllTools = Array.from(new Set(allToolNames.filter(Boolean)));
+      const currentAllowed = draft.allowedTools || [];
+      let nextAllowed: string[];
+
+      if (currentAllowed.length === 0) {
+        // Empty means all enabled; toggling once disables only this tool.
+        nextAllowed = normalizedAllTools.filter(name => name !== toolName);
+      } else if (currentAllowed.includes(toolName)) {
+        nextAllowed = currentAllowed.filter(name => name !== toolName);
+      } else {
+        nextAllowed = [...currentAllowed, toolName];
+      }
+
+      const dedupedAllowed = Array.from(new Set(nextAllowed));
+      const allEnabled =
+        normalizedAllTools.length > 0 &&
+        dedupedAllowed.length >= normalizedAllTools.length &&
+        normalizedAllTools.every(name => dedupedAllowed.includes(name));
+
+      if (allEnabled) {
+        nextAllowed = [];
+      } else {
+        nextAllowed = dedupedAllowed;
+      }
+
+      return updateServerDraft(prev, serverId, {
+        allowedTools: nextAllowed,
+      });
+    });
+  };
+
   const openModelPicker = (provider: LlmProviderConfig) => {
     if (!editingProviders[provider.id]) {
       return;
@@ -734,6 +772,8 @@ export const SettingsScreen = () => {
                   name: serverDraft.name,
                   url: serverDraft.url,
                   enabled: serverDraft.enabled,
+                  autoAllow: serverDraft.autoAllow,
+                  allowedTools: serverDraft.allowedTools,
                   headers: (serverDraft.headers || []).reduce((acc, header) => {
                     const key = (header.key || '').trim();
                     if (!key) {
@@ -757,6 +797,9 @@ export const SettingsScreen = () => {
                 : status === 'disabled'
                   ? 'Disabled'
                   : 'Connecting...';
+          const runtimeToolNames = Array.from(
+            new Set([...(runtime?.toolNames || []), ...(effectiveServer.allowedTools || [])])
+          );
 
           return (
             <View key={server.id} style={styles.sectionCard}>
@@ -868,6 +911,52 @@ export const SettingsScreen = () => {
                     placeholder="Server URL"
                     placeholderTextColor={colors.placeholder}
                   />
+
+                  <View style={styles.permissionRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.permissionTitle}>Auto Approve Tools</Text>
+                      <Text style={styles.permissionHint}>
+                        When off, tool calls require permission and chat will show an approval message.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={!!serverDraft?.autoAllow}
+                      onValueChange={autoAllow => {
+                        clearServerValidationError(server.id);
+                        setServerDrafts(prev => updateServerDraft(prev, server.id, { autoAllow }));
+                      }}
+                      trackColor={{ false: colors.border, true: colors.primarySoft }}
+                      thumbColor={serverDraft?.autoAllow ? colors.primary : colors.textTertiary}
+                    />
+                  </View>
+
+                  {runtimeToolNames.length > 0 ? (
+                    <View style={styles.toolPermissionWrap}>
+                      <Text style={styles.permissionTitle}>Enabled Tools</Text>
+                      {runtimeToolNames.map(toolName => {
+                        const allowedTools = serverDraft?.allowedTools || [];
+                        const isEnabled =
+                          allowedTools.length === 0 || allowedTools.includes(toolName);
+                        return (
+                          <View key={`${server.id}-tool-perm-${toolName}`} style={styles.toolPermissionRow}>
+                            <Text style={styles.toolPermissionName} numberOfLines={1}>
+                              {toolName}
+                            </Text>
+                            <Switch
+                              value={isEnabled}
+                              onValueChange={() => {
+                                clearServerValidationError(server.id);
+                                toggleServerDraftAllowedTool(server.id, toolName, runtimeToolNames);
+                              }}
+                              trackColor={{ false: colors.border, true: colors.primarySoft }}
+                              thumbColor={isEnabled ? colors.primary : colors.textTertiary}
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+
                   {(serverDraft?.headers || []).map((header, headerIndex) => (
                     <View key={`${server.id}-${header.id || headerIndex}`} style={styles.headerRow}>
                       <TextInput
@@ -1437,6 +1526,50 @@ const createStyles = (colors: any) =>
       fontSize: 12,
       marginBottom: 8,
       marginTop: -2,
+    },
+    permissionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      marginBottom: 10,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      backgroundColor: colors.surfaceAlt,
+    },
+    permissionTitle: {
+      color: colors.text,
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      marginBottom: 4,
+    },
+    permissionHint: {
+      color: colors.textSecondary,
+      fontSize: 12,
+    },
+    toolPermissionWrap: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      backgroundColor: colors.surfaceAlt,
+      padding: 10,
+      marginBottom: 10,
+      gap: 6,
+    },
+    toolPermissionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+      paddingVertical: 4,
+    },
+    toolPermissionName: {
+      color: colors.text,
+      fontSize: 12,
+      flex: 1,
     },
     toolTagWrap: {
       flexDirection: 'row',

@@ -21,6 +21,8 @@ export interface McpServerDraft {
   name: string;
   url: string;
   enabled: boolean;
+  autoAllow: boolean;
+  allowedTools: string[];
   headers: McpServerHeaderDraft[];
 }
 
@@ -124,6 +126,8 @@ export const beginServerDraft = (
       name: server.name,
       url: server.url,
       enabled: server.enabled,
+      autoAllow: server.autoAllow,
+      allowedTools: [...(server.allowedTools || [])],
       headers: getHeaderDrafts(server.headers),
     },
   };
@@ -144,6 +148,7 @@ export const updateServerDraft = (
     [serverId]: {
       ...currentDraft,
       ...patch,
+      allowedTools: patch.allowedTools ? [...patch.allowedTools] : [...(currentDraft.allowedTools || [])],
       headers: patch.headers
         ? patch.headers.map(header => ({ ...header }))
         : currentDraft.headers.map(header => ({ ...header })),
@@ -186,6 +191,8 @@ export const saveServerDraft = (
     name: draft.name,
     url: draft.url,
     enabled: draft.enabled,
+    autoAllow: draft.autoAllow,
+    allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
   });
 
@@ -226,6 +233,8 @@ export const saveServerDraftWithValidation = async (
     name: draft.name,
     url: draft.url,
     enabled: draft.enabled,
+    autoAllow: draft.autoAllow,
+    allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
   };
 

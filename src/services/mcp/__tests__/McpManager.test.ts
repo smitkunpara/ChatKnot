@@ -25,14 +25,18 @@ jest.mock('../McpClient', () => ({
   }),
 }));
 
-const createServer = (id: string, name: string): McpServerConfig => ({
+const createServer = (
+  id: string,
+  name: string,
+  options: Partial<Pick<McpServerConfig, 'autoAllow' | 'allowedTools'>> = {}
+): McpServerConfig => ({
   id,
   name,
   url: `https://${id}.example.com`,
   enabled: true,
   tools: [],
-  autoAllow: false,
-  allowedTools: [],
+  autoAllow: options.autoAllow ?? false,
+  allowedTools: options.allowedTools ?? [],
 });
 
 describe('McpManager', () => {
@@ -105,5 +109,58 @@ describe('McpManager', () => {
     const toolNames = McpManager.getTools().map(tool => tool.name).sort();
 
     expect(toolNames).toEqual(['fetch_users', 'search']);
+  });
+
+  it('exposes tool execution policy and blocks disabled tools', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'search',
+        description: 'Server A search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server', {
+        autoAllow: false,
+        allowedTools: ['other-tool'],
+      }),
+    ]);
+
+    const policy = McpManager.getToolExecutionPolicy('search');
+
+    expect(policy.found).toBe(true);
+    expect(policy.autoAllow).toBe(false);
+    expect(policy.enabled).toBe(false);
+
+    await expect(McpManager.executeTool('search', { query: 'status' })).rejects.toThrow(
+      'Tool search is disabled in MCP settings.'
+    );
+  });
+
+  it('treats empty allowedTools as all enabled', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'search',
+        description: 'Server A search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server', {
+        autoAllow: true,
+        allowedTools: [],
+      }),
+    ]);
+
+    const policy = McpManager.getToolExecutionPolicy('search');
+
+    expect(policy.found).toBe(true);
+    expect(policy.autoAllow).toBe(true);
+    expect(policy.enabled).toBe(true);
+
+    await McpManager.executeTool('search', { query: 'status' });
+    expect(clientsByServerId['server-a'].callTool).toHaveBeenCalledWith('search', { query: 'status' });
   });
 });

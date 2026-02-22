@@ -141,4 +141,26 @@ describe('settingsDraftState', () => {
       { id: 'X-Api-Key', key: 'X-Api-Key', value: 'abc123' },
     ]);
   });
+
+  it('persists auto-approve and allowed-tools policy when saving server draft', () => {
+    const server = createServer();
+    const commit = jest.fn();
+
+    let drafts = beginServerDraft({}, server);
+    drafts = updateServerDraft(drafts, server.id, {
+      autoAllow: true,
+      allowedTools: ['alpha.search', 'beta.lookup'],
+    });
+
+    const nextDrafts = saveServerDraft(drafts, server, commit);
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith({
+      ...server,
+      autoAllow: true,
+      allowedTools: ['alpha.search', 'beta.lookup'],
+      headers: { Authorization: 'Bearer persisted-token' },
+    });
+    expect(nextDrafts[server.id]).toBeUndefined();
+  });
 });

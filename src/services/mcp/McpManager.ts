@@ -1,6 +1,16 @@
 import { McpClient } from './McpClient';
 import { McpServerConfig, McpToolSchema } from '../../types';
 
+export interface McpToolExecutionPolicy {
+  found: boolean;
+  serverId?: string;
+  serverName?: string;
+  exposedToolName?: string;
+  originalToolName?: string;
+  enabled: boolean;
+  autoAllow: boolean;
+}
+
 export interface McpServerRuntimeState {
   serverId: string;
   serverName: string;
@@ -20,6 +30,7 @@ export interface McpServerRuntimeState {
 class McpManagerService {
   private clients: Map<string, McpClient> = new Map();
   private tools: Map<string, { tool: McpToolSchema; serverId: string; originalToolName: string }> = new Map();
+  private serverConfigs: Map<string, McpServerConfig> = new Map();
   private connectedToolsByServer: Map<string, McpToolSchema[]> = new Map();
   private runtimeStates: Map<string, McpServerRuntimeState> = new Map();
   private listeners: Set<(states: McpServerRuntimeState[]) => void> = new Set();
@@ -128,8 +139,13 @@ class McpManagerService {
     }
     this.clients.clear();
     this.tools.clear();
+    this.serverConfigs.clear();
     this.connectedToolsByServer.clear();
     this.runtimeStates.clear();
+
+    configs.forEach(config => {
+      this.serverConfigs.set(config.id, config);
+    });
 
     configs.forEach(config => {
       this.runtimeStates.set(config.id, {
@@ -205,17 +221,49 @@ class McpManagerService {
   }
 
   async executeTool(name: string, args: any): Promise<any> {
-    const entry = this.tools.get(name);
-    if (!entry) {
+    const policy = this.getToolExecutionPolicy(name);
+    if (!policy.found) {
       throw new Error(`Tool ${name} not found`);
     }
-    
-    const client = this.clients.get(entry.serverId);
+
+    if (!policy.enabled) {
+      throw new Error(`Tool ${name} is disabled in MCP settings.`);
+    }
+
+    const client = this.clients.get(policy.serverId!);
     if (!client) {
       throw new Error(`MCP Client for tool ${name} not found`);
     }
 
-    return await client.callTool(entry.originalToolName, args);
+    return await client.callTool(policy.originalToolName!, args);
+  }
+
+  getToolExecutionPolicy(name: string): McpToolExecutionPolicy {
+    const entry = this.tools.get(name);
+    if (!entry) {
+      return {
+        found: false,
+        enabled: false,
+        autoAllow: false,
+      };
+    }
+
+    const serverConfig = this.serverConfigs.get(entry.serverId);
+    const allowedTools = serverConfig?.allowedTools || [];
+    const enabled =
+      allowedTools.length === 0 ||
+      allowedTools.includes(entry.tool.name) ||
+      allowedTools.includes(entry.originalToolName);
+
+    return {
+      found: true,
+      serverId: entry.serverId,
+      serverName: serverConfig?.name,
+      exposedToolName: entry.tool.name,
+      originalToolName: entry.originalToolName,
+      enabled,
+      autoAllow: serverConfig?.autoAllow ?? false,
+    };
   }
 
   getRuntimeStates(): McpServerRuntimeState[] {

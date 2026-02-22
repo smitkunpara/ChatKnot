@@ -664,6 +664,53 @@ export const ChatScreen = () => {
         for (const call of toolQueue) {
           if (stopRequestedRef.current) break;
 
+          const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
+          if (!toolPolicy.found || !toolPolicy.enabled) {
+            const disabledMessage = `Tool \"${call.name}\" is disabled in MCP settings.`;
+            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+              error: disabledMessage,
+            });
+            addMessage(activeConversationId, {
+              role: 'tool',
+              content: JSON.stringify(
+                {
+                  error: 'TOOL_DISABLED',
+                  tool: call.name,
+                  message: disabledMessage,
+                },
+                null,
+                2
+              ),
+              toolCallId: call.id,
+            });
+            continue;
+          }
+
+          if (!toolPolicy.autoAllow) {
+            const permissionMessage = `Permission required for tool \"${call.name}\" on server \"${toolPolicy.serverName || toolPolicy.serverId}\". Enable Auto Approve in Settings to run this tool automatically.`;
+            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+              error: permissionMessage,
+            });
+            addMessage(activeConversationId, {
+              role: 'assistant',
+              content: permissionMessage,
+            });
+            addMessage(activeConversationId, {
+              role: 'tool',
+              content: JSON.stringify(
+                {
+                  error: 'TOOL_PERMISSION_REQUIRED',
+                  tool: call.name,
+                  message: permissionMessage,
+                },
+                null,
+                2
+              ),
+              toolCallId: call.id,
+            });
+            continue;
+          }
+
           updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'running');
           try {
             const parsedArgs = parseToolArguments(call.arguments, call.name);
