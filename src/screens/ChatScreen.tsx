@@ -530,7 +530,11 @@ export const ChatScreen = () => {
     for (let i = assistantIndex - 1; i >= 0; i -= 1) {
       const candidate = activeConversation.messages[i];
       if (candidate.role === 'user' && candidate.content?.trim()) {
-        void handleSend(candidate.content);
+        setChatError(null);
+        stopRequestedRef.current = false;
+        editMessage(activeConversationId, candidate.id, candidate.content);
+        setLoading(true);
+        void runChatLoop();
         return;
       }
     }
