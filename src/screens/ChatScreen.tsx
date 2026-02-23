@@ -717,7 +717,28 @@ export const ChatScreen = () => {
           if (stopRequestedRef.current) break;
 
           const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
-          if (!toolPolicy.found || !toolPolicy.enabled) {
+          if (!toolPolicy.found) {
+            const missingMessage = `Tool \"${call.name}\" is not available. Check MCP server connection or tool name.`;
+            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+              error: missingMessage,
+            });
+            addMessage(activeConversationId, {
+              role: 'tool',
+              content: JSON.stringify(
+                {
+                  error: 'TOOL_NOT_FOUND',
+                  tool: call.name,
+                  message: missingMessage,
+                },
+                null,
+                2
+              ),
+              toolCallId: call.id,
+            });
+            continue;
+          }
+
+          if (!toolPolicy.enabled) {
             const disabledMessage = `Tool \"${call.name}\" is disabled in MCP settings.`;
             updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
               error: disabledMessage,
