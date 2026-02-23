@@ -352,6 +352,7 @@ export const ChatScreen = () => {
   const activeConversationId = useChatStore(state => state.activeConversationId);
   const conversations = useChatStore(state => state.conversations);
   const isLoading = useChatStore(state => state.isLoading);
+  const createConversation = useChatStore(state => state.createConversation);
   const addMessage = useChatStore(state => state.addMessage);
   const updateMessage = useChatStore(state => state.updateMessage);
   const editMessage = useChatStore(state => state.editMessage);
@@ -541,7 +542,26 @@ export const ChatScreen = () => {
   };
 
   const handleSend = async (text: string) => {
-    if (!activeConversationId) return;
+    let conversationId = activeConversationId;
+
+    if (!conversationId) {
+      if (!modelResolution.selection) {
+        setChatError(noModelAvailableMessage || CHAT_NO_MODEL_AVAILABLE_MESSAGE);
+        return;
+      }
+
+      createConversation(
+        modelResolution.selection.providerId,
+        systemPrompt || 'You are a helpful AI assistant.',
+        modelResolution.selection.model
+      );
+
+      conversationId = useChatStore.getState().activeConversationId;
+      if (!conversationId) {
+        setChatError('Unable to initialize a new conversation.');
+        return;
+      }
+    }
 
     if (!modelResolution.selection) {
       setChatError(noModelAvailableMessage || CHAT_NO_MODEL_AVAILABLE_MESSAGE);
@@ -552,11 +572,11 @@ export const ChatScreen = () => {
     stopRequestedRef.current = false;
 
     if (editingMessageId) {
-      editMessage(activeConversationId, editingMessageId, text);
+      editMessage(conversationId, editingMessageId, text);
       setEditingMessageId(null);
       setEditingContent(undefined);
     } else {
-      addMessage(activeConversationId, { role: 'user', content: text });
+      addMessage(conversationId, { role: 'user', content: text });
     }
 
     setLoading(true);

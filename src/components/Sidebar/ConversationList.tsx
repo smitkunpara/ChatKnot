@@ -10,9 +10,7 @@ import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageSquare, PlusCircle, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
 import { useChatStore } from '../../store/useChatStore';
-import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { resolveModelSelection } from '../../services/llm/modelSelection';
 import {
   getSidebarConversationLabel,
   getSidebarNewChatCtaLabel,
@@ -24,27 +22,11 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const conversations = useChatStore(state => state.conversations);
   const activeId = useChatStore(state => state.activeConversationId);
   const setActive = useChatStore(state => state.setActiveConversation);
-  const createNew = useChatStore(state => state.createConversation);
   const deleteConversation = useChatStore(state => state.deleteConversation);
-
-  const providers = useSettingsStore(state => state.providers);
-  const systemPrompt = useSettingsStore(state => state.systemPrompt);
-  const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const newChatLabel = getSidebarNewChatCtaLabel();
 
   const handleCreateConversation = () => {
-    const modelResolution = resolveModelSelection({
-      providers,
-      selectedProviderId: '',
-      selectedModel: '',
-      lastUsedModel,
-    });
-
-    createNew(
-      modelResolution.selection?.providerId || '',
-      systemPrompt || 'You are a helpful assistant.',
-      modelResolution.selection?.model
-    );
+    setActive(null);
     props.navigation.navigate('Chat');
     props.navigation.closeDrawer();
   };

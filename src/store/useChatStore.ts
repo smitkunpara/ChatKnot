@@ -16,7 +16,7 @@ interface ChatState {
   isLoading: boolean;
   
   createConversation: (providerId: string, systemPrompt: string, modelOverride?: string) => void;
-  setActiveConversation: (id: string) => void;
+  setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
   updateProviderInConversation: (conversationId: string, providerId: string) => void;
   updateModelInConversation: (conversationId: string, providerId: string, model: string) => void;
