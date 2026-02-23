@@ -97,6 +97,7 @@ export const SettingsScreen = () => {
   const [newProviderName, setNewProviderName] = useState('');
   const [newBaseUrl, setNewBaseUrl] = useState('https://api.openai.com/v1');
   const [newApiKey, setNewApiKey] = useState('');
+  const [isValidatingNewProvider, setIsValidatingNewProvider] = useState(false);
   const [newMcpName, setNewMcpName] = useState('');
   const [newMcpUrl, setNewMcpUrl] = useState('');
   const [newMcpHeaderName, setNewMcpHeaderName] = useState('');
@@ -192,11 +193,12 @@ export const SettingsScreen = () => {
     }
   }, [isEditingSystemPrompt, systemPrompt]);
 
-  const handleAddProvider = () => {
+  const handleAddProvider = async () => {
     if (!newProviderName.trim() || !newBaseUrl.trim()) {
       Alert.alert('Missing fields', 'Provider name and base URL are required.');
       return;
     }
+
     const provider: LlmProviderConfig = {
       id: uuid.v4() as string,
       name: newProviderName.trim(),
@@ -208,11 +210,36 @@ export const SettingsScreen = () => {
       hiddenModels: [],
       enabled: true,
     };
-    addProvider(provider);
-    setNewProviderName('');
-    setNewBaseUrl('https://api.openai.com/v1');
-    setNewApiKey('');
-    if (provider.apiKey) fetchModels(provider, { persistProvider: true });
+
+    setIsValidatingNewProvider(true);
+    try {
+      const validationService = new OpenAiService(provider);
+      const models = await validationService.listModels();
+
+      if (!models.length) {
+        Alert.alert('Invalid Provider', 'No compatible text models found at this endpoint.');
+        setIsValidatingNewProvider(false);
+        return;
+      }
+
+      const providerWithModels = {
+        ...provider,
+        availableModels: models,
+        model: models[0],
+      };
+
+      addProvider(providerWithModels);
+      setNewProviderName('');
+      setNewBaseUrl('https://api.openai.com/v1');
+      setNewApiKey('');
+    } catch (error: any) {
+      Alert.alert(
+        'Provider Validation Failed',
+        error?.message || 'This endpoint is not OpenAI-compatible or credentials are invalid.'
+      );
+    } finally {
+      setIsValidatingNewProvider(false);
+    }
   };
 
   const clearServerValidationError = (serverId: string) => {
@@ -847,8 +874,18 @@ export const SettingsScreen = () => {
                 placeholderTextColor={colors.placeholder}
                 secureTextEntry
               />
-              <TouchableOpacity style={styles.primaryButton} onPress={handleAddProvider}>
-                <Plus size={18} color={colors.onPrimary} />
+              <TouchableOpacity
+                style={[styles.primaryButton, isValidatingNewProvider ? styles.primaryButtonDisabled : undefined]}
+                onPress={() => {
+                  void handleAddProvider();
+                }}
+                disabled={isValidatingNewProvider}
+              >
+                {isValidatingNewProvider ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Plus size={18} color={colors.onPrimary} />
+                )}
                 <Text style={styles.primaryButtonText}>Add Provider</Text>
               </TouchableOpacity>
             </View>
