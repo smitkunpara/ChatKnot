@@ -235,7 +235,7 @@ export const ChatScreen = () => {
         stopRequestedRef.current = false;
         editMessage(activeConversationId, candidate.id, candidate.content);
         setLoading(true);
-        void runChatLoop();
+        void runChatLoop(activeConversationId);
         return;
       }
     }
@@ -280,11 +280,11 @@ export const ChatScreen = () => {
     }
 
     setLoading(true);
-    await runChatLoop();
+    await runChatLoop(conversationId);
   };
 
-  const runChatLoop = async () => {
-    if (!activeConversationId) return;
+  const runChatLoop = async (conversationId: string) => {
+    if (!conversationId) return;
 
     let hasFinalAnswer = false;
     let maxIterationsReached = false;
@@ -295,7 +295,7 @@ export const ChatScreen = () => {
 
         const currentConv = useChatStore
           .getState()
-          .conversations.find(c => c.id === activeConversationId);
+          .conversations.find(c => c.id === conversationId);
         if (!currentConv) break;
 
         const settingsState = useSettingsStore.getState();
@@ -352,7 +352,7 @@ export const ChatScreen = () => {
         }));
 
         const assistantMsgId = uuid.v4() as string;
-        addMessage(activeConversationId, { id: assistantMsgId, role: 'assistant', content: '' });
+        addMessage(conversationId, { id: assistantMsgId, role: 'assistant', content: '' });
 
         const finalSystemPrompt = buildEffectiveSystemPrompt({
           conversationPrompt: currentConv.systemPrompt,
@@ -372,7 +372,7 @@ export const ChatScreen = () => {
               (chunk) => {
                 if (!chunk) return;
                 streamedContent += chunk;
-                updateMessage(activeConversationId, assistantMsgId, streamedContent);
+                updateMessage(conversationId, assistantMsgId, streamedContent);
               },
               (fullContent, fullToolCalls) =>
                 resolve({ fullContent: fullContent ?? streamedContent, toolCalls: fullToolCalls }),
@@ -386,7 +386,7 @@ export const ChatScreen = () => {
         if (stopRequestedRef.current) break;
 
         const assistantText = (result.fullContent || streamedContent || '').trim();
-        updateMessage(activeConversationId, assistantMsgId, assistantText);
+        updateMessage(conversationId, assistantMsgId, assistantText);
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
         let toolCalls = normalizeToolCalls(result.toolCalls);
@@ -397,7 +397,7 @@ export const ChatScreen = () => {
           if (xmlToolCalls.length > 0) {
             toolCalls = xmlToolCalls;
             const cleanedAssistantText = stripLegacyStructuredToolCalls(assistantText);
-            updateMessage(activeConversationId, assistantMsgId, cleanedAssistantText);
+            updateMessage(conversationId, assistantMsgId, cleanedAssistantText);
           }
 
           if (toolCalls.length === 0) {
@@ -405,14 +405,14 @@ export const ChatScreen = () => {
             if (jsonToolCalls.length > 0) {
               toolCalls = jsonToolCalls;
               const cleanedAssistantText = stripLegacyStructuredToolCalls(assistantText);
-              updateMessage(activeConversationId, assistantMsgId, cleanedAssistantText);
+              updateMessage(conversationId, assistantMsgId, cleanedAssistantText);
             }
           }
         }
 
         if (toolCalls.length === 0) {
           if (assistantText.length === 0) {
-            updateMessage(activeConversationId, assistantMsgId, 'I received an empty response from the model.');
+            updateMessage(conversationId, assistantMsgId, 'I received an empty response from the model.');
             setChatError('Model returned an empty response.');
           } else {
             hasFinalAnswer = true;
@@ -429,7 +429,7 @@ export const ChatScreen = () => {
             arguments: call.arguments,
             status: 'pending',
           };
-          addToolCall(activeConversationId, assistantMsgId, toolCall);
+          addToolCall(conversationId, assistantMsgId, toolCall);
         }
 
         // Execute captured tool calls strictly in sequence, then continue with next LLM turn.
@@ -439,10 +439,10 @@ export const ChatScreen = () => {
           const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
           if (!toolPolicy.found) {
             const missingMessage = `Tool \"${call.name}\" is not available. Check MCP server connection or tool name.`;
-            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+            updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: missingMessage,
             });
-            addMessage(activeConversationId, {
+            addMessage(conversationId, {
               role: 'tool',
               content: JSON.stringify(
                 {
@@ -460,10 +460,10 @@ export const ChatScreen = () => {
 
           if (!toolPolicy.enabled) {
             const disabledMessage = `Tool \"${call.name}\" is disabled in MCP settings.`;
-            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+            updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: disabledMessage,
             });
-            addMessage(activeConversationId, {
+            addMessage(conversationId, {
               role: 'tool',
               content: JSON.stringify(
                 {
@@ -483,10 +483,10 @@ export const ChatScreen = () => {
             const approved = await waitForInlineToolApproval(call.id);
             if (!approved) {
               const deniedMessage = `User denied permission for tool \"${call.name}\".`;
-              updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+              updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
                 error: deniedMessage,
               });
-              addMessage(activeConversationId, {
+              addMessage(conversationId, {
                 role: 'tool',
                 content: JSON.stringify(
                   {
@@ -503,16 +503,16 @@ export const ChatScreen = () => {
             }
           }
 
-          updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'running');
+          updateToolCallStatus(conversationId, assistantMsgId, call.id, 'running');
           try {
             const parsedArgs = parseToolArguments(call.arguments, call.name);
             const toolResult = await McpManager.executeTool(call.name, parsedArgs);
             const resultStr = serializeToolResult(toolResult);
 
-            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'completed', {
+            updateToolCallStatus(conversationId, assistantMsgId, call.id, 'completed', {
               result: resultStr,
             });
-            addMessage(activeConversationId, {
+            addMessage(conversationId, {
               role: 'tool',
               content: resultStr,
               toolCallId: call.id,
@@ -520,10 +520,10 @@ export const ChatScreen = () => {
           } catch (error: any) {
             const errorStr = getErrorMessage(error);
 
-            updateToolCallStatus(activeConversationId, assistantMsgId, call.id, 'failed', {
+            updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: errorStr,
             });
-            addMessage(activeConversationId, {
+            addMessage(conversationId, {
               role: 'tool',
               content: JSON.stringify(
                 {
@@ -547,8 +547,8 @@ export const ChatScreen = () => {
       const message = getErrorMessage(error);
       if (!stopRequestedRef.current) {
         setChatError(message);
-        if (activeConversationId) {
-          addMessage(activeConversationId, {
+        if (conversationId) {
+          addMessage(conversationId, {
             role: 'assistant',
             content: `I ran into an error while processing your request: ${message}`,
           });
@@ -559,14 +559,14 @@ export const ChatScreen = () => {
       clearPendingToolApprovals(false);
       setLoading(false);
 
-      if (!stopRequestedRef.current && !hasFinalAnswer && maxIterationsReached && activeConversationId) {
-        const conversation = useChatStore.getState().conversations.find(c => c.id === activeConversationId);
+      if (!stopRequestedRef.current && !hasFinalAnswer && maxIterationsReached && conversationId) {
+        const conversation = useChatStore.getState().conversations.find(c => c.id === conversationId);
         const lastAssistant = [...(conversation?.messages || [])]
           .reverse()
           .find(message => message.role === 'assistant');
 
         if (lastAssistant && !lastAssistant.content?.trim()) {
-          updateMessage(activeConversationId, lastAssistant.id, FALLBACK_FINAL_TEXT);
+          updateMessage(conversationId, lastAssistant.id, FALLBACK_FINAL_TEXT);
         }
         setChatError(`Stopped after ${MAX_TOOL_ITERATIONS} tool rounds without a final text response.`);
       }
