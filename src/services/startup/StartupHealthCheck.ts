@@ -208,7 +208,12 @@ export async function runStartupHealthCheck(
 
 /**
  * Apply the health check findings to the stores.
- * Only mutates settings for servers/providers that actually changed.
+ * Rules:
+ *  - New AI models: hidden by default (only user can make visible)
+ *  - Removed AI models: removed from visible list silently
+ *  - New MCP tools: enabled by default, NOT auto-approved
+ *  - User-disabled tools: NOT re-enabled
+ *  - Existing settings preserved — only new items get defaults
  */
 export function applyHealthCheckReport(
   report: HealthCheckReport,
@@ -233,10 +238,18 @@ export function applyHealthCheckReport(
     const server = servers.find(s => s.id === mcpResult.serverId);
     if (!server) continue;
 
-    // Clean up allowedTools and autoApprovedTools for removed tools
     const removedSet = new Set(mcpResult.removedTools);
+    const oldToolNames = new Set((server.tools || []).map(t => t.name));
+
+    // Preserve existing allowedTools/autoApprovedTools for tools that still exist
+    // Remove entries for tools that were removed from the server
     const cleanedAllowed = (server.allowedTools || []).filter(t => !removedSet.has(t));
     const cleanedAutoApproved = (server.autoApprovedTools || []).filter(t => !removedSet.has(t));
+
+    // New tools (present in current, absent from old): enable by default, do NOT auto-approve
+    // "Enable by default" means: do NOT add to allowedTools blocklist
+    // "Do NOT auto-approve" means: do NOT add to autoApprovedTools
+    // User-disabled tools remain disabled because we preserved their allowedTools entries above
 
     updateMcpServer({
       ...server,
@@ -245,38 +258,50 @@ export function applyHealthCheckReport(
     });
   }
 
-  // Update AI provider available models and clean hidden models for removed ones
+  // Update AI provider available models
   for (const aiResult of report.aiResults) {
     if (!aiResult.reachable) continue;
 
     const provider = providers.find(p => p.id === aiResult.providerId);
     if (!provider) continue;
 
-    const prevModels = provider.availableModels || [];
-    const prevModelSet = new Set(prevModels);
-    const newModelSet = new Set(aiResult.currentModels);
+    const prevModels = new Set(provider.availableModels || []);
+    const currentModels = aiResult.currentModels;
+    const currentModelSet = new Set(currentModels);
 
-    // Only update if there's actually a difference
+    // Check if model list actually changed
     const hasChange =
-      prevModels.length !== aiResult.currentModels.length ||
-      prevModels.some(m => !newModelSet.has(m));
+      prevModels.size !== currentModelSet.size ||
+      [...prevModels].some(m => !currentModelSet.has(m));
 
-    if (hasChange) {
-      updateProvider({
-        ...provider,
-        availableModels: aiResult.currentModels,
-      });
+    if (!hasChange) continue;
+
+    // New models not previously known: hide by default
+    const newModels = currentModels.filter(m => !prevModels.has(m));
+    const hiddenModels = new Set(provider.hiddenModels || []);
+
+    // Add all new models to hidden list (user must explicitly unhide)
+    for (const model of newModels) {
+      hiddenModels.add(model);
     }
 
-    // Remove hidden model entries for models that no longer exist
-    if (aiResult.removedModels.length > 0) {
-      for (const removedModel of aiResult.removedModels) {
-        const isHidden = (provider.hiddenModels || []).includes(removedModel);
-        if (!isHidden) {
-          // Was visible and is now gone — make sure it's removed from visible list
-          setModelVisibility(aiResult.providerId, removedModel, false);
-        }
+    // Removed models: clean from hidden list (no longer relevant)
+    const removedModels = [...prevModels].filter(m => !currentModelSet.has(m));
+    for (const model of removedModels) {
+      hiddenModels.delete(model);
+    }
+
+    // Also clean hidden entries for models that no longer exist at all
+    for (const model of hiddenModels) {
+      if (!currentModelSet.has(model)) {
+        hiddenModels.delete(model);
       }
     }
+
+    updateProvider({
+      ...provider,
+      availableModels: currentModels,
+      hiddenModels: Array.from(hiddenModels),
+    });
   }
 }
