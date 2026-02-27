@@ -78,3 +78,4 @@ logs
 # generated native folders (uncomment if you want to ignore them)
 # /ios
 # /android
+.github

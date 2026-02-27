@@ -424,11 +424,9 @@ export const ChatScreen = () => {
     [providers, activeConversation?.providerId, activeConversation?.modelOverride, lastUsedModel]
   );
 
-  const noModelAvailableMessage = activeConversation
-    ? modelResolution.selection
-      ? null
-      : modelResolution.message || CHAT_NO_MODEL_AVAILABLE_MESSAGE
-    : null;
+  const noModelAvailableMessage = modelResolution.selection
+    ? null
+    : modelResolution.message || CHAT_NO_MODEL_AVAILABLE_MESSAGE;
 
   const lastAssistantMessageId = useMemo(() => {
     if (!activeConversation?.messages) return null;
@@ -881,18 +879,18 @@ export const ChatScreen = () => {
         <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
           <Menu size={20} color={colors.text} />
         </TouchableOpacity>
-        {activeConversation && (
-          <View style={styles.selectorWrapper}>
-            <ModelSelector
-              activeProviderId={modelResolution.selection?.providerId || activeConversation.providerId}
-              activeModel={modelResolution.selection?.model || activeConversation.modelOverride || ''}
-              onSelect={(pid, model) => {
+        <View style={styles.selectorWrapper}>
+          <ModelSelector
+            activeProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
+            activeModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
+            onSelect={(pid, model) => {
+              if (activeConversation) {
                 updateModelInConversation(activeConversation.id, pid, model);
-                setLastUsedModel(pid, model);
-              }}
-            />
-          </View>
-        )}
+              }
+              setLastUsedModel(pid, model);
+            }}
+          />
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -902,8 +900,8 @@ export const ChatScreen = () => {
       >
         {!activeConversation ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No Conversation Selected</Text>
-            <Text style={styles.emptyText}>Open the sidebar and start a new chat.</Text>
+            <Text style={styles.emptyTitle}>Start a new chat</Text>
+            <Text style={styles.emptyText}>Select a model above and type your message below.</Text>
           </View>
         ) : (
           <>
