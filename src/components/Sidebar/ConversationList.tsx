@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -18,7 +18,7 @@ import {
 
 export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const conversations = useChatStore(state => state.conversations);
   const activeId = useChatStore(state => state.activeConversationId);
   const setActive = useChatStore(state => state.setActiveConversation);

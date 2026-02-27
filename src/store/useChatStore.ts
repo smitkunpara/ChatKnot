@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { Message, Conversation, ToolCall } from '../types';

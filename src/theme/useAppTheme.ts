@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 import { DarkTheme, DefaultTheme } from '@react-navigation/native';
@@ -36,6 +35,8 @@ export interface AppPalette {
   toolCardHeader: string;
   codeBackground: string;
   link: string;
+  warning: string;
+  warningBackground: string;
 }
 
 const darkPalette: AppPalette = {
@@ -67,6 +68,8 @@ const darkPalette: AppPalette = {
   toolCardHeader: '#141417',
   codeBackground: '#0a0a0c',
   link: '#34d399',
+  warning: '#856404',
+  warningBackground: '#FFF3CD',
 };
 
 const lightPalette: AppPalette = {
@@ -98,6 +101,8 @@ const lightPalette: AppPalette = {
   toolCardHeader: '#eef0f4',
   codeBackground: '#f0f2f5',
   link: '#0a7a54',
+  warning: '#856404',
+  warningBackground: '#FFF3CD',
 };
 
 export const getPalette = (mode: ResolvedTheme): AppPalette =>

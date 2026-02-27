@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Brain, Check, ChevronDown, Search } from 'lucide-react-native';
@@ -23,7 +22,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onSelect,
 }) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState('');
 

@@ -1,5 +1,4 @@
-// @ts-nocheck
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
@@ -41,7 +40,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onRetryAssistant,
 }) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const markdownStyles = createMarkdownStyles(colors);
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';

@@ -27,7 +27,7 @@ export const ToolCall: React.FC<ToolCallProps> = ({
   onDeny,
 }) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [expanded, setExpanded] = useState(false);
 
   const statusMeta = useMemo(() => {

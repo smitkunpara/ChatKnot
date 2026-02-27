@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { LlmProviderConfig, Message } from '../../types';
 import { filterModelsForTextOutput } from './modelFilter';
 
@@ -64,7 +63,7 @@ export class OpenAiService {
             content: hasToolCalls && m.role === 'assistant' ? (m.content?.trim() ? m.content : null) : (m.content || ''),
           };
           if (hasToolCalls) {
-            msg.tool_calls = m.toolCalls.map(tc => ({
+            msg.tool_calls = m.toolCalls!.map(tc => ({
               id: tc.id,
               type: 'function',
               function: {
