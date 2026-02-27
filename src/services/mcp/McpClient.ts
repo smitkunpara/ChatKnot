@@ -137,7 +137,7 @@ export class McpClient {
         tools: { listChanged: true },
       },
       clientInfo: {
-        name: 'mcp-connector-app',
+        name: 'chatknot',
         version: '1.0.0',
       }
     });

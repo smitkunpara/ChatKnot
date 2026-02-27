@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mcp-connector-app",
-    "slug": "mcp-connector-app",
+    "name": "chatknot",
+    "slug": "chatknot",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

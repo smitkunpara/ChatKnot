@@ -1,4 +1,4 @@
-# MCP Connector App
+# ChatKnot
 
 A React Native (Expo bare workflow) mobile app for chatting with LLM providers and connecting MCP/OpenAPI tools.
 
@@ -207,3 +207,24 @@ npm run android:aab:release
 
 This branch contains release-hardening + UX updates for `0.1.0`.
 If you plan to ship to Play Store, build AAB with production keystore credentials.
+
+## TODO - Previous Tasks Checklist
+
+- [x] Build final APK as version 0.1.0 with release signing
+- [x] Implement encrypted secure storage (MMKV + Android Keystore)
+- [x] Add sidebar IST date-time labels for conversations
+- [x] Add model visibility eye toggles in Settings
+- [x] Implement Settings edit/save draft flow (no accidental autosave)
+- [x] Add OpenAPI endpoint validation on save
+- [x] Implement keyboard-safe forms
+- [x] Add startup health checks with loading screen
+- [x] Show model selector in composer mode (always visible)
+- [x] Implement safe defaults for new models/tools
+- [x] Fix JSON import modal scrolling + add post-import validation
+- [x] Remove unused dependencies (axios, react-native-polyfill-globals)
+- [x] Code refactoring: extract shared helpers and tool parsing utils
+- [x] Remove @ts-nocheck from all source files
+- [x] Memoize createStyles to prevent re-creation on every render
+- [x] Rename app to "ChatKnot"
+- [x] Update app icon to logo.png
+- [ ] Build final release APK with new icon

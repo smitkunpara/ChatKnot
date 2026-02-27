@@ -1,4 +1,4 @@
-# MCP Connector App — v0.1.0 Release Notes
+# ChatKnot — v0.1.0 Release Notes
 
 **Release Date:** 2026-02-27  
 **Version:** 0.1.0 (versionCode 1)  
@@ -6,9 +6,9 @@
 
 ---
 
-## What is MCP Connector?
+## What is ChatKnot?
 
-MCP Connector is a mobile AI chat application that supports multiple OpenAI-compatible providers and integrates with MCP (Model Context Protocol) servers for tool-augmented conversations. It runs entirely on-device with encrypted local storage — no cloud dependency.
+ChatKnot is a mobile AI chat application that supports multiple OpenAI-compatible providers and integrates with MCP (Model Context Protocol) servers for tool-augmented conversations. It runs entirely on-device with encrypted local storage — no cloud dependency.
 
 ---
 
