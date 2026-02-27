@@ -3,44 +3,6 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
-def releaseKeystoreProperties = new Properties()
-def releaseKeystoreFile = rootProject.file('key.properties')
-if (releaseKeystoreFile.exists()) {
-    releaseKeystoreFile.withInputStream { stream ->
-        releaseKeystoreProperties.load(stream)
-    }
-}
-
-def resolveSigningValue = { List<String> propertyNames, String envName ->
-    for (String propertyName : propertyNames) {
-        def gradleValue = findProperty(propertyName)
-        if (gradleValue != null && gradleValue.toString().trim()) {
-            return gradleValue.toString().trim()
-        }
-
-        def keyFileValue = releaseKeystoreProperties.getProperty(propertyName)
-        if (keyFileValue != null && keyFileValue.toString().trim()) {
-            return keyFileValue.toString().trim()
-        }
-    }
-
-    def envValue = System.getenv(envName)
-    if (envValue != null && envValue.toString().trim()) {
-        return envValue.toString().trim()
-    }
-
-    return null
-}
-
-def releaseStoreFilePath = resolveSigningValue(['RELEASE_STORE_FILE', 'storeFile'], 'RELEASE_STORE_FILE')
-def releaseStorePassword = resolveSigningValue(['RELEASE_STORE_PASSWORD', 'storePassword'], 'RELEASE_STORE_PASSWORD')
-def releaseKeyAlias = resolveSigningValue(['RELEASE_KEY_ALIAS', 'keyAlias'], 'RELEASE_KEY_ALIAS')
-def releaseKeyPassword = resolveSigningValue(['RELEASE_KEY_PASSWORD', 'keyPassword'], 'RELEASE_KEY_PASSWORD')
-def hasReleaseSigning =
-    releaseStoreFilePath &&
-    releaseStorePassword &&
-    releaseKeyAlias &&
-    releaseKeyPassword
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -142,24 +104,15 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        if (hasReleaseSigning) {
-            release {
-                storeFile file(releaseStoreFilePath)
-                storePassword releaseStorePassword
-                keyAlias releaseKeyAlias
-                keyPassword releaseKeyPassword
-            }
-        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            if (hasReleaseSigning) {
-                signingConfig signingConfigs.release
-            }
-
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
@@ -176,18 +129,6 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
-    }
-}
-
-gradle.taskGraph.whenReady { taskGraph ->
-    def requiresReleaseSigning = taskGraph.allTasks.any { task ->
-        task.name.toLowerCase().contains('release')
-    }
-
-    if (requiresReleaseSigning && !hasReleaseSigning) {
-        throw new GradleException(
-            'Missing release signing configuration. Provide android/key.properties (see android/key.properties.example) or set RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD.'
-        )
     }
 }
 
