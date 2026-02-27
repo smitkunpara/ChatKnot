@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-dismiss error banners after 3 seconds
 - Empty assistant bubble suppression on interrupted responses
 
+### Fixed
+- Resolved issue where sending the first message in a new chat failed to trigger the AI response loop due to missing conversationId propagation.
+- Corrected native Worklets version mismatch for Reanimated 4 compatibility on Android.
+
 #### Model Management
 - Multi-provider model fetching via `/models` endpoint
 - Per-model visibility toggle (eye icon) in Settings — hidden by default
