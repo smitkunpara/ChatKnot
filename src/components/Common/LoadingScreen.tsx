@@ -45,7 +45,7 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        <Text style={[styles.title, { color: colors.text }]}>MCP Connector</Text>
+        <Text style={[styles.title, { color: colors.text }]}>ChatKnot</Text>
         <Text style={[styles.version, { color: colors.textSecondary }]}>v0.1.0</Text>
 
         <View style={styles.spinnerRow}>

@@ -18,6 +18,7 @@ export interface McpHealthResult {
   toolsChanged: boolean;
   removedTools: string[];
   currentTools: string[];
+  validatedTools?: any[];
   error?: string;
 }
 
@@ -79,6 +80,7 @@ async function checkMcpServer(
       result.reachable = true;
       const newToolNames = validation.tools.map((t: any) => t.name);
       result.currentTools = newToolNames;
+      result.validatedTools = validation.tools;
 
       const oldToolNames = (server.tools || []).map(t => t.name);
       const removed = oldToolNames.filter(name => !newToolNames.includes(name));
@@ -232,28 +234,41 @@ export function applyHealthCheckReport(
 
   // Update MCP tool lists where tools changed
   for (const mcpResult of report.mcpResults) {
-    if (!mcpResult.reachable || !mcpResult.toolsChanged) continue;
+    if (!mcpResult.reachable || !mcpResult.validatedTools) continue;
 
     const server = servers.find(s => s.id === mcpResult.serverId);
     if (!server) continue;
 
     const removedSet = new Set(mcpResult.removedTools);
     const oldToolNames = new Set((server.tools || []).map(t => t.name));
+    const newToolNames = mcpResult.currentTools.filter(t => !oldToolNames.has(t));
 
     // Preserve existing allowedTools/autoApprovedTools for tools that still exist
     // Remove entries for tools that were removed from the server
     const cleanedAllowed = (server.allowedTools || []).filter(t => !removedSet.has(t));
     const cleanedAutoApproved = (server.autoApprovedTools || []).filter(t => !removedSet.has(t));
 
-    // New tools (present in current, absent from old): enable by default, do NOT auto-approve
-    // "Enable by default" means: do NOT add to allowedTools blocklist
-    // "Do NOT auto-approve" means: do NOT add to autoApprovedTools
-    // User-disabled tools remain disabled because we preserved their allowedTools entries above
+    // Also strictly remove any tools that completely missed old caching
+    const strictlyCleanedAllowed = cleanedAllowed.filter(t => mcpResult.currentTools.includes(t));
+    const strictlyCleanedAutoApproved = cleanedAutoApproved.filter(t => mcpResult.currentTools.includes(t));
+
+    // New tools (present in current, absent from old): enable by default.
+    // If allowedTools is empty, all are enabled implicitly.
+    // If allowedTools is not empty, append new tools to allowedTools.
+    let nextAllowed = [...strictlyCleanedAllowed];
+    if (nextAllowed.length > 0 && newToolNames.length > 0) {
+      nextAllowed.push(...newToolNames);
+      const allEnabled = mcpResult.currentTools.every(t => nextAllowed.includes(t));
+      if (allEnabled) {
+        nextAllowed = [];
+      }
+    }
 
     updateMcpServer({
       ...server,
-      allowedTools: cleanedAllowed,
-      autoApprovedTools: cleanedAutoApproved,
+      tools: mcpResult.validatedTools,
+      allowedTools: nextAllowed,
+      autoApprovedTools: strictlyCleanedAutoApproved,
     });
   }
 
@@ -275,14 +290,8 @@ export function applyHealthCheckReport(
 
     if (!hasChange) continue;
 
-    // New models not previously known: hide by default
-    const newModels = currentModels.filter(m => !prevModels.has(m));
+    // New models not previously known: visible by default (we do not add to hiddenModels)
     const hiddenModels = new Set(provider.hiddenModels || []);
-
-    // Add all new models to hidden list (user must explicitly unhide)
-    for (const model of newModels) {
-      hiddenModels.add(model);
-    }
 
     // Removed models: clean from hidden list (no longer relevant)
     const removedModels = [...prevModels].filter(m => !currentModelSet.has(m));

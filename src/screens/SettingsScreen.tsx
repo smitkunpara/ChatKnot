@@ -44,7 +44,7 @@ import {
   formatOpenApiValidationError,
   validateOpenApiEndpoint,
 } from '../services/mcp/OpenApiValidationService';
-import { runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
+import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -460,10 +460,11 @@ export const SettingsScreen = () => {
       commit: updateMcpServer,
     });
 
-    if (result.error) {
+    const err = result.error;
+    if (err || result.errorMessage) {
       setServerValidationErrors(prev => ({
         ...prev,
-        [server.id]: result.errorMessage || formatOpenApiValidationError(result.error),
+        [server.id]: result.errorMessage || (err ? formatOpenApiValidationError(err) : 'Unknown validation error'),
       }));
       setValidatingServerId(null);
       return;
@@ -487,9 +488,9 @@ export const SettingsScreen = () => {
       const nextHeaders = (draft.headers || []).map(header =>
         header.id === headerId
           ? {
-              ...header,
-              ...patch,
-            }
+            ...header,
+            ...patch,
+          }
           : header
       );
 
@@ -747,7 +748,16 @@ export const SettingsScreen = () => {
       const report = await runStartupHealthCheck(
         updated.mcpServers,
         updated.providers,
-        () => {}
+        () => { }
+      );
+
+      applyHealthCheckReport(
+        report,
+        updated.mcpServers,
+        updated.providers,
+        updated.updateMcpServer,
+        updated.updateProvider,
+        updated.setModelVisibility
       );
 
       setImportPayloadText('');
@@ -919,12 +929,12 @@ export const SettingsScreen = () => {
 
         {activeView === 'providers'
           ? providers.map(provider => {
-          const isEditing = !!editingProviders[provider.id];
-          const draft = providerDrafts[provider.id];
-          const draftModels = draftAvailableModels[provider.id];
-          const effectiveProvider =
-            isEditing && draft
-              ? {
+            const isEditing = !!editingProviders[provider.id];
+            const draft = providerDrafts[provider.id];
+            const draftModels = draftAvailableModels[provider.id];
+            const effectiveProvider =
+              isEditing && draft
+                ? {
                   ...provider,
                   baseUrl: draft.baseUrl,
                   apiKey: draft.apiKey,
@@ -933,101 +943,101 @@ export const SettingsScreen = () => {
                   enabled: draft.enabled,
                   availableModels: draftModels || provider.availableModels,
                 }
-              : provider;
+                : provider;
 
-          return (
-            <View key={provider.id} style={styles.sectionCard}>
-              <View style={styles.row}>
-                <Text style={styles.providerName}>{provider.name}</Text>
-                <View style={styles.rowRight}>
-                  <Switch
-                    value={effectiveProvider.enabled}
-                    disabled={!isEditing}
-                    onValueChange={enabled => {
-                      if (!isEditing) {
-                        return;
-                      }
+            return (
+              <View key={provider.id} style={styles.sectionCard}>
+                <View style={styles.row}>
+                  <Text style={styles.providerName}>{provider.name}</Text>
+                  <View style={styles.rowRight}>
+                    <Switch
+                      value={effectiveProvider.enabled}
+                      disabled={!isEditing}
+                      onValueChange={enabled => {
+                        if (!isEditing) {
+                          return;
+                        }
 
-                      setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
-                    }}
-                    trackColor={{ false: colors.border, true: colors.primarySoft }}
-                    thumbColor={effectiveProvider.enabled ? colors.primary : colors.textTertiary}
-                  />
-                  {isEditing ? (
-                    <>
-                      <TouchableOpacity onPress={() => saveProviderEdit(provider)} style={styles.iconButton}>
-                        <Save size={17} color={colors.primary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => cancelProviderEdit(provider.id)} style={styles.iconButton}>
-                        <X size={17} color={colors.textTertiary} />
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity onPress={() => beginProviderEdit(provider)} style={styles.iconButton}>
-                      <Pencil size={17} color={colors.primary} />
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity onPress={() => removeProvider(provider.id)} style={styles.iconButton}>
-                    <Trash size={17} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {effectiveProvider.enabled ? (
-                <>
-                  <TextInput
-                    style={[styles.input, !isEditing ? styles.inputDisabled : undefined]}
-                    editable={isEditing}
-                    value={effectiveProvider.baseUrl}
-                    onChangeText={value => {
-                      if (!isEditing) {
-                        return;
-                      }
-
-                      setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { baseUrl: value }));
-                    }}
-                    placeholder="Base URL"
-                    placeholderTextColor={colors.placeholder}
-                  />
-                  <TextInput
-                    style={[styles.input, !isEditing ? styles.inputDisabled : undefined]}
-                    editable={isEditing}
-                    value={effectiveProvider.apiKey}
-                    onChangeText={value => {
-                      if (!isEditing) {
-                        return;
-                      }
-
-                      setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { apiKey: value }));
-                    }}
-                    placeholder="API Key"
-                    placeholderTextColor={colors.placeholder}
-                    secureTextEntry
-                  />
-                  {effectiveProvider.model && !isModelIdLikelyTextOutput(effectiveProvider.model) ? (
-                    <Text style={styles.warningText}>
-                      Current model may not be text-output capable. Pick from the filtered model list.
-                    </Text>
-                  ) : null}
-                  <TouchableOpacity
-                    style={[styles.modelPickerBtn, !isEditing ? styles.modelPickerBtnDisabled : undefined]}
-                    disabled={!isEditing}
-                    onPress={() => openModelPicker(effectiveProvider)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modelLabel}>Model</Text>
-                      <Text style={styles.modelText}>{effectiveProvider.model || 'Select model'}</Text>
-                    </View>
-                    {isFetchingModels === provider.id ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
+                        setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
+                      }}
+                      trackColor={{ false: colors.border, true: colors.primarySoft }}
+                      thumbColor={effectiveProvider.enabled ? colors.primary : colors.textTertiary}
+                    />
+                    {isEditing ? (
+                      <>
+                        <TouchableOpacity onPress={() => saveProviderEdit(provider)} style={styles.iconButton}>
+                          <Save size={17} color={colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => cancelProviderEdit(provider.id)} style={styles.iconButton}>
+                          <X size={17} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                      </>
                     ) : (
-                      <ChevronDown size={18} color={colors.textTertiary} />
+                      <TouchableOpacity onPress={() => beginProviderEdit(provider)} style={styles.iconButton}>
+                        <Pencil size={17} color={colors.primary} />
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
-                </>
-              ) : null}
-            </View>
-          );
+                    <TouchableOpacity onPress={() => removeProvider(provider.id)} style={styles.iconButton}>
+                      <Trash size={17} color={colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {effectiveProvider.enabled ? (
+                  <>
+                    <TextInput
+                      style={[styles.input, !isEditing ? styles.inputDisabled : undefined]}
+                      editable={isEditing}
+                      value={effectiveProvider.baseUrl}
+                      onChangeText={value => {
+                        if (!isEditing) {
+                          return;
+                        }
+
+                        setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { baseUrl: value }));
+                      }}
+                      placeholder="Base URL"
+                      placeholderTextColor={colors.placeholder}
+                    />
+                    <TextInput
+                      style={[styles.input, !isEditing ? styles.inputDisabled : undefined]}
+                      editable={isEditing}
+                      value={effectiveProvider.apiKey}
+                      onChangeText={value => {
+                        if (!isEditing) {
+                          return;
+                        }
+
+                        setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { apiKey: value }));
+                      }}
+                      placeholder="API Key"
+                      placeholderTextColor={colors.placeholder}
+                      secureTextEntry
+                    />
+                    {effectiveProvider.model && !isModelIdLikelyTextOutput(effectiveProvider.model) ? (
+                      <Text style={styles.warningText}>
+                        Current model may not be text-output capable. Pick from the filtered model list.
+                      </Text>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.modelPickerBtn, !isEditing ? styles.modelPickerBtnDisabled : undefined]}
+                      disabled={!isEditing}
+                      onPress={() => openModelPicker(effectiveProvider)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.modelLabel}>Model</Text>
+                        <Text style={styles.modelText}>{effectiveProvider.model || 'Select model'}</Text>
+                      </View>
+                      {isFetchingModels === provider.id ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <ChevronDown size={18} color={colors.textTertiary} />
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+              </View>
+            );
           })
           : null}
 
@@ -1088,286 +1098,285 @@ export const SettingsScreen = () => {
             </View>
 
             {mcpServers.map(server => {
-          const isEditing = !!editingServers[server.id];
-          const serverDraft = serverDrafts[server.id];
-          const effectiveServer =
-            isEditing && serverDraft
-              ? {
-                  ...server,
-                  name: serverDraft.name,
-                  url: serverDraft.url,
-                  enabled: serverDraft.enabled,
-                  autoAllow: serverDraft.autoAllow,
-                  allowedTools: serverDraft.allowedTools,
-                  autoApprovedTools: serverDraft.autoApprovedTools,
-                  headers: (serverDraft.headers || []).reduce((acc, header) => {
-                    const key = (header.key || '').trim();
-                    if (!key) {
+              const isEditing = !!editingServers[server.id];
+              const serverDraft = serverDrafts[server.id];
+              const effectiveServer =
+                isEditing && serverDraft
+                  ? {
+                    ...server,
+                    name: serverDraft.name,
+                    url: serverDraft.url,
+                    enabled: serverDraft.enabled,
+                    autoAllow: serverDraft.autoAllow,
+                    allowedTools: serverDraft.allowedTools,
+                    autoApprovedTools: serverDraft.autoApprovedTools,
+                    headers: (serverDraft.headers || []).reduce((acc, header) => {
+                      const key = (header.key || '').trim();
+                      if (!key) {
+                        return acc;
+                      }
+
+                      acc[key] = header.value || '';
                       return acc;
-                    }
+                    }, {} as Record<string, string>),
+                  }
+                  : server;
 
-                    acc[key] = header.value || '';
-                    return acc;
-                  }, {} as Record<string, string>),
-                }
-              : server;
-
-          const runtime = mcpRuntimeById[server.id];
-          const status = runtime?.status || (effectiveServer.enabled ? 'connecting' : 'disabled');
-          const statusLabel =
-            status === 'connected'
-              ? `${runtime?.protocol === 'openapi' ? 'OpenAPI' : 'MCP'} • ${runtime?.toolsCount || 0} tools`
-              : status === 'error'
-                ? 'Connection failed'
-                : status === 'disabled'
-                  ? 'Disabled'
-                  : 'Connecting...';
-          const runtimeToolNames = Array.from(
-            new Set([
-              ...(runtime?.toolNames || []),
-              ...(effectiveServer.allowedTools || []),
-              ...(effectiveServer.autoApprovedTools || []),
-            ])
-          );
+              const runtime = mcpRuntimeById[server.id];
+              const status = runtime?.status || (effectiveServer.enabled ? 'connecting' : 'disabled');
+              const statusLabel =
+                status === 'connected'
+                  ? `${runtime?.protocol === 'openapi' ? 'OpenAPI' : 'MCP'} • ${runtime?.toolsCount || 0} tools`
+                  : status === 'error'
+                    ? 'Connection failed'
+                    : status === 'disabled'
+                      ? 'Disabled'
+                      : 'Connecting...';
+              const runtimeToolNames = Array.from(
+                new Set([
+                  ...(runtime?.toolNames || []),
+                  ...((effectiveServer.tools || []).map((t: any) => t.name)),
+                ])
+              );
 
               return (
-            <View key={server.id} style={styles.sectionCard}>
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <TextInput
-                    style={[styles.serverNameInput, !isEditing ? styles.inputDisabled : undefined]}
-                    editable={isEditing}
-                    value={effectiveServer.name}
-                    onChangeText={name => {
-                      if (!isEditing) {
-                        return;
-                      }
+                <View key={server.id} style={styles.sectionCard}>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <TextInput
+                        style={[styles.serverNameInput, !isEditing ? styles.inputDisabled : undefined]}
+                        editable={isEditing}
+                        value={effectiveServer.name}
+                        onChangeText={name => {
+                          if (!isEditing) {
+                            return;
+                          }
 
-                      setServerDrafts(prev => updateServerDraft(prev, server.id, { name }));
-                    }}
-                    placeholder="Server Name"
-                    placeholderTextColor={colors.placeholder}
-                  />
-                  <Text style={styles.serverSub} numberOfLines={1}>
-                    {effectiveServer.url}
-                  </Text>
-                </View>
-                <View style={styles.rowRight}>
-                  <Switch
-                    value={effectiveServer.enabled}
-                    disabled={!isEditing}
-                    onValueChange={enabled => {
-                      if (!isEditing) {
-                        return;
-                      }
+                          setServerDrafts(prev => updateServerDraft(prev, server.id, { name }));
+                        }}
+                        placeholder="Server Name"
+                        placeholderTextColor={colors.placeholder}
+                      />
+                      <Text style={styles.serverSub} numberOfLines={1}>
+                        {effectiveServer.url}
+                      </Text>
+                    </View>
+                    <View style={styles.rowRight}>
+                      <Switch
+                        value={effectiveServer.enabled}
+                        disabled={!isEditing}
+                        onValueChange={enabled => {
+                          if (!isEditing) {
+                            return;
+                          }
 
-                      setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
-                    }}
-                    trackColor={{ false: colors.border, true: colors.primarySoft }}
-                    thumbColor={effectiveServer.enabled ? colors.primary : colors.textTertiary}
-                  />
+                          setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
+                        }}
+                        trackColor={{ false: colors.border, true: colors.primarySoft }}
+                        thumbColor={effectiveServer.enabled ? colors.primary : colors.textTertiary}
+                      />
+                      {isEditing ? (
+                        <>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void saveServerEdit(server);
+                            }}
+                            style={styles.iconButton}
+                            disabled={validatingServerId === server.id}
+                          >
+                            {validatingServerId === server.id ? (
+                              <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                              <Save size={17} color={colors.primary} />
+                            )}
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => cancelServerEdit(server.id)} style={styles.iconButton}>
+                            <X size={17} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <TouchableOpacity onPress={() => beginServerEdit(server)} style={styles.iconButton}>
+                          <Pencil size={17} color={colors.primary} />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity onPress={() => removeMcpServer(server.id)} style={styles.iconButton}>
+                        <Trash size={17} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.serverStatusWrap}>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        status === 'connected'
+                          ? styles.statusConnected
+                          : status === 'error'
+                            ? styles.statusError
+                            : styles.statusPending,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusText,
+                          status === 'connected'
+                            ? styles.statusTextConnected
+                            : status === 'error'
+                              ? styles.statusTextError
+                              : styles.statusTextPending,
+                        ]}
+                      >
+                        {statusLabel}
+                      </Text>
+                    </View>
+                    {runtime?.openApiTitle ? (
+                      <Text style={styles.statusSub} numberOfLines={1}>
+                        {runtime.openApiTitle}
+                        {runtime.openApiVersion ? ` v${runtime.openApiVersion}` : ''}
+                      </Text>
+                    ) : null}
+                  </View>
+
                   {isEditing ? (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => {
-                          void saveServerEdit(server);
-                        }}
-                        style={styles.iconButton}
-                        disabled={validatingServerId === server.id}
-                      >
-                        {validatingServerId === server.id ? (
-                          <ActivityIndicator size="small" color={colors.primary} />
-                        ) : (
-                          <Save size={17} color={colors.primary} />
-                        )}
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => cancelServerEdit(server.id)} style={styles.iconButton}>
-                        <X size={17} color={colors.textTertiary} />
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity onPress={() => beginServerEdit(server)} style={styles.iconButton}>
-                      <Pencil size={17} color={colors.primary} />
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity onPress={() => removeMcpServer(server.id)} style={styles.iconButton}>
-                    <Trash size={17} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.serverStatusWrap}>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    status === 'connected'
-                      ? styles.statusConnected
-                      : status === 'error'
-                        ? styles.statusError
-                        : styles.statusPending,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      status === 'connected'
-                        ? styles.statusTextConnected
-                        : status === 'error'
-                          ? styles.statusTextError
-                          : styles.statusTextPending,
-                    ]}
-                  >
-                    {statusLabel}
-                  </Text>
-                </View>
-                {runtime?.openApiTitle ? (
-                  <Text style={styles.statusSub} numberOfLines={1}>
-                    {runtime.openApiTitle}
-                    {runtime.openApiVersion ? ` v${runtime.openApiVersion}` : ''}
-                  </Text>
-                ) : null}
-              </View>
-
-              {isEditing ? (
-                <View style={styles.serverEditWrap}>
-                  <TextInput
-                    style={styles.input}
-                    value={serverDraft?.url || ''}
-                    onChangeText={url => {
-                      clearServerValidationError(server.id);
-                      setServerDrafts(prev => updateServerDraft(prev, server.id, { url }));
-                    }}
-                    placeholder="Server URL"
-                    placeholderTextColor={colors.placeholder}
-                  />
-
-                  {runtimeToolNames.length > 0 ? (
-                    <View style={styles.toolPermissionWrap}>
-                      <Text style={styles.permissionTitle}>Tool Controls</Text>
-                      <Text style={styles.permissionHint}>Enable and auto-approve tools individually.</Text>
-                      {runtimeToolNames.map(toolName => {
-                        const allowedTools = serverDraft?.allowedTools || [];
-                        const isEnabled =
-                          allowedTools.length === 0 || allowedTools.includes(toolName);
-                        const isAutoApproved = (serverDraft?.autoApprovedTools || []).includes(toolName);
-                        return (
-                          <View key={`${server.id}-tool-perm-${toolName}`} style={styles.toolPermissionRow}>
-                            <Text style={styles.toolPermissionName} numberOfLines={1}>
-                              {toolName}
-                            </Text>
-                            <View style={styles.toolPermissionActions}>
-                              <TouchableOpacity
-                                style={[styles.checkboxPill, isEnabled ? styles.checkboxPillActive : undefined]}
-                                onPress={() => {
-                                  clearServerValidationError(server.id);
-                                  toggleServerDraftAllowedTool(server.id, toolName, runtimeToolNames);
-                                }}
-                              >
-                                <Check size={12} color={isEnabled ? colors.onPrimary : colors.textTertiary} />
-                                <Text
-                                  style={[
-                                    styles.checkboxPillText,
-                                    isEnabled ? styles.checkboxPillTextActive : undefined,
-                                  ]}
-                                >
-                                  Enabled
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[styles.checkboxPill, isAutoApproved ? styles.checkboxPillActive : undefined]}
-                                onPress={() => {
-                                  clearServerValidationError(server.id);
-                                  toggleServerDraftAutoApprovedTool(server.id, toolName, runtimeToolNames);
-                                }}
-                              >
-                                <Check size={12} color={isAutoApproved ? colors.onPrimary : colors.textTertiary} />
-                                <Text
-                                  style={[
-                                    styles.checkboxPillText,
-                                    isAutoApproved ? styles.checkboxPillTextActive : undefined,
-                                  ]}
-                                >
-                                  Auto
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : null}
-
-                  {(serverDraft?.headers || []).map((header, headerIndex) => (
-                    <View key={`${server.id}-${header.id || headerIndex}`} style={styles.headerRow}>
+                    <View style={styles.serverEditWrap}>
                       <TextInput
-                        style={[styles.input, styles.headerInput]}
-                        value={header.key}
-                        onChangeText={value => {
+                        style={styles.input}
+                        value={serverDraft?.url || ''}
+                        onChangeText={url => {
                           clearServerValidationError(server.id);
-                          updateServerDraftHeader(server.id, header.id, { key: value });
+                          setServerDrafts(prev => updateServerDraft(prev, server.id, { url }));
                         }}
-                        placeholder="Header Name"
+                        placeholder="Server URL"
                         placeholderTextColor={colors.placeholder}
                       />
-                      <TextInput
-                        style={[styles.input, styles.headerInput]}
-                        value={header.value}
-                        onChangeText={value => {
-                          clearServerValidationError(server.id);
-                          updateServerDraftHeader(server.id, header.id, { value });
-                        }}
-                        placeholder="Header Value"
-                        placeholderTextColor={colors.placeholder}
-                        secureTextEntry
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          clearServerValidationError(server.id);
-                          removeServerDraftHeader(server.id, header.id);
-                        }}
-                        style={styles.headerRemoveButton}
-                      >
-                        <Trash size={15} color={colors.danger} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                  <TouchableOpacity
-                    style={styles.addHeaderButton}
-                    onPress={() => {
-                      clearServerValidationError(server.id);
-                      addServerDraftHeader(server.id);
-                    }}
-                  >
-                    <Plus size={14} color={colors.primary} />
-                    <Text style={styles.addHeaderButtonText}>Add Header</Text>
-                  </TouchableOpacity>
 
-                  {runtime?.securityHeaders?.length ? (
-                    <Text style={styles.serverHint}>
-                      Required auth header(s): {runtime.securityHeaders.join(', ')}
-                    </Text>
-                  ) : null}
+                      {runtimeToolNames.length > 0 ? (
+                        <View style={styles.toolPermissionWrap}>
+                          <Text style={styles.permissionTitle}>Tool Controls</Text>
+                          <Text style={styles.permissionHint}>Enable and auto-approve tools individually.</Text>
+                          {runtimeToolNames.map(toolName => {
+                            const allowedTools = serverDraft?.allowedTools || [];
+                            const isEnabled =
+                              allowedTools.length === 0 || allowedTools.includes(toolName);
+                            const isAutoApproved = (serverDraft?.autoApprovedTools || []).includes(toolName);
+                            return (
+                              <View key={`${server.id}-tool-perm-${toolName}`} style={styles.toolPermissionRow}>
+                                <Text style={styles.toolPermissionName} numberOfLines={1}>
+                                  {toolName}
+                                </Text>
+                                <View style={styles.toolPermissionActions}>
+                                  <TouchableOpacity
+                                    style={[styles.checkboxPill, isEnabled ? styles.checkboxPillActive : undefined]}
+                                    onPress={() => {
+                                      clearServerValidationError(server.id);
+                                      toggleServerDraftAllowedTool(server.id, toolName, runtimeToolNames);
+                                    }}
+                                  >
+                                    <Check size={12} color={isEnabled ? colors.onPrimary : colors.textTertiary} />
+                                    <Text
+                                      style={[
+                                        styles.checkboxPillText,
+                                        isEnabled ? styles.checkboxPillTextActive : undefined,
+                                      ]}
+                                    >
+                                      Enabled
+                                    </Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={[styles.checkboxPill, isAutoApproved ? styles.checkboxPillActive : undefined]}
+                                    onPress={() => {
+                                      clearServerValidationError(server.id);
+                                      toggleServerDraftAutoApprovedTool(server.id, toolName, runtimeToolNames);
+                                    }}
+                                  >
+                                    <Check size={12} color={isAutoApproved ? colors.onPrimary : colors.textTertiary} />
+                                    <Text
+                                      style={[
+                                        styles.checkboxPillText,
+                                        isAutoApproved ? styles.checkboxPillTextActive : undefined,
+                                      ]}
+                                    >
+                                      Auto
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ) : null}
 
-                  {runtime?.toolNames?.length ? (
-                    <View style={styles.toolTagWrap}>
-                      {runtime.toolNames.slice(0, 8).map(toolName => (
-                        <View key={`${server.id}-${toolName}`} style={styles.toolTag}>
-                          <Text style={styles.toolTagText} numberOfLines={1}>
-                            {toolName}
-                          </Text>
+                      {(serverDraft?.headers || []).map((header, headerIndex) => (
+                        <View key={`${server.id}-${header.id || headerIndex}`} style={styles.headerRow}>
+                          <TextInput
+                            style={[styles.input, styles.headerInput]}
+                            value={header.key}
+                            onChangeText={value => {
+                              clearServerValidationError(server.id);
+                              updateServerDraftHeader(server.id, header.id, { key: value });
+                            }}
+                            placeholder="Header Name"
+                            placeholderTextColor={colors.placeholder}
+                          />
+                          <TextInput
+                            style={[styles.input, styles.headerInput]}
+                            value={header.value}
+                            onChangeText={value => {
+                              clearServerValidationError(server.id);
+                              updateServerDraftHeader(server.id, header.id, { value });
+                            }}
+                            placeholder="Header Value"
+                            placeholderTextColor={colors.placeholder}
+                            secureTextEntry
+                          />
+                          <TouchableOpacity
+                            onPress={() => {
+                              clearServerValidationError(server.id);
+                              removeServerDraftHeader(server.id, header.id);
+                            }}
+                            style={styles.headerRemoveButton}
+                          >
+                            <Trash size={15} color={colors.danger} />
+                          </TouchableOpacity>
                         </View>
                       ))}
+                      <TouchableOpacity
+                        style={styles.addHeaderButton}
+                        onPress={() => {
+                          clearServerValidationError(server.id);
+                          addServerDraftHeader(server.id);
+                        }}
+                      >
+                        <Plus size={14} color={colors.primary} />
+                        <Text style={styles.addHeaderButtonText}>Add Header</Text>
+                      </TouchableOpacity>
+
+                      {runtime?.securityHeaders?.length ? (
+                        <Text style={styles.serverHint}>
+                          Required auth header(s): {runtime.securityHeaders.join(', ')}
+                        </Text>
+                      ) : null}
+
+                      {runtime?.toolNames?.length ? (
+                        <View style={styles.toolTagWrap}>
+                          {runtime.toolNames.slice(0, 8).map(toolName => (
+                            <View key={`${server.id}-${toolName}`} style={styles.toolTag}>
+                              <Text style={styles.toolTagText} numberOfLines={1}>
+                                {toolName}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+
+                      {runtime?.error ? <Text style={styles.warningText}>{runtime.error}</Text> : null}
+                      {serverValidationErrors[server.id] ? (
+                        <Text style={styles.warningText}>{serverValidationErrors[server.id]}</Text>
+                      ) : null}
                     </View>
                   ) : null}
-
-                  {runtime?.error ? <Text style={styles.warningText}>{runtime.error}</Text> : null}
-                  {serverValidationErrors[server.id] ? (
-                    <Text style={styles.warningText}>{serverValidationErrors[server.id]}</Text>
-                  ) : null}
                 </View>
-              ) : null}
-            </View>
-          );
+              );
             })}
           </>
         ) : null}
