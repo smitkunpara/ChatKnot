@@ -767,12 +767,12 @@ export const SettingsScreen = () => {
 
       if (report.warnings.length === 0) {
         Alert.alert(
-          'Settings Imported',
+          'Import Complete',
           `All ${updated.providers.length} providers and ${updated.mcpServers.length} MCP servers verified successfully.`
         );
       } else {
         Alert.alert(
-          'Settings Imported with Warnings',
+          'Import Summary',
           report.warnings.map(w => `• ${w}`).join('\n')
         );
       }

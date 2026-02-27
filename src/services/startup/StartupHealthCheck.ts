@@ -26,6 +26,7 @@ export interface AiHealthResult {
   providerId: string;
   providerName: string;
   reachable: boolean;
+  modelsChanged: boolean;
   removedModels: string[];
   currentModels: string[];
   error?: string;
@@ -107,6 +108,7 @@ async function checkAiProvider(
     providerId: provider.id,
     providerName: provider.name,
     reachable: false,
+    modelsChanged: false,
     removedModels: [],
     currentModels: [],
   };
@@ -125,7 +127,9 @@ async function checkAiProvider(
     // Check if any previously visible models are no longer available
     const previousModels = provider.availableModels || [];
     const removed = previousModels.filter(m => !models.includes(m));
+    const added = models.filter(m => !previousModels.includes(m));
     result.removedModels = removed;
+    result.modelsChanged = removed.length > 0 || added.length > 0;
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
   }
@@ -164,10 +168,8 @@ export async function runStartupHealthCheck(
       if (!mcpResult.reachable) {
         report.disabledMcpServers.push(server.id);
         report.warnings.push(`MCP "${server.name}" is unreachable and has been disabled.`);
-      } else if (mcpResult.toolsChanged && mcpResult.removedTools.length > 0) {
-        report.warnings.push(
-          `MCP "${server.name}": ${mcpResult.removedTools.length} tool${mcpResult.removedTools.length > 1 ? 's' : ''} removed (${mcpResult.removedTools.join(', ')})`
-        );
+      } else if (mcpResult.toolsChanged) {
+        report.warnings.push(`MCP tool list for "${server.name}" is updated.`);
       }
     }
   } else {
@@ -191,11 +193,14 @@ export async function runStartupHealthCheck(
 
       if (!aiResult.reachable) {
         report.warnings.push(`AI "${provider.name}" endpoint is unreachable: ${aiResult.error}`);
-      } else if (aiResult.removedModels.length > 0) {
-        report.removedVisibleModels.push({
-          providerId: provider.id,
-          models: aiResult.removedModels,
-        });
+      } else if (aiResult.modelsChanged) {
+        report.warnings.push(`AI list for "${provider.name}" is updated.`);
+        if (aiResult.removedModels.length > 0) {
+          report.removedVisibleModels.push({
+            providerId: provider.id,
+            models: aiResult.removedModels,
+          });
+        }
       }
     }
   } else {

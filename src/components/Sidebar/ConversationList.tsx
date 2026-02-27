@@ -45,7 +45,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Text style={styles.brand}>MCP Connector</Text>
+        <Text style={styles.brand}>ChatKnot</Text>
         <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation}>
           <PlusCircle size={20} color={colors.onPrimary} />
           <Text style={styles.newChatText}>{newChatLabel}</Text>
