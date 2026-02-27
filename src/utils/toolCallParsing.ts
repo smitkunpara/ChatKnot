@@ -107,7 +107,7 @@ export const extractLegacyXmlToolCalls = (
         arguments: stripCodeFence(rawArgs),
       };
     })
-    .filter(Boolean);
+    .filter((item): item is { id: string; name: string; arguments: string } => item !== null);
 };
 
 const stripLegacyXmlToolCalls = (content: string): string => {

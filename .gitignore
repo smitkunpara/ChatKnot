@@ -78,4 +78,5 @@ logs
 # generated native folders (uncomment if you want to ignore them)
 # /ios
 # /android
-.githubneeded_change.md
+
+needed_change.md
