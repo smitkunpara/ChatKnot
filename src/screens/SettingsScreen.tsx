@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -44,6 +45,7 @@ import {
   formatOpenApiValidationError,
   validateOpenApiEndpoint,
 } from '../services/mcp/OpenApiValidationService';
+import { runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -717,7 +719,7 @@ export const SettingsScreen = () => {
     Alert.alert('Settings Exported', 'Settings JSON has been copied to your clipboard.');
   };
 
-  const handleImportSettings = () => {
+  const handleImportSettings = async () => {
     const raw = importPayloadText.trim();
     if (!raw) {
       Alert.alert('Import Error', 'Paste exported settings JSON first.');
@@ -726,6 +728,12 @@ export const SettingsScreen = () => {
 
     try {
       const parsed = JSON.parse(raw);
+
+      if (parsed?.schema && parsed.schema !== 'mcp-connector-settings-v1') {
+        Alert.alert('Import Error', 'Unsupported settings format version.');
+        return;
+      }
+
       const settings = parsed?.settings || parsed;
 
       replaceAllSettings({
@@ -736,11 +744,29 @@ export const SettingsScreen = () => {
         lastUsedModel: settings?.lastUsedModel,
       });
 
+      const updated = useSettingsStore.getState();
+      const report = await runStartupHealthCheck(
+        updated.mcpServers,
+        updated.providers,
+        () => {}
+      );
+
       setImportPayloadText('');
       setImportModalVisible(false);
       closeAllEditModes();
       setActiveView('index');
-      Alert.alert('Settings Imported', 'Settings have been restored successfully.');
+
+      if (report.warnings.length === 0) {
+        Alert.alert(
+          'Settings Imported',
+          `All ${updated.providers.length} providers and ${updated.mcpServers.length} MCP servers verified successfully.`
+        );
+      } else {
+        Alert.alert(
+          'Settings Imported with Warnings',
+          report.warnings.map(w => `• ${w}`).join('\n')
+        );
+      }
     } catch {
       Alert.alert('Import Error', 'Invalid JSON format. Please paste a valid exported payload.');
     }
@@ -1520,19 +1546,22 @@ export const SettingsScreen = () => {
               </TouchableOpacity>
             </View>
 
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              multiline
-              value={importPayloadText}
-              onChangeText={setImportPayloadText}
-              placeholder="Paste exported settings JSON..."
-              placeholderTextColor={colors.placeholder}
-            />
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                multiline
+                scrollEnabled
+                value={importPayloadText}
+                onChangeText={setImportPayloadText}
+                placeholder="Paste exported settings JSON..."
+                placeholderTextColor={colors.placeholder}
+              />
 
-            <TouchableOpacity style={styles.primaryButton} onPress={handleImportSettings}>
-              <Save size={16} color={colors.onPrimary} />
-              <Text style={styles.primaryButtonText}>Import Settings</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.primaryButton} onPress={handleImportSettings}>
+                <Save size={16} color={colors.onPrimary} />
+                <Text style={styles.primaryButtonText}>Import Settings</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1668,6 +1697,7 @@ const createStyles = (colors: any) =>
     },
     textArea: {
       minHeight: 96,
+      maxHeight: 300,
       textAlignVertical: 'top',
     },
     primaryButton: {
