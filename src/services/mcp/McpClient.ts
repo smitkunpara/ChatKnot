@@ -2,13 +2,7 @@ import EventSource from 'react-native-sse';
 import { McpServerConfig, McpToolSchema } from '../../types';
 import uuid from 'react-native-uuid';
 import { validateOpenApiEndpoint } from './OpenApiValidationService';
-
-type OpenApiToolMeta = {
-  path: string;
-  method: string;
-  baseUrl?: string;
-  securityHeaders?: string[];
-};
+import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
 
 export class McpClient {
   private config: McpServerConfig;
@@ -21,18 +15,11 @@ export class McpClient {
   private normalizedBaseUrl: string;
   
   constructor(config: McpServerConfig) {
-    this.normalizedBaseUrl = this.ensureHttpUrl(config.url);
+    this.normalizedBaseUrl = ensureHttpUrl(config.url);
     this.config = {
       ...config,
       url: this.normalizedBaseUrl,
     };
-  }
-
-  private ensureHttpUrl(rawUrl: string): string {
-    const trimmed = (rawUrl || '').trim();
-    if (!trimmed) return trimmed;
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://${trimmed}`;
   }
 
   async connect(): Promise<void> {
@@ -183,36 +170,6 @@ export class McpClient {
     return result;
   }
 
-  private extractSecuritySchemeNames(security: any): string[] {
-    if (!Array.isArray(security)) return [];
-    const names: string[] = [];
-    for (const entry of security) {
-      if (!entry || typeof entry !== 'object') continue;
-      for (const key of Object.keys(entry)) {
-        if (!names.includes(key)) names.push(key);
-      }
-    }
-    return names;
-  }
-
-  private extractSecurityHeaders(spec: any, schemeNames: string[]): string[] {
-    const schemes = spec?.components?.securitySchemes || {};
-    const headers: string[] = [];
-
-    for (const schemeName of schemeNames) {
-      const scheme = schemes?.[schemeName];
-      if (!scheme) continue;
-      if (scheme.type === 'apiKey' && scheme.in === 'header' && typeof scheme.name === 'string') {
-        const headerName = scheme.name.trim();
-        if (headerName && !headers.includes(headerName)) {
-          headers.push(headerName);
-        }
-      }
-    }
-
-    return headers;
-  }
-
   private resolveToolBaseUrl(baseUrl?: string): string {
     if (!baseUrl) return this.normalizedBaseUrl;
     const trimmed = String(baseUrl).trim();
@@ -222,7 +179,7 @@ export class McpClient {
       const root = new URL(this.normalizedBaseUrl);
       return `${root.protocol}//${root.host}${trimmed}`;
     }
-    return this.ensureHttpUrl(trimmed);
+    return ensureHttpUrl(trimmed);
   }
 
   private async callOpenApiTool(name: string, args: any): Promise<any> {
@@ -297,8 +254,8 @@ export class McpClient {
     | null {
     if (!this.isOpenApi || !this.openapiSpec) return null;
 
-    const globalSecurity = this.extractSecuritySchemeNames(this.openapiSpec.security);
-    const securityHeaders = this.extractSecurityHeaders(this.openapiSpec, globalSecurity);
+    const globalSecurity = extractSecuritySchemeNames(this.openapiSpec.security);
+    const securityHeaders = extractSecurityHeaders(this.openapiSpec, globalSecurity);
     const perToolHeaders = this.tools.flatMap((tool: any) => {
       const headers = tool?._meta?.securityHeaders;
       return Array.isArray(headers) ? headers : [];
