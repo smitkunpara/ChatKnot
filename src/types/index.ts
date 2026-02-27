@@ -21,8 +21,15 @@ export interface Conversation {
   title: string;
   messages: Message[];
   providerId: string;
+  modelOverride?: string;
   systemPrompt: string;
+  createdAt?: number;
   updatedAt: number;
+}
+
+export interface LastUsedModelPreference {
+  providerId: string;
+  model: string;
 }
 
 export interface LlmProviderConfig {
@@ -31,8 +38,10 @@ export interface LlmProviderConfig {
   type: 'custom-openai';
   baseUrl: string;
   apiKey: string;
+  apiKeyRef?: string;
   model: string;
   availableModels?: string[]; // Added to store fetched models
+  hiddenModels?: string[];
   enabled: boolean;
 }
 
@@ -42,16 +51,58 @@ export interface McpToolSchema {
   inputSchema: any;
 }
 
+export type OpenApiValidationField = 'url' | 'headers' | 'spec' | 'network';
+
+export type OpenApiValidationErrorCode =
+  | 'URL_REQUIRED'
+  | 'URL_INVALID'
+  | 'FETCH_FAILED'
+  | 'HTTP_STATUS'
+  | 'INVALID_JSON'
+  | 'INVALID_SPEC'
+  | 'NO_OPERATIONS';
+
+export interface OpenApiValidationError {
+  code: OpenApiValidationErrorCode;
+  field: OpenApiValidationField;
+  message: string;
+  details?: {
+    attemptedUrls?: string[];
+    status?: number;
+    statusText?: string;
+    missingFields?: string[];
+  };
+}
+
+export interface OpenApiValidationSuccess {
+  ok: true;
+  normalizedInputUrl: string;
+  resolvedSpecUrl: string;
+  resolvedBaseUrl: string;
+  spec: any;
+  tools: McpToolSchema[];
+}
+
+export interface OpenApiValidationFailure {
+  ok: false;
+  error: OpenApiValidationError;
+}
+
+export type OpenApiValidationResult = OpenApiValidationSuccess | OpenApiValidationFailure;
+
 export interface McpServerConfig {
   id: string;
   name: string;
   url: string;
   token?: string;
+  tokenRef?: string;
   headers?: Record<string, string>;
+  headerRefs?: Record<string, string>;
   enabled: boolean;
   tools: McpToolSchema[];
   autoAllow: boolean;
   allowedTools: string[];
+  autoApprovedTools?: string[];
 }
 
 export interface AppSettings {
@@ -59,4 +110,5 @@ export interface AppSettings {
   mcpServers: McpServerConfig[];
   systemPrompt: string;
   theme: 'light' | 'dark' | 'system';
+  lastUsedModel: LastUsedModelPreference | null;
 }

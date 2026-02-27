@@ -29,6 +29,7 @@ android/build/
 android/.gradle/
 android/app/build/
 android/local.properties
+android/key.properties
 android-sdk-local/
 
 # iOS
@@ -77,3 +78,5 @@ logs
 # generated native folders (uncomment if you want to ignore them)
 # /ios
 # /android
+
+needed_change.md

@@ -1,17 +1,21 @@
-// @ts-nocheck
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Message, Conversation, ToolCall } from '../types';
 import uuid from 'react-native-uuid';
+import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+
+const chatPersistStorage = createEncryptedStateStorage({
+  id: 'chat-storage',
+  keyAlias: 'chat-storage:encryption-key',
+});
 
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
   isLoading: boolean;
   
-  createConversation: (providerId: string, systemPrompt: string) => void;
-  setActiveConversation: (id: string) => void;
+  createConversation: (providerId: string, systemPrompt: string, modelOverride?: string) => void;
+  setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
   updateProviderInConversation: (conversationId: string, providerId: string) => void;
   updateModelInConversation: (conversationId: string, providerId: string, model: string) => void;
@@ -36,14 +40,17 @@ export const useChatStore = create<ChatState>()(
       activeConversationId: null,
       isLoading: false,
 
-      createConversation: (providerId, systemPrompt) => {
+      createConversation: (providerId, systemPrompt, modelOverride) => {
+        const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
           messages: [],
           providerId,
+          modelOverride,
           systemPrompt,
-          updatedAt: Date.now(),
+          createdAt: now,
+          updatedAt: now,
         };
         set((state) => ({
           conversations: [newConversation, ...state.conversations],
@@ -171,7 +178,25 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: 'chat-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => chatPersistStorage),
+      version: 2,
+      migrate: (persistedState: any) => {
+        if (!persistedState || typeof persistedState !== 'object') {
+          return {
+            conversations: [],
+            activeConversationId: null,
+            isLoading: false,
+          };
+        }
+
+        return {
+          conversations: Array.isArray(persistedState.conversations)
+            ? persistedState.conversations
+            : [],
+          activeConversationId: persistedState.activeConversationId || null,
+          isLoading: false,
+        };
+      },
     }
   )
 );

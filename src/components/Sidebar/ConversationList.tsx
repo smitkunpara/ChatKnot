@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -10,25 +10,23 @@ import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageSquare, PlusCircle, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
 import { useChatStore } from '../../store/useChatStore';
-import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAppTheme } from '../../theme/useAppTheme';
+import {
+  getSidebarConversationLabel,
+  getSidebarNewChatCtaLabel,
+} from '../../utils/dateFormat';
 
 export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const conversations = useChatStore(state => state.conversations);
   const activeId = useChatStore(state => state.activeConversationId);
   const setActive = useChatStore(state => state.setActiveConversation);
-  const createNew = useChatStore(state => state.createConversation);
   const deleteConversation = useChatStore(state => state.deleteConversation);
-
-  const providers = useSettingsStore(state => state.providers);
-  const systemPrompt = useSettingsStore(state => state.systemPrompt);
+  const newChatLabel = getSidebarNewChatCtaLabel();
 
   const handleCreateConversation = () => {
-    const provider = providers.find(p => p.enabled) || providers[0];
-    const providerId = provider?.id || 'openai';
-    createNew(providerId, systemPrompt || 'You are a helpful assistant.');
+    setActive(null);
     props.navigation.navigate('Chat');
     props.navigation.closeDrawer();
   };
@@ -50,7 +48,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
         <Text style={styles.brand}>MCP Connector</Text>
         <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation}>
           <PlusCircle size={20} color={colors.onPrimary} />
-          <Text style={styles.newChatText}>New Chat</Text>
+          <Text style={styles.newChatText}>{newChatLabel}</Text>
         </TouchableOpacity>
       </View>
 
@@ -74,7 +72,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
                 style={[styles.itemText, item.id === activeId ? styles.activeItemText : undefined]}
                 numberOfLines={1}
               >
-                {item.title || 'New Chat'}
+                {getSidebarConversationLabel(item)}
               </Text>
             </View>
             <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn}>

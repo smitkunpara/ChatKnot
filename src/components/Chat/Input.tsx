@@ -1,5 +1,4 @@
-// @ts-nocheck
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Send, StopCircle, X } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -24,9 +23,10 @@ export const Input: React.FC<InputProps> = ({
   onFocus,
 }) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [text, setText] = useState('');
   const inputRef = useRef<TextInput>(null);
+  const wasEditingRef = useRef(false);
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -36,6 +36,14 @@ export const Input: React.FC<InputProps> = ({
       }
     }
   }, [initialValue]);
+
+  useEffect(() => {
+    if (wasEditingRef.current && !isEditing) {
+      setText('');
+    }
+
+    wasEditingRef.current = !!isEditing;
+  }, [isEditing]);
 
   const canSend = !!text.trim() && !isLoading;
 

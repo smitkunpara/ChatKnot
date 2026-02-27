@@ -1,9 +1,8 @@
-// @ts-nocheck
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, Edit2 } from 'lucide-react-native';
+import { Copy, Edit2, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
@@ -12,6 +11,9 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   onEdit?: (id: string, content: string) => void;
+  pendingToolApprovalIds?: Record<string, true>;
+  onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
+  onRetryAssistant?: (messageId: string) => void;
 }
 
 const StreamingCursor = ({ color }: { color: string }) => {
@@ -29,17 +31,27 @@ const StreamingCursor = ({ color }: { color: string }) => {
   return <Animated.View style={[baseStyles.cursor, { opacity, backgroundColor: color }]} />;
 };
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming, onEdit }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  isStreaming,
+  onEdit,
+  pendingToolApprovalIds,
+  onToolApprovalDecision,
+  onRetryAssistant,
+}) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const markdownStyles = createMarkdownStyles(colors);
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const isSystem = message.role === 'system';
   const hasToolCalls = !!message.toolCalls?.length;
+  const hasText = !!message.content?.trim();
+  const shouldRenderBubble = hasText || hasToolCalls || !!isStreaming;
 
   // Tool outputs are kept in history for LLM context, but hidden from the UI.
   if (isSystem || isTool) return null;
+  if (!shouldRenderBubble) return null;
 
   const copyToClipboard = async () => {
     await Clipboard.setStringAsync(message.content || '');
@@ -54,14 +66,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
           hasToolCalls ? styles.assistantWithTools : undefined,
         ]}
       >
-        {hasToolCalls ? (
-          <View style={styles.toolCallsContainer}>
-            {message.toolCalls!.map(tc => (
-              <ToolCallComponent key={tc.id} toolCall={tc} />
-            ))}
-          </View>
-        ) : null}
-
         <View style={styles.textRow}>
           {message.content ? (
             isUser ? (
@@ -72,12 +76,31 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
           ) : null}
           {isStreaming && <StreamingCursor color={colors.primary} />}
         </View>
+
+        {hasToolCalls ? (
+          <View style={styles.toolCallsContainer}>
+            {message.toolCalls!.map((tc) => (
+              <ToolCallComponent
+                key={tc.id}
+                toolCall={tc}
+                requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
+                onApprove={() => onToolApprovalDecision?.(tc.id, true)}
+                onDeny={() => onToolApprovalDecision?.(tc.id, false)}
+              />
+            ))}
+          </View>
+        ) : null}
       </View>
 
       <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
         {!isStreaming && message.content ? (
           <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
             <Copy size={13} color={colors.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+        {!isUser && !isStreaming && onRetryAssistant ? (
+          <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton}>
+            <RotateCcw size={13} color={colors.textTertiary} />
           </TouchableOpacity>
         ) : null}
         {isUser && onEdit ? (

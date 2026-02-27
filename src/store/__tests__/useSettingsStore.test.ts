@@ -1,0 +1,82 @@
+type SettingsStoreModule = typeof import('../useSettingsStore');
+
+const createProvider = (id: string, model = 'gpt-4o-mini') => ({
+  id,
+  name: `Provider ${id}`,
+  type: 'custom-openai' as const,
+  baseUrl: 'https://api.example.com/v1',
+  apiKey: 'test-key',
+  model,
+  availableModels: [model, 'gpt-4.1-mini'],
+  hiddenModels: [],
+  enabled: true,
+});
+
+const flushPersistence = async (): Promise<void> => {
+  await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
+const loadStore = async (storageSeed: Map<string, string>): Promise<{
+  store: SettingsStoreModule['useSettingsStore'];
+}> => {
+  jest.resetModules();
+
+  const storage = {
+    getItem: jest.fn(async (name: string) => storageSeed.get(name) ?? null),
+    setItem: jest.fn(async (name: string, value: string) => {
+      storageSeed.set(name, value);
+    }),
+    removeItem: jest.fn(async (name: string) => {
+      storageSeed.delete(name);
+    }),
+  };
+
+  jest.doMock('../../services/storage/EncryptedStateStorage', () => ({
+    createEncryptedStateStorage: () => storage,
+  }));
+
+  jest.doMock('react-native-get-random-values', () => ({}));
+
+  jest.doMock('../../services/storage/migrations', () => ({
+    ensureMcpServerSecretRefs: (server: unknown) => server,
+    ensureProviderSecretRef: (provider: unknown) => provider,
+    hydratePersistedSettingsPayload: async (value: string) => value,
+    migratePersistedSettingsPayload: async (value: string) => value,
+  }));
+
+  const module = (await import('../useSettingsStore')) as SettingsStoreModule;
+  await module.useSettingsStore.persist.rehydrate();
+  return { store: module.useSettingsStore };
+};
+
+describe('useSettingsStore model visibility + last-used persistence', () => {
+  it('toggles model visibility per provider', async () => {
+    const storageSeed = new Map<string, string>();
+    const { store } = await loadStore(storageSeed);
+
+    store.getState().addProvider(createProvider('p1'));
+    store.getState().toggleModelVisibility('p1', 'gpt-4.1-mini');
+
+    expect(store.getState().providers[0].hiddenModels).toEqual(['gpt-4.1-mini']);
+
+    store.getState().toggleModelVisibility('p1', 'gpt-4.1-mini');
+    expect(store.getState().providers[0].hiddenModels).toEqual([]);
+  });
+
+  it('persists hidden model state and global last-used model across rehydrate', async () => {
+    const storageSeed = new Map<string, string>();
+    const firstLoad = await loadStore(storageSeed);
+
+    firstLoad.store.getState().addProvider(createProvider('p1'));
+    firstLoad.store.getState().setModelVisibility('p1', 'gpt-4.1-mini', false);
+    firstLoad.store.getState().setLastUsedModel('p1', 'gpt-4o-mini');
+    await flushPersistence();
+
+    const secondLoad = await loadStore(storageSeed);
+    const rehydratedState = secondLoad.store.getState();
+
+    expect(rehydratedState.providers[0].hiddenModels).toEqual(['gpt-4.1-mini']);
+    expect(rehydratedState.lastUsedModel).toEqual({ providerId: 'p1', model: 'gpt-4o-mini' });
+  });
+});

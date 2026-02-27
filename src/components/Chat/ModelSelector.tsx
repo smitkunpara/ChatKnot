@@ -1,10 +1,14 @@
-// @ts-nocheck
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Brain, Check, ChevronDown, Search } from 'lucide-react-native';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { isModelIdLikelyTextOutput } from '../../services/llm/modelFilter';
+import {
+  CHAT_NO_MODEL_AVAILABLE_MESSAGE,
+  getChatAvailableModels,
+  resolveModelSelection,
+} from '../../services/llm/modelSelection';
+import { isModelOptionActive } from './modelSelectorState';
 
 interface ModelSelectorProps {
   activeProviderId: string;
@@ -18,46 +22,27 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onSelect,
 }) => {
   const { colors } = useAppTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState('');
 
   const allProviders = useSettingsStore(state => state.providers);
-  const enabledProviders = useMemo(
-    () => allProviders.filter(p => p.enabled && p.apiKey),
-    [allProviders]
-  );
+  const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
 
-  const allAvailableModels = useMemo(() => {
-    const list: { providerId: string; providerName: string; model: string }[] = [];
-    enabledProviders.forEach(provider => {
-      if (provider.availableModels?.length) {
-        provider.availableModels.forEach(model => {
-          if (!isModelIdLikelyTextOutput(model)) return;
-          list.push({
-            providerId: provider.id,
-            providerName: provider.name,
-            model,
-          });
-        });
-      } else if (provider.model && isModelIdLikelyTextOutput(provider.model)) {
-        list.push({
-          providerId: provider.id,
-          providerName: provider.name,
-          model: provider.model,
-        });
-      }
-    });
-    return list;
-  }, [enabledProviders]);
+  const allAvailableModels = useMemo(() => getChatAvailableModels(allProviders), [allProviders]);
 
-  const activeEntry = useMemo(
+  const resolvedSelection = useMemo(
     () =>
-      allAvailableModels.find(
-        model => model.providerId === activeProviderId && model.model === activeModel
-      ) || allAvailableModels[0],
-    [allAvailableModels, activeProviderId, activeModel]
+      resolveModelSelection({
+        providers: allProviders,
+        selectedProviderId: activeProviderId,
+        selectedModel: activeModel,
+        lastUsedModel,
+      }),
+    [allProviders, activeProviderId, activeModel, lastUsedModel]
   );
+
+  const activeEntry = resolvedSelection.selection;
 
   const filteredModels = useMemo(
     () =>
@@ -68,6 +53,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       ),
     [allAvailableModels, search]
   );
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setSearch('');
+  };
 
   return (
     <View style={styles.container}>
@@ -86,12 +76,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         visible={modalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={closeModal}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+          onPress={closeModal}
         >
           <View style={styles.modalContent}>
             <View style={styles.searchBar}>
@@ -108,20 +98,29 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
             {filteredModels.length === 0 ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>No models found.</Text>
+                <Text style={styles.emptyStateText}>
+                  {allAvailableModels.length === 0
+                    ? CHAT_NO_MODEL_AVAILABLE_MESSAGE
+                    : 'No models found.'}
+                </Text>
               </View>
             ) : (
               <FlatList
                 data={filteredModels}
                 keyExtractor={(item, index) => `${item.providerId}-${item.model}-${index}`}
                 renderItem={({ item }) => {
-                  const isActive = item.providerId === activeProviderId && item.model === activeModel;
+                  const isActive = isModelOptionActive({
+                    option: item,
+                    activeProviderId,
+                    activeModel,
+                    resolvedSelection: activeEntry,
+                  });
                   return (
                     <TouchableOpacity
                       style={[styles.item, isActive ? styles.activeItem : undefined]}
                       onPress={() => {
                         onSelect(item.providerId, item.model);
-                        setModalVisible(false);
+                        closeModal();
                       }}
                     >
                       <View style={{ flex: 1 }}>

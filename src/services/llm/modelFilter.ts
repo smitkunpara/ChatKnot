@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 const NON_TEXT_ID_PATTERN =
   /(embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator|vision-preview|image)/i;
 
