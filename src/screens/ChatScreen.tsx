@@ -260,6 +260,23 @@ export const ChatScreen = () => {
     return conv.messages.some(m => m.attachments?.some(a => a.type === 'image'));
   }, [conversations, activeConversationId]);
 
+  const previousModelRef = useRef<string | undefined>(modelResolution.selection?.model);
+
+  useEffect(() => {
+    const newModel = modelResolution.selection?.model;
+    if (newModel && newModel !== previousModelRef.current) {
+      previousModelRef.current = newModel;
+
+      // Immediate warning on model switch
+      if (conversationHasImages && !currentModelVisionSupported) {
+        Alert.alert(
+          'Vision Not Supported',
+          `This conversation contains images but "${newModel}" doesn't support vision. Images will be ignored by this model.`
+        );
+      }
+    }
+  }, [modelResolution.selection?.model, conversationHasImages, currentModelVisionSupported]);
+
   const readFileAsBase64 = async (uri: string): Promise<string> => {
     const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: 'base64',

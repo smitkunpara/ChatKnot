@@ -21,7 +21,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Pencil, Plu
 import uuid from 'react-native-uuid';
 import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { LlmProviderConfig, McpServerConfig } from '../types';
+import { LlmProviderConfig, McpServerConfig, ModelCapabilities } from '../types';
 import { OpenAiService } from '../services/llm/OpenAiService';
 import { useAppTheme } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
@@ -51,6 +51,15 @@ const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }
   { label: 'Light', value: 'light' },
   { label: 'Dark', value: 'dark' },
 ];
+
+const getCapabilityTags = (caps?: ModelCapabilities): string[] => {
+  if (!caps) return [];
+  const tags: string[] = [];
+  if (caps.vision) tags.push('vision');
+  if (caps.tools) tags.push('tools');
+  if (caps.fileInput) tags.push('file');
+  return tags;
+};
 
 type SettingsView = 'index' | 'appearance' | 'prompt' | 'providers' | 'mcpServers';
 
@@ -1504,7 +1513,14 @@ export const SettingsScreen = () => {
                       setActiveProviderIdForPicker(null);
                     }}
                   >
-                    <Text style={styles.modelRowText}>{item}</Text>
+                    <View style={styles.modelRowTextWrap}>
+                      <Text style={styles.modelRowText}>{item}</Text>
+                      {getCapabilityTags(activeProviderForPicker?.modelCapabilities?.[item]).length > 0 && (
+                        <Text style={styles.modelRowCaps}>
+                          ({getCapabilityTags(activeProviderForPicker?.modelCapabilities?.[item]).join(', ')})
+                        </Text>
+                      )}
+                    </View>
                     <View style={styles.modelRowActions}>
                       <TouchableOpacity
                         style={styles.modelEyeButton}
@@ -2097,11 +2113,21 @@ const createStyles = (colors: any) =>
       borderWidth: 1,
       borderColor: colors.border,
     },
+    modelRowTextWrap: {
+      flex: 1,
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      marginRight: 10,
+    },
     modelRowText: {
       color: colors.text,
       fontSize: 14,
-      flex: 1,
-      marginRight: 10,
+    },
+    modelRowCaps: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '500' as const,
+      marginLeft: 6,
     },
     modelBulkActionRow: {
       flexDirection: 'row',

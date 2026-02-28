@@ -9,7 +9,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
+  Modal,
 } from 'react-native';
 import { FileText, ImageIcon, Paperclip, Send, StopCircle, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -50,6 +52,7 @@ export const Input: React.FC<InputProps> = ({
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [text, setText] = useState('');
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const wasEditingRef = useRef(false);
 
@@ -139,34 +142,7 @@ export const Input: React.FC<InputProps> = ({
 
   const showAttachmentOptions = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
-
-    if (Platform.OS === 'ios') {
-      const options = ['Cancel', '📷 Image', '📄 File'];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) pickImage();
-          else if (buttonIndex === 2) pickFile();
-        }
-      );
-    } else {
-      Alert.alert(
-        'Attach',
-        'What would you like to attach?',
-        [
-          {
-            text: '📷 Image',
-            onPress: pickImage,
-            ...(visionSupported ? {} : { style: 'destructive' as const }),
-          },
-          { text: '📄 File', onPress: pickFile },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-    }
+    setShowAttachmentMenu(true);
   };
 
   return (
@@ -263,6 +239,62 @@ export const Input: React.FC<InputProps> = ({
           )}
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showAttachmentMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAttachmentMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAttachmentMenu(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Attach Media</Text>
+
+            <TouchableOpacity
+              style={[styles.modalOption, !visionSupported && styles.modalOptionDisabled]}
+              disabled={!visionSupported}
+              onPress={() => {
+                setShowAttachmentMenu(false);
+                void pickImage();
+              }}
+            >
+              <View style={styles.modalIconWrap}>
+                <ImageIcon size={20} color={visionSupported ? colors.primary : colors.textTertiary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalOptionText, !visionSupported && styles.modalOptionTextDisabled]}>Image</Text>
+                {!visionSupported && (
+                  <Text style={styles.modalOptionSubText}>Not supported by current model</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => {
+                setShowAttachmentMenu(false);
+                void pickFile();
+              }}
+            >
+              <View style={styles.modalIconWrap}>
+                <FileText size={20} color={colors.primary} />
+              </View>
+              <Text style={styles.modalOptionText}>Document or File</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancel}
+              onPress={() => setShowAttachmentMenu(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -397,5 +429,69 @@ const createStyles = (colors: any) =>
     },
     disabledButton: {
       opacity: 0.45,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+    },
+    modalContent: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    },
+    modalTitle: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+      marginBottom: 16,
+      marginLeft: 4,
+    },
+    modalOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      backgroundColor: colors.surfaceAlt,
+      marginBottom: 8,
+    },
+    modalOptionDisabled: {
+      opacity: 0.5,
+    },
+    modalIconWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    modalOptionText: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    modalOptionTextDisabled: {
+      color: colors.textTertiary,
+    },
+    modalOptionSubText: {
+      color: colors.danger,
+      fontSize: 11,
+      marginTop: 2,
+    },
+    modalCancel: {
+      marginTop: 10,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    modalCancelText: {
+      color: colors.primary,
+      fontSize: 16,
+      fontWeight: '600',
     },
   });
