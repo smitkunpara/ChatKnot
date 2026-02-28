@@ -1,3 +1,20 @@
+# 🚀 ChatKnot vX.X.X (Unreleased Draft)
+
+> **Note:** Version number, date, and final details TBD. This section will be finalized before release.
+
+- **💬 ChatGPT-Style Messages**: Assistant responses now render directly on the chat background without a bordered bubble, giving a cleaner, more modern feel. User messages keep their distinctive green bubble.
+- **🏷️ Smart Conversation Titles**: New conversations are automatically titled from your first message instead of staying as "New Chat" forever.
+- **🌍 Locale-Aware Dates**: Timestamps in the sidebar now use your device's local timezone instead of hardcoded IST.
+- **🔍 Conversation Search**: Filter your chat history instantly with the new search bar in the sidebar.
+- **📳 Haptic Feedback**: Feel subtle vibrations when sending messages, copying text, and deleting conversations.
+- **♿ Accessibility**: All interactive elements now include proper labels for screen readers.
+- **📊 Better Markdown Tables**: Tables now scroll horizontally when content is wide, with proper theme-aware borders and aligned columns.
+- **🔔 Fixed Warning Banner**: Startup warnings now appear centered on screen with proper dark/light theme support.
+
+Full technical details available in [CHANGELOG.md](./CHANGELOG.md).
+
+---
+
 # 🚀 ChatKnot v0.1.0 (Beta)
 
 This is the first beta release of **ChatKnot**, a privacy-focused mobile assistant designed for the Model Context Protocol (MCP).

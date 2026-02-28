@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -78,7 +78,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             >
               <View style={styles.textRow}>
                 {message.content ? (
-                  <Markdown style={markdownStyles}>{message.content}</Markdown>
+                  <Markdown
+                    style={markdownStyles}
+                    rules={createTableRenderRules(colors)}
+                  >{message.content}</Markdown>
                 ) : null}
                 {isStreaming && <StreamingCursor color={colors.primary} />}
               </View>
@@ -235,4 +238,88 @@ const createMarkdownStyles = (colors: any) => ({
   link: {
     color: colors.link,
   },
+  table: {
+    borderWidth: 0,
+    borderColor: 'transparent',
+  },
+  thead: {},
+  tbody: {},
+  tr: {
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row' as const,
+  },
+  th: {
+    padding: 8,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  td: {
+    padding: 8,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+  },
+});
+
+const createTableRenderRules = (colors: any) => ({
+  table: (node: any, children: any) => (
+    <ScrollView
+      key={node.key}
+      horizontal
+      showsHorizontalScrollIndicator={true}
+      contentContainerStyle={{ flexDirection: 'column' as const }}
+      style={{
+        marginVertical: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 6,
+      }}
+    >
+      {children}
+    </ScrollView>
+  ),
+  th: (node: any, children: any) => (
+    <View
+      key={node.key}
+      style={{
+        padding: 8,
+        minWidth: 120,
+        borderRightWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceAlt,
+      }}
+    >
+      <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13 }}>
+        {children}
+      </Text>
+    </View>
+  ),
+  td: (node: any, children: any) => (
+    <View
+      key={node.key}
+      style={{
+        padding: 8,
+        minWidth: 120,
+        borderRightWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <Text style={{ color: colors.text, fontSize: 13 }}>
+        {children}
+      </Text>
+    </View>
+  ),
+  tr: (node: any, children: any) => (
+    <View
+      key={node.key}
+      style={{
+        flexDirection: 'row' as const,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      {children}
+    </View>
+  ),
 });

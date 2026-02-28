@@ -5,6 +5,35 @@ All notable changes to ChatKnot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### Chat UI
+- ChatGPT-style message layout — assistant messages render directly on background without a bubble; user messages keep their green rounded bubble
+- Haptic feedback on key interactions: light impact on send and copy, medium impact on delete (via `expo-haptics`)
+
+#### Conversations
+- Auto-title conversations from the first user message (~50 char word-boundary truncation) instead of staying as "New Chat"
+- Sidebar conversation search/filter bar (appears when >3 conversations) with case-insensitive title matching
+
+#### Internationalization
+- Locale-aware date formatting — replaced hardcoded IST (Asia/Kolkata) timezone with device-local `Intl.DateTimeFormat`
+
+#### Accessibility
+- Added `accessibilityLabel` and `accessibilityRole` to all interactive elements across 5 components: Input, MessageBubble, ConversationList, ChatScreen, ModelSelector
+
+### Fixed
+- Startup warning banner now renders as a centered overlay in the middle of the screen instead of pushing content from the top (notification panel area)
+- Startup warning banner now properly follows light/dark theme colors instead of using hardcoded yellow/brown
+- Markdown table borders now use theme colors instead of hardcoded black `#000000`
+- Markdown tables wrap in a horizontal `ScrollView` for wide data, with proper column sizing and header/content alignment
+- Fixed `sceneContainerStyle` → `sceneStyle` for React Navigation v7 compatibility in `AppNavigator`
+
+### Changed
+- `dateFormat.ts`: `formatIstDateTime` is now a deprecated alias for `formatLocalDateTime`
+- Dark mode warning palette updated to amber tones (`#fbbf24` / `#453509`) for better readability
+
 ## [0.1.0] - 2026-02-27
 
 ### Added
