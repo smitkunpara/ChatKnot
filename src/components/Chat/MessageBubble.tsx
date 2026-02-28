@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, Edit2, RotateCcw } from 'lucide-react-native';
+import { Bot, Copy, Edit2, RotateCcw, User } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
@@ -59,55 +59,78 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
-      <View
-        style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.assistantBubble,
-          hasToolCalls ? styles.assistantWithTools : undefined,
-        ]}
-      >
-        <View style={styles.textRow}>
-          {message.content ? (
-            isUser ? (
-              <Text style={styles.userText}>{message.content}</Text>
-            ) : (
-              <Markdown style={markdownStyles}>{message.content}</Markdown>
-            )
-          ) : null}
-          {isStreaming && <StreamingCursor color={colors.primary} />}
+      <View style={styles.messageRow}>
+        {!isUser && (
+          <View style={styles.avatarContainer}>
+            <View style={styles.assistantAvatar}>
+              <Bot size={14} color={colors.primary} />
+            </View>
+          </View>
+        )}
+
+        <View style={{ flex: 1 }}>
+          {isUser ? (
+            <View style={[styles.bubble, styles.userBubble]}>
+              <View style={styles.textRow}>
+                <Text style={styles.userText}>{message.content}</Text>
+              </View>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.assistantContent,
+                hasToolCalls ? styles.assistantWithTools : undefined,
+              ]}
+            >
+              <View style={styles.textRow}>
+                {message.content ? (
+                  <Markdown style={markdownStyles}>{message.content}</Markdown>
+                ) : null}
+                {isStreaming && <StreamingCursor color={colors.primary} />}
+              </View>
+
+              {hasToolCalls ? (
+                <View style={styles.toolCallsContainer}>
+                  {message.toolCalls!.map((tc) => (
+                    <ToolCallComponent
+                      key={tc.id}
+                      toolCall={tc}
+                      requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
+                      onApprove={() => onToolApprovalDecision?.(tc.id, true)}
+                      onDeny={() => onToolApprovalDecision?.(tc.id, false)}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
+            {!isStreaming && message.content ? (
+              <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
+                <Copy size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+            {!isUser && !isStreaming && onRetryAssistant ? (
+              <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton}>
+                <RotateCcw size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+            {isUser && onEdit ? (
+              <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton}>
+                <Edit2 size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
-        {hasToolCalls ? (
-          <View style={styles.toolCallsContainer}>
-            {message.toolCalls!.map((tc) => (
-              <ToolCallComponent
-                key={tc.id}
-                toolCall={tc}
-                requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
-                onApprove={() => onToolApprovalDecision?.(tc.id, true)}
-                onDeny={() => onToolApprovalDecision?.(tc.id, false)}
-              />
-            ))}
+        {isUser && (
+          <View style={styles.avatarContainer}>
+            <View style={styles.userAvatar}>
+              <User size={14} color={colors.onPrimary} />
+            </View>
           </View>
-        ) : null}
-      </View>
-
-      <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
-        {!isStreaming && message.content ? (
-          <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
-            <Copy size={13} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
-        {!isUser && !isStreaming && onRetryAssistant ? (
-          <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton}>
-            <RotateCcw size={13} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
-        {isUser && onEdit ? (
-          <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton}>
-            <Edit2 size={13} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
+        )}
       </View>
     </View>
   );
@@ -126,25 +149,53 @@ const createStyles = (colors: any) =>
     assistantContainer: {
       alignItems: 'flex-start',
     },
+    messageRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      maxWidth: '100%',
+    },
+    avatarContainer: {
+      marginTop: 2,
+    },
+    assistantAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+    },
+    userAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 8,
+    },
     bubble: {
       maxWidth: '88%',
       padding: 12,
       borderRadius: 14,
       minWidth: 44,
       borderWidth: 1,
+      alignSelf: 'flex-end',
     },
     userBubble: {
       backgroundColor: colors.userBubble,
       borderBottomRightRadius: 6,
       borderColor: colors.primary,
     },
-    assistantBubble: {
-      backgroundColor: colors.assistantBubble,
-      borderBottomLeftRadius: 6,
-      borderColor: colors.subtleBorder,
+    assistantContent: {
+      paddingVertical: 4,
+      paddingHorizontal: 2,
     },
     assistantWithTools: {
-      width: '96%',
+      width: '100%',
     },
     userText: {
       color: colors.onPrimary,
