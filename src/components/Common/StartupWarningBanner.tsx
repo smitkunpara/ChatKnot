@@ -35,14 +35,14 @@ export const StartupWarningBanner: React.FC<Props> = ({
   if (!visible || warnings.length === 0) return null;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.warningBackground || '#FFF3CD', borderColor: colors.warning || '#856404' }]}>
+    <View style={[styles.container, { backgroundColor: colors.warningBackground, borderColor: colors.warning }]}>
       <View style={styles.header}>
-        <AlertTriangle size={16} color={colors.warning || '#856404'} />
-        <Text style={[styles.title, { color: colors.warning || '#856404' }]}>
+        <AlertTriangle size={16} color={colors.warning} />
+        <Text style={[styles.title, { color: colors.warning }]}>
           Startup Checks
         </Text>
         <TouchableOpacity onPress={() => { setVisible(false); onDismiss(); }} hitSlop={12}>
-          <X size={16} color={colors.warning || '#856404'} />
+          <X size={16} color={colors.warning} />
         </TouchableOpacity>
       </View>
       <FlatList
@@ -51,7 +51,7 @@ export const StartupWarningBanner: React.FC<Props> = ({
         scrollEnabled={warnings.length > 3}
         style={warnings.length > 3 ? { maxHeight: 80 } : undefined}
         renderItem={({ item }) => (
-          <Text style={[styles.warningText, { color: colors.text }]}>
+          <Text style={[styles.warningText, { color: colors.warning }]}>
             • {item}
           </Text>
         )}
@@ -62,28 +62,37 @@ export const StartupWarningBanner: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 12,
-    marginTop: 8,
-    marginBottom: 4,
+    position: 'absolute',
+    top: '20%',
+    left: 20,
+    right: 20,
+    zIndex: 9999,
     borderRadius: 8,
     borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 6,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
+    gap: 8,
+    marginBottom: 8,
   },
   title: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     flex: 1,
   },
   warningText: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 18,
     marginLeft: 4,
+    marginBottom: 2,
+    fontWeight: '500',
   },
 });

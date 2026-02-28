@@ -68,8 +68,8 @@ const darkPalette: AppPalette = {
   toolCardHeader: '#141417',
   codeBackground: '#0a0a0c',
   link: '#34d399',
-  warning: '#856404',
-  warningBackground: '#FFF3CD',
+  warning: '#fbbf24',
+  warningBackground: '#453509',
 };
 
 const lightPalette: AppPalette = {

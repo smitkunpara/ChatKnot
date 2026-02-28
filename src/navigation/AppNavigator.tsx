@@ -17,16 +17,13 @@ interface AppNavigatorProps {
 
 export const AppNavigator: React.FC<AppNavigatorProps> = ({
   startupWarnings = [],
-  onDismissWarnings = () => {},
+  onDismissWarnings = () => { },
 }) => {
   const { colors } = useAppTheme();
 
   return (
     <NavigationContainer theme={getNavigationTheme(colors)}>
       <View style={{ flex: 1 }}>
-        {startupWarnings.length > 0 && (
-          <StartupWarningBanner warnings={startupWarnings} onDismiss={onDismissWarnings} />
-        )}
         <Drawer.Navigator
           initialRouteName="Chat"
           drawerContent={(props) => <Sidebar {...props} />}
@@ -45,6 +42,9 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           <Drawer.Screen name="Chat" component={ChatScreen} />
           <Drawer.Screen name="Settings" component={SettingsScreen} />
         </Drawer.Navigator>
+        {startupWarnings.length > 0 && (
+          <StartupWarningBanner warnings={startupWarnings} onDismiss={onDismissWarnings} />
+        )}
       </View>
     </NavigationContainer>
   );
