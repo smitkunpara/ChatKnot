@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageSquare, PlusCircle, Search, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
 import { useChatStore } from '../../store/useChatStore';
 import { useAppTheme } from '../../theme/useAppTheme';
+import * as Haptics from 'expo-haptics';
 import {
   getSidebarConversationLabel,
   getSidebarNewChatCtaLabel,
@@ -50,6 +51,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
 
   const handleDelete = (id: string, e: any) => {
     e.stopPropagation();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
     deleteConversation(id);
   };
 

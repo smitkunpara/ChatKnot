@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Send, StopCircle, X } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../../theme/useAppTheme';
 
 interface InputProps {
@@ -49,6 +50,7 @@ export const Input: React.FC<InputProps> = ({
 
   const handleSend = () => {
     if (!text.trim()) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     onSend(text.trim());
     setText('');
   };

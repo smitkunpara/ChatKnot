@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { Bot, Copy, Edit2, RotateCcw, User } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -54,6 +55,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   if (!shouldRenderBubble) return null;
 
   const copyToClipboard = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     await Clipboard.setStringAsync(message.content || '');
   };
 
