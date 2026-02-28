@@ -2,6 +2,17 @@
 
 A privacy-focused React Native mobile application for chatting with AI providers and connecting MCP/OpenAPI tools using the Model Context Protocol.
 
+## Project Status
+
+- [x] Initial chat app
+- [x] MCP support
+- [ ] Multiple mode support
+    - each mode has its own system prompt and model and mcp configuration
+- [ ] Export chat (markdown/pdf/json)
+- [ ] AI Search and AI Tab rename
+- [ ] iamge/file support
+
+
 ## 🌟 Key Features
 
 - **Multi-Provider AI**: Configure any OpenAI-compatible endpoint with streaming support.

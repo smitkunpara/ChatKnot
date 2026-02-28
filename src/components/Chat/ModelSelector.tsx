@@ -153,7 +153,7 @@ const createStyles = (colors: any) =>
       paddingVertical: 7,
       paddingHorizontal: 11,
       borderRadius: 12,
-      height: 40,
+      height: 38,
       borderWidth: 1,
       borderColor: colors.inputBorder,
     },

@@ -10,6 +10,8 @@
 - **♿ Accessibility**: All interactive elements now include proper labels for screen readers.
 - **📊 Better Markdown Tables**: Tables now scroll horizontally when content is wide, with proper theme-aware borders and aligned columns.
 - **🔔 Fixed Warning Banner**: Startup warnings now appear centered on screen with proper dark/light theme support.
+- **🌙 Dark Mode Detection**: Fixed system dark/light mode detection so the app correctly follows your device theme setting.
+- **🎨 Refined Light Mode**: Softer gray tones replace harsh whites for a more comfortable reading experience, with consistent component styling across the header.
 
 Full technical details available in [CHANGELOG.md](./CHANGELOG.md).
 
