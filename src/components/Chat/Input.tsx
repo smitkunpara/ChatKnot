@@ -1,8 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Send, StopCircle, X } from 'lucide-react-native';
+import {
+  ActionSheetIOS,
+  Alert,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { FileText, ImageIcon, Paperclip, Send, StopCircle, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { Attachment } from '../../types';
 
 interface InputProps {
   onSend: (text: string) => void;
@@ -12,7 +26,13 @@ interface InputProps {
   onCancelEdit?: () => void;
   isEditing?: boolean;
   onFocus?: () => void;
+  attachments: Attachment[];
+  onAddAttachment: (attachment: Attachment) => void;
+  onRemoveAttachment: (id: string) => void;
+  visionSupported?: boolean;
 }
+
+let attachmentIdCounter = 0;
 
 export const Input: React.FC<InputProps> = ({
   onSend,
@@ -22,6 +42,10 @@ export const Input: React.FC<InputProps> = ({
   onCancelEdit,
   isEditing,
   onFocus,
+  attachments,
+  onAddAttachment,
+  onRemoveAttachment,
+  visionSupported = true,
 }) => {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -46,13 +70,103 @@ export const Input: React.FC<InputProps> = ({
     wasEditingRef.current = !!isEditing;
   }, [isEditing]);
 
-  const canSend = !!text.trim() && !isLoading;
+  const canSend = (!!text.trim() || attachments.length > 0) && !isLoading;
 
   const handleSend = () => {
-    if (!text.trim()) return;
+    if (!text.trim() && attachments.length === 0) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     onSend(text.trim());
     setText('');
+  };
+
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant access to your photo library to attach images.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        base64: true,
+        allowsMultipleSelection: false,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        const mimeType = asset.mimeType || 'image/jpeg';
+        const name = asset.fileName || `image_${Date.now()}.jpg`;
+
+        onAddAttachment({
+          id: `att_${++attachmentIdCounter}_${Date.now()}`,
+          type: 'image',
+          uri: asset.uri,
+          name,
+          mimeType,
+          size: asset.fileSize || 0,
+          base64: asset.base64 || undefined,
+        });
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to pick image.');
+    }
+  };
+
+  const pickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'text/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        onAddAttachment({
+          id: `att_${++attachmentIdCounter}_${Date.now()}`,
+          type: 'file',
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: asset.mimeType || 'application/octet-stream',
+          size: asset.size || 0,
+        });
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to pick file.');
+    }
+  };
+
+  const showAttachmentOptions = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+
+    if (Platform.OS === 'ios') {
+      const options = ['Cancel', '📷 Image', '📄 File'];
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickImage();
+          else if (buttonIndex === 2) pickFile();
+        }
+      );
+    } else {
+      Alert.alert(
+        'Attach',
+        'What would you like to attach?',
+        [
+          {
+            text: '📷 Image',
+            onPress: pickImage,
+            ...(visionSupported ? {} : { style: 'destructive' as const }),
+          },
+          { text: '📄 File', onPress: pickFile },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    }
   };
 
   return (
@@ -72,7 +186,51 @@ export const Input: React.FC<InputProps> = ({
         </View>
       ) : null}
 
+      {attachments.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.attachmentList}
+          contentContainerStyle={styles.attachmentListContent}
+        >
+          {attachments.map((att) => (
+            <View key={att.id} style={styles.attachmentChip}>
+              {att.type === 'image' ? (
+                <Image source={{ uri: att.uri }} style={styles.attachmentThumb} />
+              ) : (
+                <View style={styles.fileIconWrap}>
+                  <FileText size={16} color={colors.primary} />
+                </View>
+              )}
+              <Text style={styles.attachmentName} numberOfLines={1}>
+                {att.name}
+              </Text>
+              <TouchableOpacity
+                style={styles.attachmentRemove}
+                onPress={() => onRemoveAttachment(att.id)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={12} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
       <View style={styles.container}>
+        <TouchableOpacity
+          style={styles.attachButton}
+          onPress={showAttachmentOptions}
+          disabled={isLoading}
+          accessibilityLabel="Attach file or image"
+          accessibilityRole="button"
+        >
+          <Paperclip
+            size={20}
+            color={isLoading ? colors.placeholder : colors.textSecondary}
+          />
+        </TouchableOpacity>
+
         <TextInput
           ref={inputRef}
           style={[styles.input, isEditing ? styles.editingInput : undefined]}
@@ -144,9 +302,64 @@ const createStyles = (colors: any) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    attachmentList: {
+      marginBottom: 8,
+      maxHeight: 64,
+    },
+    attachmentListContent: {
+      gap: 8,
+    },
+    attachmentChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 10,
+      paddingRight: 8,
+      paddingVertical: 4,
+      paddingLeft: 4,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      maxWidth: 180,
+    },
+    attachmentThumb: {
+      width: 36,
+      height: 36,
+      borderRadius: 6,
+    },
+    fileIconWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 6,
+      backgroundColor: colors.primarySoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    attachmentName: {
+      color: colors.text,
+      fontSize: 11,
+      fontWeight: '500',
+      marginLeft: 6,
+      maxWidth: 100,
+    },
+    attachmentRemove: {
+      marginLeft: 4,
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     container: {
       flexDirection: 'row',
       alignItems: 'flex-end',
+    },
+    attachButton: {
+      width: 38,
+      height: 42,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 4,
     },
     input: {
       flex: 1,

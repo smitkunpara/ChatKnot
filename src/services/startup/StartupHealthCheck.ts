@@ -1,4 +1,4 @@
-import { McpServerConfig, LlmProviderConfig } from '../../types';
+import { McpServerConfig, LlmProviderConfig, ModelCapabilities } from '../../types';
 import { validateOpenApiEndpoint } from '../mcp/OpenApiValidationService';
 import { OpenAiService } from '../llm/OpenAiService';
 
@@ -29,6 +29,7 @@ export interface AiHealthResult {
   modelsChanged: boolean;
   removedModels: string[];
   currentModels: string[];
+  capabilities?: Record<string, ModelCapabilities>;
   error?: string;
 }
 
@@ -115,14 +116,15 @@ async function checkAiProvider(
 
   try {
     const service = new OpenAiService(provider);
-    const models = await withTimeout(
-      service.listModels(),
+    const { models, capabilities } = await withTimeout(
+      service.listModelsWithCapabilities(),
       NETWORK_TIMEOUT_MS,
       `AI ${provider.name}`
     );
 
     result.reachable = true;
     result.currentModels = models;
+    result.capabilities = capabilities;
 
     // Check if any previously visible models are no longer available
     const previousModels = provider.availableModels || [];
@@ -314,6 +316,7 @@ export function applyHealthCheckReport(
     updateProvider({
       ...provider,
       availableModels: currentModels,
+      modelCapabilities: aiResult.capabilities || provider.modelCapabilities,
       hiddenModels: Array.from(hiddenModels),
     });
   }

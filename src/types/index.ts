@@ -7,6 +7,22 @@ export interface ToolCall {
   error?: string;
 }
 
+export interface ModelCapabilities {
+  vision: boolean;
+  tools: boolean;
+  fileInput: boolean;
+}
+
+export interface Attachment {
+  id: string;
+  type: 'image' | 'file';
+  uri: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  base64?: string;
+}
+
 export interface Message {
   id: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -14,6 +30,7 @@ export interface Message {
   toolCalls?: ToolCall[];
   toolCallId?: string;
   timestamp: number;
+  attachments?: Attachment[];
 }
 
 export interface Conversation {
@@ -40,7 +57,8 @@ export interface LlmProviderConfig {
   apiKey: string;
   apiKeyRef?: string;
   model: string;
-  availableModels?: string[]; // Added to store fetched models
+  availableModels?: string[];
+  modelCapabilities?: Record<string, ModelCapabilities>;
   hiddenModels?: string[];
   enabled: boolean;
 }

@@ -3,6 +3,7 @@ import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 import { Brain, Check, ChevronDown, Search } from 'lucide-react-native';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { ModelCapabilities } from '../../types';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
   getChatAvailableModels,
@@ -15,6 +16,15 @@ interface ModelSelectorProps {
   activeModel: string;
   onSelect: (providerId: string, model: string) => void;
 }
+
+const getCapabilityTags = (caps?: ModelCapabilities): string[] => {
+  if (!caps) return [];
+  const tags: string[] = [];
+  if (caps.vision) tags.push('vision');
+  if (caps.tools) tags.push('tools');
+  if (caps.fileInput) tags.push('file');
+  return tags;
+};
 
 export const ModelSelector: React.FC<ModelSelectorProps> = ({
   activeProviderId,
@@ -31,6 +41,21 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const allAvailableModels = useMemo(() => getChatAvailableModels(allProviders), [allProviders]);
 
+  // Build a lookup: providerId -> modelId -> capabilities
+  const capabilitiesMap = useMemo(() => {
+    const map: Record<string, Record<string, ModelCapabilities>> = {};
+    for (const p of allProviders) {
+      if (p.modelCapabilities) {
+        map[p.id] = p.modelCapabilities;
+      }
+    }
+    return map;
+  }, [allProviders]);
+
+  const getModelCaps = (providerId: string, model: string): ModelCapabilities | undefined => {
+    return capabilitiesMap[providerId]?.[model];
+  };
+
   const resolvedSelection = useMemo(
     () =>
       resolveModelSelection({
@@ -43,6 +68,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   );
 
   const activeEntry = resolvedSelection.selection;
+  const activeCapTags = activeEntry
+    ? getCapabilityTags(getModelCaps(activeEntry.providerId, activeEntry.model))
+    : [];
 
   const filteredModels = useMemo(
     () =>
@@ -64,7 +92,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       <TouchableOpacity style={styles.selector} onPress={() => setModalVisible(true)} accessibilityLabel={`Select model. Current: ${activeEntry?.model || 'none'}`} accessibilityRole="button">
         <Brain size={15} color={colors.primary} />
         <View style={styles.textContainer}>
-          <Text style={styles.providerName}>{activeEntry?.providerName || 'No Provider'}</Text>
+          <View style={styles.providerRow}>
+            <Text style={styles.providerName}>{activeEntry?.providerName || 'No Provider'}</Text>
+            {activeCapTags.length > 0 && (
+              <Text style={styles.capabilityBadge}>({activeCapTags.join(', ')})</Text>
+            )}
+          </View>
           <Text style={styles.modelName} numberOfLines={1}>
             {activeEntry?.model || 'Select model'}
           </Text>
@@ -115,6 +148,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     activeModel,
                     resolvedSelection: activeEntry,
                   });
+                  const itemCapTags = getCapabilityTags(getModelCaps(item.providerId, item.model));
                   return (
                     <TouchableOpacity
                       style={[styles.item, isActive ? styles.activeItem : undefined]}
@@ -125,7 +159,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.itemName}>{item.model}</Text>
-                        <Text style={styles.itemProvider}>{item.providerName}</Text>
+                        <View style={styles.itemProviderRow}>
+                          <Text style={styles.itemProvider}>{item.providerName}</Text>
+                          {itemCapTags.length > 0 && (
+                            <Text style={styles.itemCapBadge}>({itemCapTags.join(', ')})</Text>
+                          )}
+                        </View>
                       </View>
                       {isActive ? <Check size={18} color={colors.primary} /> : null}
                     </TouchableOpacity>
@@ -161,16 +200,27 @@ const createStyles = (colors: any) =>
       flex: 1,
       marginHorizontal: 8,
     },
+    providerRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+    },
     providerName: {
       color: colors.textTertiary,
       fontSize: 9,
-      fontWeight: '600',
-      textTransform: 'uppercase',
+      fontWeight: '600' as const,
+      textTransform: 'uppercase' as const,
+    },
+    capabilityBadge: {
+      color: colors.primary,
+      fontSize: 8,
+      fontWeight: '600' as const,
+      marginLeft: 4,
+      textTransform: 'lowercase' as const,
     },
     modelName: {
       color: colors.text,
       fontSize: 12,
-      fontWeight: '700',
+      fontWeight: '700' as const,
     },
     modalOverlay: {
       flex: 1,
@@ -227,6 +277,17 @@ const createStyles = (colors: any) =>
       color: colors.textTertiary,
       fontSize: 11,
       marginTop: 1,
+    },
+    itemProviderRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      marginTop: 1,
+    },
+    itemCapBadge: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '500' as const,
+      marginLeft: 4,
     },
     emptyState: {
       paddingVertical: 24,

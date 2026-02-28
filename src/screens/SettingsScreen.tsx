@@ -215,7 +215,7 @@ export const SettingsScreen = () => {
     setIsValidatingNewProvider(true);
     try {
       const validationService = new OpenAiService(provider);
-      const models = await validationService.listModels();
+      const { models, capabilities } = await validationService.listModelsWithCapabilities();
 
       if (!models.length) {
         Alert.alert('Invalid Provider', 'No compatible text models found at this endpoint.');
@@ -226,6 +226,7 @@ export const SettingsScreen = () => {
       const providerWithModels = {
         ...provider,
         availableModels: models,
+        modelCapabilities: capabilities,
         model: models[0],
       };
 
@@ -313,7 +314,7 @@ export const SettingsScreen = () => {
     setIsFetchingModels(provider.id);
     try {
       const service = new OpenAiService(provider);
-      const models = await service.listModels();
+      const { models, capabilities } = await service.listModelsWithCapabilities();
       setDraftAvailableModels(prev => ({
         ...prev,
         [provider.id]: models,
@@ -330,6 +331,7 @@ export const SettingsScreen = () => {
           const nextProvider = {
             ...provider,
             availableModels: models,
+            modelCapabilities: capabilities,
             hiddenModels,
           };
           const visibleModels = getProviderVisibleModels(nextProvider);

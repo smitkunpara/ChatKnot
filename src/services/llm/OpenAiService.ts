@@ -1,5 +1,10 @@
-import { LlmProviderConfig, Message } from '../../types';
+import { LlmProviderConfig, Message, ModelCapabilities } from '../../types';
 import { filterModelsForTextOutput } from './modelFilter';
+
+export interface ModelsWithCapabilities {
+  models: string[];
+  capabilities: Record<string, ModelCapabilities>;
+}
 
 export class OpenAiService {
   private config: LlmProviderConfig;
@@ -19,7 +24,27 @@ export class OpenAiService {
     };
   }
 
+  private static extractCapabilities(model: any): ModelCapabilities {
+    const inputModalities: string[] = Array.isArray(model?.architecture?.input_modalities)
+      ? model.architecture.input_modalities
+      : [];
+    const supportedParams: string[] = Array.isArray(model?.supported_parameters)
+      ? model.supported_parameters
+      : [];
+
+    return {
+      vision: inputModalities.includes('image'),
+      tools: supportedParams.includes('tools'),
+      fileInput: inputModalities.includes('file'),
+    };
+  }
+
   async listModels(): Promise<string[]> {
+    const result = await this.listModelsWithCapabilities();
+    return result.models;
+  }
+
+  async listModelsWithCapabilities(): Promise<ModelsWithCapabilities> {
     try {
       const response = await fetch(`${this.getBaseUrl()}/models`, {
         method: 'GET',
@@ -33,7 +58,16 @@ export class OpenAiService {
       const data = await response.json();
       const rawModels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
       const supportedModels = filterModelsForTextOutput(rawModels);
-      return supportedModels;
+
+      const capabilities: Record<string, ModelCapabilities> = {};
+      for (const model of rawModels) {
+        const id = typeof model === 'string' ? model : model?.id || model?.name || '';
+        if (id && supportedModels.includes(id)) {
+          capabilities[id] = OpenAiService.extractCapabilities(model);
+        }
+      }
+
+      return { models: supportedModels, capabilities };
     } catch (error) {
       console.error('Error fetching models:', error);
       if (error instanceof Error) {
@@ -58,10 +92,39 @@ export class OpenAiService {
         { role: 'system', content: systemPrompt },
         ...messages.map(m => {
           const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
-          const msg: any = {
-            role: m.role,
-            content: hasToolCalls && m.role === 'assistant' ? (m.content?.trim() ? m.content : null) : (m.content || ''),
-          };
+          const hasAttachments = m.attachments && m.attachments.length > 0 && m.role === 'user';
+
+          // Build multimodal content array when attachments exist
+          let content: any;
+          if (hasAttachments) {
+            const parts: any[] = [];
+            if (m.content?.trim()) {
+              parts.push({ type: 'text', text: m.content });
+            }
+            for (const att of m.attachments!) {
+              if (att.type === 'image' && att.base64) {
+                parts.push({
+                  type: 'image_url',
+                  image_url: { url: `data:${att.mimeType};base64,${att.base64}` },
+                });
+              } else if (att.type === 'file' && att.base64) {
+                parts.push({
+                  type: 'file',
+                  file: {
+                    filename: att.name,
+                    file_data: `data:${att.mimeType};base64,${att.base64}`,
+                  },
+                });
+              }
+            }
+            content = parts.length > 0 ? parts : (m.content || '');
+          } else {
+            content = hasToolCalls && m.role === 'assistant'
+              ? (m.content?.trim() ? m.content : null)
+              : (m.content || '');
+          }
+
+          const msg: any = { role: m.role, content };
           if (hasToolCalls) {
             msg.tool_calls = m.toolCalls!.map(tc => ({
               id: tc.id,

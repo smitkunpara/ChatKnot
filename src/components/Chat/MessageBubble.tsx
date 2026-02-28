@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { Copy, Edit2, RotateCcw } from 'lucide-react-native';
+import { Copy, Edit2, FileText, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
@@ -48,7 +48,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isSystem = message.role === 'system';
   const hasToolCalls = !!message.toolCalls?.length;
   const hasText = !!message.content?.trim();
-  const shouldRenderBubble = hasText || hasToolCalls || !!isStreaming;
+  const hasAttachments = !!message.attachments?.length;
+  const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || !!isStreaming;
 
   // Tool outputs are kept in history for LLM context, but hidden from the UI.
   if (isSystem || isTool) return null;
@@ -65,9 +66,32 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         <View style={{ flex: 1 }}>
           {isUser ? (
             <View style={[styles.bubble, styles.userBubble]}>
-              <View style={styles.textRow}>
-                <Text style={styles.userText}>{message.content}</Text>
-              </View>
+              {hasAttachments && (
+                <View style={styles.attachmentsContainer}>
+                  {message.attachments?.map((att) => (
+                    <View key={att.id} style={styles.attachmentItem}>
+                      {att.type === 'image' && att.base64 ? (
+                        <Image
+                          source={{ uri: `data:${att.mimeType};base64,${att.base64}` }}
+                          style={styles.attachedImage}
+                        />
+                      ) : (
+                        <View style={styles.attachedFileWrap}>
+                          <FileText size={16} color={colors.onPrimary} />
+                          <Text style={styles.attachedFileName} numberOfLines={1}>
+                            {att.name}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+              {hasText && (
+                <View style={styles.textRow}>
+                  <Text style={styles.userText}>{message.content}</Text>
+                </View>
+              )}
             </View>
           ) : (
             <View
@@ -167,6 +191,36 @@ const createStyles = (colors: any) =>
       color: colors.onPrimary,
       fontSize: 15,
       lineHeight: 22,
+    },
+    attachmentsContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 6,
+    },
+    attachmentItem: {
+      marginBottom: 2,
+    },
+    attachedImage: {
+      width: 140,
+      height: 140,
+      borderRadius: 8,
+    },
+    attachedFileWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      maxWidth: 200,
+    },
+    attachedFileName: {
+      color: colors.onPrimary,
+      fontSize: 12,
+      fontWeight: '500',
+      marginLeft: 6,
+      flex: 1,
     },
     actions: {
       flexDirection: 'row',

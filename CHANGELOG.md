@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### Chat UI
+- Added multimodal attachment support (`+` icon) allowing users to attach Images and Text/PDF documents
+- Added image thumbnail and file layout previews inside the message composer
+- Assistant and User Message bubbles now display attached image thumbnails and files directly
+- Handled vision mismatch warning: app alerts users if a non-vision model is selected in a chat with images
 - ChatGPT-style message layout — assistant messages render directly on background without a bubble; user messages keep their green rounded bubble
 - Haptic feedback on key interactions: light impact on send and copy, medium impact on delete (via `expo-haptics`)
 
@@ -36,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dark mode warning palette updated to amber tones (`#fbbf24` / `#453509`) for better readability
 - Light mode palette softened — replaced bright whites with warmer gray tones for reduced eye strain
 - Unified header component backgrounds: model selector and menu button now share same theme tokens (`surfaceAlt`/`subtleBorder`)
+- Model Selector now explicitly shows capability badges (e.g. `vision`, `tools`, `file`)
+- OpenAiService `/models` fetch now pulls `capabilities` mapping directly into provider config
 
 ### Performance
 - Removed artificial 12ms delay and 12-char splitting from SSE streaming — tokens now render immediately as they arrive from the provider

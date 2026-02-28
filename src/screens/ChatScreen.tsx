@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   View,
   FlatList,
   KeyboardAvoidingView,
@@ -20,7 +21,7 @@ import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector } from '../components/Chat/ModelSelector';
-import { ToolCall } from '../types';
+import { ToolCall, Attachment } from '../types';
 import { useAppTheme } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -42,6 +43,7 @@ import {
   getErrorMessage,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
+import * as FileSystem from 'expo-file-system';
 
 export const ChatScreen = () => {
   const navigation = useNavigation<DrawerNavigationProp<any>>();
@@ -71,6 +73,7 @@ export const ChatScreen = () => {
   const [editingContent, setEditingContent] = useState<string | undefined>(undefined);
   const [chatError, setChatError] = useState<string | null>(null);
   const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
@@ -241,6 +244,29 @@ export const ChatScreen = () => {
     }
   };
 
+  // Check if the current model supports vision
+  const currentModelVisionSupported = useMemo(() => {
+    if (!modelResolution.selection) return false;
+    const provider = providers.find(p => p.id === modelResolution.selection!.providerId);
+    if (!provider?.modelCapabilities) return true; // default to true if no data
+    const caps = provider.modelCapabilities[modelResolution.selection!.model];
+    return caps?.vision ?? true;
+  }, [modelResolution.selection, providers]);
+
+  // Check if conversation has any image attachments in its history
+  const conversationHasImages = useMemo(() => {
+    const conv = conversations.find(c => c.id === activeConversationId);
+    if (!conv) return false;
+    return conv.messages.some(m => m.attachments?.some(a => a.type === 'image'));
+  }, [conversations, activeConversationId]);
+
+  const readFileAsBase64 = async (uri: string): Promise<string> => {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: 'base64',
+    });
+    return base64;
+  };
+
   const handleSend = async (text: string) => {
     let conversationId = activeConversationId;
 
@@ -268,15 +294,63 @@ export const ChatScreen = () => {
       return;
     }
 
+    // Vision mismatch warning
+    const hasImageAttachments = attachments.some(a => a.type === 'image');
+    if ((hasImageAttachments || conversationHasImages) && !currentModelVisionSupported) {
+      return new Promise<void>((resolve) => {
+        Alert.alert(
+          'Vision Not Supported',
+          `This conversation contains images but "${modelResolution.selection!.model}" doesn't support vision. Images will be ignored by this model.`,
+          [
+            { text: 'Select Different Model', onPress: () => resolve(), style: 'cancel' },
+            {
+              text: 'Continue Anyway',
+              onPress: async () => {
+                await doSend(text, conversationId!);
+                resolve();
+              },
+            },
+          ]
+        );
+      });
+    }
+
+    await doSend(text, conversationId);
+  };
+
+  const doSend = async (text: string, conversationId: string) => {
     setChatError(null);
     stopRequestedRef.current = false;
+
+    // Prepare attachments with base64
+    let messageAttachments: Attachment[] | undefined;
+    if (attachments.length > 0) {
+      messageAttachments = [];
+      for (const att of attachments) {
+        let base64 = att.base64;
+        if (!base64) {
+          try {
+            base64 = await readFileAsBase64(att.uri);
+          } catch (e) {
+            console.error('Failed to read file:', att.name, e);
+            continue;
+          }
+        }
+        messageAttachments.push({ ...att, base64 });
+      }
+      setAttachments([]);
+    }
 
     if (editingMessageId) {
       editMessage(conversationId, editingMessageId, text);
       setEditingMessageId(null);
       setEditingContent(undefined);
     } else {
-      addMessage(conversationId, { role: 'user', content: text });
+      addMessage(conversationId, {
+        role: 'user',
+        content: text,
+        ...(messageAttachments && messageAttachments.length > 0 ? { attachments: messageAttachments } : {}),
+      });
     }
 
     setLoading(true);
@@ -655,6 +729,10 @@ export const ChatScreen = () => {
             setEditingContent(undefined);
           }}
           onFocus={handleInputFocus}
+          attachments={attachments}
+          onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
+          onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
+          visionSupported={currentModelVisionSupported}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
