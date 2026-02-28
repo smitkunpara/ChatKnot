@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Light mode palette softened — replaced bright whites with warmer gray tones for reduced eye strain
 - Unified header component backgrounds: model selector and menu button now share same theme tokens (`surfaceAlt`/`subtleBorder`)
 
+### Performance
+- Removed artificial 12ms delay and 12-char splitting from SSE streaming — tokens now render immediately as they arrive from the provider
+- Eliminated unnecessary async/await overhead in the streaming pipeline (`emitContentChunk`, `processDelta`, `processSsePayload` are now synchronous)
+- Added zero-delay event-loop yields (`setTimeout(0)`) to allow React to flush renders between network reads
+
 ## [0.1.0] - 2026-02-27
 
 ### Added

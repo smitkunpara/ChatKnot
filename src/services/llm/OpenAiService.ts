@@ -25,7 +25,7 @@ export class OpenAiService {
         method: 'GET',
         headers: this.getHeaders(),
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch models (${response.status}${response.statusText ? ` ${response.statusText}` : ''})`);
       }
@@ -142,10 +142,10 @@ export class OpenAiService {
               },
             };
           } else {
-             if (!result[index].function) result[index].function = { arguments: '' };
-             if (argsChunk) result[index].function.arguments += argsChunk;
-             if (call.function?.name) result[index].function.name = call.function.name;
-             if (call.id) result[index].id = call.id;
+            if (!result[index].function) result[index].function = { arguments: '' };
+            if (argsChunk) result[index].function.arguments += argsChunk;
+            if (call.function?.name) result[index].function.name = call.function.name;
+            if (call.id) result[index].id = call.id;
           }
         });
         return result;
@@ -155,29 +155,19 @@ export class OpenAiService {
       let toolCallsBuffer: any[] = [];
       const reader = (response as any).body?.getReader();
 
-      const emitContentChunk = async (contentChunk: string) => {
+      const emitContentChunk = (contentChunk: string) => {
         if (!contentChunk) return;
-
-        // Split larger chunks so UI updates stay visibly progressive even when providers batch tokens.
-        const segments = contentChunk.length > 12
-          ? contentChunk.match(/.{1,12}/g) || [contentChunk]
-          : [contentChunk];
-
-        for (const segment of segments) {
-          if (abortSignal?.aborted) {
-            throw new Error('Request cancelled by user');
-          }
-
-          fullContent += segment;
-          onChunk(segment, undefined);
-          await new Promise(resolve => setTimeout(resolve, 12));
+        if (abortSignal?.aborted) {
+          throw new Error('Request cancelled by user');
         }
+        fullContent += contentChunk;
+        onChunk(contentChunk, undefined);
       };
 
-      const processDelta = async (delta: any) => {
+      const processDelta = (delta: any) => {
         if (!delta) return;
         if (delta.content) {
-          await emitContentChunk(delta.content);
+          emitContentChunk(delta.content);
         }
         if (delta.tool_calls) {
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
@@ -199,18 +189,21 @@ export class OpenAiService {
         }
       };
 
-      const processSsePayload = async (payload: string) => {
+      const processSsePayload = (payload: string) => {
         const cleanPayload = payload.trim();
         if (!cleanPayload || cleanPayload === '[DONE]') return;
         try {
           const json = JSON.parse(cleanPayload);
           const delta = json.choices?.[0]?.delta;
-          await processDelta(delta);
+          processDelta(delta);
         } catch (e) {
           // Ignore partial or non-JSON control events.
         }
       };
-      
+
+      // Yield to the event loop so React can flush a render.
+      const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
       if (reader) {
         const decoder = new TextDecoder();
         let pendingBuffer = '';
@@ -231,9 +224,11 @@ export class OpenAiService {
               .filter(line => line.startsWith('data:'))
               .map(line => line.replace(/^data:\s?/, ''));
             if (dataLines.length > 0) {
-              await processSsePayload(dataLines.join('\n'));
+              processSsePayload(dataLines.join('\n'));
             }
           }
+          // Yield once per reader.read() so React can paint whatever was updated
+          await yieldToUI();
         }
 
         if (pendingBuffer.trim().length > 0) {
@@ -242,7 +237,7 @@ export class OpenAiService {
             .filter(line => line.startsWith('data:'))
             .map(line => line.replace(/^data:\s?/, ''));
           if (dataLines.length > 0) {
-            await processSsePayload(dataLines.join('\n'));
+            processSsePayload(dataLines.join('\n'));
           }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
@@ -254,7 +249,9 @@ export class OpenAiService {
 
         if (sseLines.length > 0) {
           for (const line of sseLines) {
-            await processSsePayload(line.replace(/^data:\s?/, ''));
+            processSsePayload(line.replace(/^data:\s?/, ''));
+            // Yield per SSE event so the UI renders progressively
+            await yieldToUI();
           }
         } else {
           try {
@@ -262,7 +259,7 @@ export class OpenAiService {
             const choice = json.choices?.[0];
             const message = choice?.message;
             if (message?.content) {
-              await emitContentChunk(message.content);
+              emitContentChunk(message.content);
             }
             if (message?.tool_calls) {
               toolCallsBuffer = mergeToolCalls([], message.tool_calls);

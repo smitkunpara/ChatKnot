@@ -7,7 +7,7 @@ A privacy-focused React Native mobile application for chatting with AI providers
 - [x] Initial chat app
 - [x] MCP support
 - [ ] Multiple mode support
-    - each mode has its own system prompt and model and mcp configuration
+    - each mode has its own system prompt + model + mcp configuration
 - [ ] Export chat (markdown/pdf/json)
 - [ ] AI Search and AI Tab rename
 - [ ] iamge/file support
