@@ -109,17 +109,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
           <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
             {!isStreaming && message.content ? (
-              <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
+              <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
                 <Copy size={13} color={colors.textTertiary} />
               </TouchableOpacity>
             ) : null}
             {!isUser && !isStreaming && onRetryAssistant ? (
-              <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton}>
+              <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
                 <RotateCcw size={13} color={colors.textTertiary} />
               </TouchableOpacity>
             ) : null}
             {isUser && onEdit ? (
-              <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton}>
+              <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton} accessibilityLabel="Edit message" accessibilityRole="button">
                 <Edit2 size={13} color={colors.textTertiary} />
               </TouchableOpacity>
             ) : null}

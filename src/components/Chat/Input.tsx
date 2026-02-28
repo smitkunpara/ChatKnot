@@ -83,6 +83,8 @@ export const Input: React.FC<InputProps> = ({
           multiline
           textAlignVertical="top"
           onFocus={onFocus}
+          accessibilityLabel={isEditing ? 'Edit message input' : 'Message input'}
+          accessibilityRole="none"
         />
 
         <TouchableOpacity
@@ -93,6 +95,8 @@ export const Input: React.FC<InputProps> = ({
           ]}
           onPress={isLoading ? onStop : handleSend}
           disabled={!canSend && !isLoading}
+          accessibilityLabel={isLoading ? 'Stop generating' : 'Send message'}
+          accessibilityRole="button"
         >
           {isLoading ? (
             <StopCircle color={colors.onDanger} size={19} />

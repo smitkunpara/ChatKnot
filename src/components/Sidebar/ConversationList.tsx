@@ -59,7 +59,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.brand}>ChatKnot</Text>
-        <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation}>
+        <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation} accessibilityLabel="Start new chat" accessibilityRole="button">
           <PlusCircle size={20} color={colors.onPrimary} />
           <Text style={styles.newChatText}>{newChatLabel}</Text>
         </TouchableOpacity>
@@ -74,6 +74,8 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
             placeholderTextColor={colors.placeholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            accessibilityLabel="Search conversations"
+            accessibilityRole="search"
           />
         </View>
       )}
@@ -93,6 +95,8 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
           <TouchableOpacity
             style={[styles.item, item.id === activeId ? styles.activeItem : undefined]}
             onPress={() => handleSelect(item.id)}
+            accessibilityLabel={`Open conversation: ${getSidebarConversationLabel(item)}`}
+            accessibilityRole="button"
           >
             <View style={styles.itemMain}>
               <MessageSquare size={17} color={item.id === activeId ? colors.primary : colors.textTertiary} />
@@ -103,7 +107,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
                 {getSidebarConversationLabel(item)}
               </Text>
             </View>
-            <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn}>
+            <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn} accessibilityLabel="Delete conversation" accessibilityRole="button">
               <Trash2 size={15} color={colors.textTertiary} />
             </TouchableOpacity>
           </TouchableOpacity>
@@ -111,7 +115,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
       />
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.settingsButton} onPress={() => props.navigation.navigate('Settings')}>
+        <TouchableOpacity style={styles.settingsButton} onPress={() => props.navigation.navigate('Settings')} accessibilityLabel="Open settings" accessibilityRole="button">
           <SettingsIcon size={18} color={colors.text} />
           <Text style={styles.settingsText}>Settings</Text>
         </TouchableOpacity>

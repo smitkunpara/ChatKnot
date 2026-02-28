@@ -578,7 +578,7 @@ export const ChatScreen = () => {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton} accessibilityLabel="Open navigation menu" accessibilityRole="button">
           <Menu size={20} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.selectorWrapper}>

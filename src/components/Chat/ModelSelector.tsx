@@ -61,7 +61,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.selector} onPress={() => setModalVisible(true)}>
+      <TouchableOpacity style={styles.selector} onPress={() => setModalVisible(true)} accessibilityLabel={`Select model. Current: ${activeEntry?.model || 'none'}`} accessibilityRole="button">
         <Brain size={15} color={colors.primary} />
         <View style={styles.textContainer}>
           <Text style={styles.providerName}>{activeEntry?.providerName || 'No Provider'}</Text>
