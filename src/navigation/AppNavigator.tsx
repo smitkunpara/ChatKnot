@@ -34,7 +34,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
               backgroundColor: colors.background,
               width: 280,
             },
-            sceneContainerStyle: {
+            sceneStyle: {
               backgroundColor: colors.background,
             },
           }}

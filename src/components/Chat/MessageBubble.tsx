@@ -3,7 +3,7 @@ import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { Bot, Copy, Edit2, RotateCcw, User } from 'lucide-react-native';
+import { Copy, Edit2, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
@@ -62,14 +62,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
       <View style={styles.messageRow}>
-        {!isUser && (
-          <View style={styles.avatarContainer}>
-            <View style={styles.assistantAvatar}>
-              <Bot size={14} color={colors.primary} />
-            </View>
-          </View>
-        )}
-
         <View style={{ flex: 1 }}>
           {isUser ? (
             <View style={[styles.bubble, styles.userBubble]}>
@@ -125,14 +117,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             ) : null}
           </View>
         </View>
-
-        {isUser && (
-          <View style={styles.avatarContainer}>
-            <View style={styles.userAvatar}>
-              <User size={14} color={colors.onPrimary} />
-            </View>
-          </View>
-        )}
       </View>
     </View>
   );
@@ -155,29 +139,6 @@ const createStyles = (colors: any) =>
       flexDirection: 'row',
       alignItems: 'flex-start',
       maxWidth: '100%',
-    },
-    avatarContainer: {
-      marginTop: 2,
-    },
-    assistantAvatar: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.subtleBorder,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 8,
-    },
-    userAvatar: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: 8,
     },
     bubble: {
       maxWidth: '88%',
