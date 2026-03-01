@@ -71,6 +71,7 @@ const normalizeHealthReason = (reason?: string): string => {
 
   return reason
     .replace(/^Unable to fetch models:\s*/i, '')
+    .replace(/^Failed to fetch models from \S+\s*\(/i, 'Failed to fetch models (')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[.]+$/, '');

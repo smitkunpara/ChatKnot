@@ -22,10 +22,37 @@ export class McpClient {
     };
   }
 
+  private hasConfiguredHeader(headerName: string): boolean {
+    const target = headerName.toLowerCase();
+    const configuredHeaders = this.config.headers || {};
+    return Object.keys(configuredHeaders).some(key => key.toLowerCase() === target && !!configuredHeaders[key]);
+  }
+
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { ...(this.config.headers || {}) };
+    const token = String(this.config.token || '').trim();
+    if (!token) {
+      return headers;
+    }
+
+    if (!this.hasConfiguredHeader('authorization')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    if (!this.hasConfiguredHeader('x-api-key')) {
+      headers['x-api-key'] = token;
+    }
+    if (!this.hasConfiguredHeader('api-key')) {
+      headers['api-key'] = token;
+    }
+
+    return headers;
+  }
+  
   async connect(): Promise<void> {
     const openApiValidation = await validateOpenApiEndpoint({
       url: this.config.url,
       headers: this.config.headers || {},
+      token: this.config.token,
     });
 
     if (openApiValidation.ok) {
@@ -43,19 +70,8 @@ export class McpClient {
 
     return new Promise((resolve, reject) => {
       try {
-        const headers = {
-          'Authorization': this.config.token ? `Bearer ${this.config.token}` : undefined,
-          ...this.config.headers,
-        };
-
-        // Filter out undefined headers
-        const cleanHeaders: Record<string, string> = {};
-        Object.entries(headers).forEach(([k, v]) => {
-          if (v) cleanHeaders[k] = v;
-        });
-
         this.eventSource = new EventSource(this.config.url, {
-          headers: cleanHeaders,
+          headers: this.getAuthHeaders(),
         });
 
         this.eventSource.addEventListener('open', () => {});
@@ -107,8 +123,7 @@ export class McpClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': this.config.token ? `Bearer ${this.config.token}` : '',
-        ...(this.config.headers || {}),
+        ...this.getAuthHeaders(),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
@@ -208,7 +223,7 @@ export class McpClient {
       method: method.toUpperCase(),
       headers: {
         'Content-Type': 'application/json',
-        ...this.config.headers
+        ...this.getAuthHeaders(),
       }
     };
 
@@ -232,12 +247,6 @@ export class McpClient {
        throw new Error(`API Error ${response.status}: ${text}`);
     }
     return await response.json();
-  }
-
-  private hasConfiguredHeader(headerName: string): boolean {
-    const target = headerName.toLowerCase();
-    const configuredHeaders = this.config.headers || {};
-    return Object.keys(configuredHeaders).some(key => key.toLowerCase() === target && !!configuredHeaders[key]);
   }
 
   getProtocol(): 'openapi' | 'mcp' {

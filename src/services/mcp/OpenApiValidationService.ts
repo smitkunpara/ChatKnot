@@ -9,10 +9,39 @@ import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecu
 type ValidateOpenApiEndpointInput = {
   url: string;
   headers?: Record<string, string>;
+  token?: string;
   fetchImpl?: typeof fetch;
 };
 
 const CALLABLE_HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch'];
+
+const hasHeader = (headers: Record<string, string>, headerName: string): boolean => {
+  const target = headerName.toLowerCase();
+  return Object.keys(headers).some((name) => name.toLowerCase() === target);
+};
+
+const buildValidationHeaders = (
+  headers?: Record<string, string>,
+  token?: string
+): Record<string, string> => {
+  const mergedHeaders: Record<string, string> = { ...(headers || {}) };
+  const trimmedToken = String(token || '').trim();
+  if (!trimmedToken) {
+    return mergedHeaders;
+  }
+
+  if (!hasHeader(mergedHeaders, 'authorization')) {
+    mergedHeaders.Authorization = `Bearer ${trimmedToken}`;
+  }
+  if (!hasHeader(mergedHeaders, 'x-api-key')) {
+    mergedHeaders['x-api-key'] = trimmedToken;
+  }
+  if (!hasHeader(mergedHeaders, 'api-key')) {
+    mergedHeaders['api-key'] = trimmedToken;
+  }
+
+  return mergedHeaders;
+};
 
 const toFailure = (error: OpenApiValidationError): OpenApiValidationFailure => ({
   ok: false,
@@ -201,7 +230,7 @@ export const validateOpenApiEndpoint = async (
     });
   }
 
-  const headers = input.headers || {};
+  const headers = buildValidationHeaders(input.headers, input.token);
   const fetchImpl = input.fetchImpl || fetch;
   const probeUrls = buildProbeUrls(normalizedInputUrl);
   const attemptedUrls: string[] = [];

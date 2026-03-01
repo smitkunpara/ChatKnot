@@ -212,6 +212,7 @@ export interface SaveServerDraftWithValidationInput {
   validateEndpoint?: (input: {
     url: string;
     headers?: Record<string, string>;
+    token?: string;
   }) => Promise<OpenApiValidationResult>;
 }
 
@@ -258,6 +259,7 @@ export const saveServerDraftWithValidation = async (
   const validation = await validateEndpoint({
     url: nextServer.url,
     headers: nextServer.headers,
+    token: nextServer.token,
   });
 
   if (!validation.ok) {
