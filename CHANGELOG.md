@@ -28,12 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `accessibilityLabel` and `accessibilityRole` to all interactive elements across 5 components: Input, MessageBubble, ConversationList, ChatScreen, ModelSelector
 
 ### Fixed
-- Startup warning banner now renders as a centered overlay in the middle of the screen instead of pushing content from the top (notification panel area)
-- Startup warning banner now properly follows light/dark theme colors instead of using hardcoded yellow/brown
-- Markdown table borders now use theme colors instead of hardcoded black `#000000`
-- Markdown tables wrap in a horizontal `ScrollView` for wide data, with proper column sizing and header/content alignment
-- Fixed `sceneContainerStyle` → `sceneStyle` for React Navigation v7 compatibility in `AppNavigator`
-- Fixed system dark/light mode detection not working — `userInterfaceStyle` in `app.json` was locked to `"light"`, changed to `"automatic"`
+- Image attachment option now correctly **disabled/blurred** when the selected model lacks vision support — previously defaulted to enabled for models without capability metadata (e.g. `openrouter/free` meta-models)
+- Model capability tags (`vision`, `tools`, `file`) now display beside model names in both the **Chat model selector** and **Settings model picker** — previously missing due to capabilities not being persisted when the model list hadn't changed
+- Startup health check now persists model capabilities even when the model list is unchanged — fixes tags not appearing after app restart
+- Settings model picker now auto-fetches capabilities when they are missing (not just when models are empty)
+- API error messages shown in chat are now **user-friendly** instead of raw JSON dumps:
+  - `429` → "Rate limit reached. Please try again in a few moments."
+  - `401` → "Authentication failed. Please check your API key in settings."
+  - `500/502/503` → "The AI service is temporarily unavailable. Please try again shortly."
+- Removed duplicate error notification **banner** for chat API errors — errors now show only as styled messages inline in the chat
+- Error messages in chat render with a **muted red** background and text to visually distinguish them from normal responses
 
 ### Changed
 - `dateFormat.ts`: `formatIstDateTime` is now a deprecated alias for `formatLocalDateTime`

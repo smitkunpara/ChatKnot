@@ -24,7 +24,14 @@ export class OpenAiService {
     };
   }
 
-  private static extractCapabilities(model: any): ModelCapabilities {
+  private static extractCapabilities(model: any): ModelCapabilities | null {
+    const hasArchitecture = model?.architecture != null;
+    const hasSupportedParams = Array.isArray(model?.supported_parameters) && model.supported_parameters.length > 0;
+
+    // Only extract capabilities when the API provides metadata;
+    // providers that don't return metadata should not produce all-false entries.
+    if (!hasArchitecture && !hasSupportedParams) return null;
+
     const inputModalities: string[] = Array.isArray(model?.architecture?.input_modalities)
       ? model.architecture.input_modalities
       : [];
@@ -63,7 +70,10 @@ export class OpenAiService {
       for (const model of rawModels) {
         const id = typeof model === 'string' ? model : model?.id || model?.name || '';
         if (id && supportedModels.includes(id)) {
-          capabilities[id] = OpenAiService.extractCapabilities(model);
+          const caps = OpenAiService.extractCapabilities(model);
+          if (caps) {
+            capabilities[id] = caps;
+          }
         }
       }
 

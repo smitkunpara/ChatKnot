@@ -120,7 +120,22 @@ export const Input: React.FC<InputProps> = ({
   const pickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'text/*'],
+        type: [
+          'application/pdf',
+          'text/*',
+          'application/json',
+          'application/xml',
+          'application/javascript',
+          'application/x-yaml',
+          'application/x-python-code',
+          'application/x-sh',
+          'application/sql',
+          'application/xhtml+xml',
+          'application/x-httpd-php',
+          'application/x-ruby',
+          'application/x-perl',
+          'application/toml',
+        ],
         copyToCacheDirectory: true,
       });
 

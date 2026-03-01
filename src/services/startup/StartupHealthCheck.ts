@@ -279,7 +279,7 @@ export function applyHealthCheckReport(
     });
   }
 
-  // Update AI provider available models
+  // Update AI provider available models and capabilities
   for (const aiResult of report.aiResults) {
     if (!aiResult.reachable) continue;
 
@@ -291,11 +291,16 @@ export function applyHealthCheckReport(
     const currentModelSet = new Set(currentModels);
 
     // Check if model list actually changed
-    const hasChange =
+    const hasModelChange =
       prevModels.size !== currentModelSet.size ||
       [...prevModels].some(m => !currentModelSet.has(m));
 
-    if (!hasChange) continue;
+    // Check if capabilities need updating
+    const hasNewCapabilities = aiResult.capabilities && Object.keys(aiResult.capabilities).length > 0;
+    const hadCapabilities = provider.modelCapabilities && Object.keys(provider.modelCapabilities).length > 0;
+    const needsCapabilityUpdate = hasNewCapabilities && !hadCapabilities;
+
+    if (!hasModelChange && !needsCapabilityUpdate) continue;
 
     // New models not previously known: visible by default (we do not add to hiddenModels)
     const hiddenModels = new Set(provider.hiddenModels || []);
@@ -313,10 +318,15 @@ export function applyHealthCheckReport(
       }
     }
 
+    const mergedCapabilities = {
+      ...(provider.modelCapabilities || {}),
+      ...(aiResult.capabilities || {}),
+    };
+
     updateProvider({
       ...provider,
       availableModels: currentModels,
-      modelCapabilities: aiResult.capabilities || provider.modelCapabilities,
+      modelCapabilities: Object.keys(mergedCapabilities).length > 0 ? mergedCapabilities : provider.modelCapabilities,
       hiddenModels: Array.from(hiddenModels),
     });
   }

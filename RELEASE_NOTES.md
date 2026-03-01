@@ -13,6 +13,11 @@
 - **🌙 Dark Mode Detection**: Fixed system dark/light mode detection so the app correctly follows your device theme setting.
 - **🎨 Refined Light Mode**: Softer gray tones replace harsh whites for a more comfortable reading experience, with consistent component styling across the header.
 - **⚡ Faster Streaming**: Removed artificial delays from the streaming pipeline — AI responses now render token-by-token at full provider speed.
+- **🖼️ Image Attachment Fix**: Image option now correctly disables when the model doesn't support vision.
+- **🏷️ Model Capability Tags**: Models now display capability badges (vision, tools, file) in both the chat selector and settings picker.
+- **📄 Document Picker**: Restricted to text-based files only (PDF, code, markdown, etc.) — non-text files are filtered out.
+- **⚠️ Friendly Error Messages**: API errors (429, 401, 500, etc.) now show clean, human-readable messages instead of raw JSON.
+- **🎨 Error Styling**: Error messages in chat render with a subtle red background and text for visual distinction.
 
 Full technical details available in [CHANGELOG.md](./CHANGELOG.md).
 

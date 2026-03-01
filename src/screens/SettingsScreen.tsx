@@ -126,6 +126,7 @@ export const SettingsScreen = () => {
   const [editingProviders, setEditingProviders] = useState<Record<string, boolean>>({});
   const [editingServers, setEditingServers] = useState<Record<string, boolean>>({});
   const [draftAvailableModels, setDraftAvailableModels] = useState<Record<string, string[]>>({});
+  const [draftModelCapabilities, setDraftModelCapabilities] = useState<Record<string, Record<string, ModelCapabilities>>>({});
   const [isEditingSystemPrompt, setIsEditingSystemPrompt] = useState(false);
   const [systemPromptDraft, setSystemPromptDraft] = useState(systemPrompt);
   const [activeView, setActiveView] = useState<SettingsView>('index');
@@ -139,6 +140,7 @@ export const SettingsScreen = () => {
     setProviderDrafts({});
     setServerDrafts({});
     setDraftAvailableModels({});
+    setDraftModelCapabilities({});
     setModelPickerVisible(false);
     setActiveProviderIdForPicker(null);
     setModelSearch('');
@@ -329,6 +331,27 @@ export const SettingsScreen = () => {
         [provider.id]: models,
       }));
 
+      // Always store capabilities in draft state so they're available in the model picker
+      if (Object.keys(capabilities).length > 0) {
+        setDraftModelCapabilities(prev => ({
+          ...prev,
+          [provider.id]: capabilities,
+        }));
+      }
+
+      // Always persist capabilities to the provider in the store,
+      // even when persistProvider is false (capabilities are metadata, not user prefs)
+      const mergedCapabilities = {
+        ...(provider.modelCapabilities || {}),
+        ...capabilities,
+      };
+      if (Object.keys(mergedCapabilities).length > 0) {
+        updateProvider({
+          ...provider,
+          modelCapabilities: mergedCapabilities,
+        });
+      }
+
       if (models.length > 0) {
         if (persistProvider) {
           const normalizedHidden = (provider.hiddenModels || []).filter(modelId => models.includes(modelId));
@@ -340,7 +363,7 @@ export const SettingsScreen = () => {
           const nextProvider = {
             ...provider,
             availableModels: models,
-            modelCapabilities: capabilities,
+            modelCapabilities: mergedCapabilities,
             hiddenModels,
           };
           const visibleModels = getProviderVisibleModels(nextProvider);
@@ -418,6 +441,11 @@ export const SettingsScreen = () => {
       delete next[providerId];
       return next;
     });
+    setDraftModelCapabilities(prev => {
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
 
     if (activeProviderIdForPicker === providerId) {
       setModelPickerVisible(false);
@@ -426,17 +454,24 @@ export const SettingsScreen = () => {
   };
 
   const saveProviderEdit = (provider: LlmProviderConfig) => {
-    const providerWithDraftModels = {
+    const draftCaps = draftModelCapabilities[provider.id];
+    const providerWithDraftData = {
       ...provider,
       availableModels: draftAvailableModels[provider.id] || provider.availableModels,
+      ...(draftCaps ? { modelCapabilities: { ...(provider.modelCapabilities || {}), ...draftCaps } } : {}),
     };
 
-    setProviderDrafts(prev => saveProviderDraft(prev, providerWithDraftModels, updateProvider));
+    setProviderDrafts(prev => saveProviderDraft(prev, providerWithDraftData, updateProvider));
     setEditingProviders(prev => ({
       ...prev,
       [provider.id]: false,
     }));
     setDraftAvailableModels(prev => {
+      const next = { ...prev };
+      delete next[provider.id];
+      return next;
+    });
+    setDraftModelCapabilities(prev => {
       const next = { ...prev };
       delete next[provider.id];
       return next;
@@ -644,7 +679,9 @@ export const SettingsScreen = () => {
     setModelPickerVisible(true);
 
     const currentModels = draftAvailableModels[provider.id] || provider.availableModels || [];
-    if (currentModels.length === 0) {
+    const hasCapabilities = Object.keys(draftModelCapabilities[provider.id] || provider.modelCapabilities || {}).length > 0;
+    // Fetch if no models loaded OR if capabilities are missing (e.g. provider added before capability code)
+    if (currentModels.length === 0 || !hasCapabilities) {
       fetchModels(provider, { persistProvider: false });
     }
   };
@@ -1515,11 +1552,16 @@ export const SettingsScreen = () => {
                   >
                     <View style={styles.modelRowTextWrap}>
                       <Text style={styles.modelRowText}>{item}</Text>
-                      {getCapabilityTags(activeProviderForPicker?.modelCapabilities?.[item]).length > 0 && (
-                        <Text style={styles.modelRowCaps}>
-                          ({getCapabilityTags(activeProviderForPicker?.modelCapabilities?.[item]).join(', ')})
-                        </Text>
-                      )}
+                      {(() => {
+                        const draftCaps = draftModelCapabilities[activeProviderForPicker?.id || '']?.[item];
+                        const storedCaps = activeProviderForPicker?.modelCapabilities?.[item];
+                        const tags = getCapabilityTags(draftCaps || storedCaps);
+                        return tags.length > 0 ? (
+                          <Text style={styles.modelRowCaps}>
+                            ({tags.join(', ')})
+                          </Text>
+                        ) : null;
+                      })()}
                     </View>
                     <View style={styles.modelRowActions}>
                       <TouchableOpacity

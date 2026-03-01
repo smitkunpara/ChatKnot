@@ -17,6 +17,9 @@ A privacy-focused React Native mobile application for chatting with AI providers
 
 - **Multi-Provider AI**: Configure any OpenAI-compatible endpoint with streaming support.
 - **MCP Tool Calling**: Connect MCP servers and OpenAPI endpoints to extend AI capabilities.
+- **Multimodal Input**: Attach images (for vision-capable models) and text-based documents (PDF, code files, markdown).
+- **Model Capabilities**: Visual capability tags (vision, tools, file) shown next to each model.
+- **User-Friendly Errors**: API errors are parsed and displayed as clean, readable messages.
 - **Encrypted Storage**: Sensitive data and keys are protected with hardware-backed encryption.
 - **Health Checks**: Automatic verification of AI and MCP endpoints on startup.
 - **Clean UI**: Modern dark/light interface with organized conversation management.

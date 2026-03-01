@@ -31,6 +31,7 @@ export interface Message {
   toolCallId?: string;
   timestamp: number;
   attachments?: Attachment[];
+  isError?: boolean;
 }
 
 export interface Conversation {

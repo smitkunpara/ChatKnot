@@ -248,9 +248,12 @@ export const ChatScreen = () => {
   const currentModelVisionSupported = useMemo(() => {
     if (!modelResolution.selection) return false;
     const provider = providers.find(p => p.id === modelResolution.selection!.providerId);
-    if (!provider?.modelCapabilities) return true; // default to true if no data
+    if (!provider?.modelCapabilities) return true; // no capability data at all → default true
     const caps = provider.modelCapabilities[modelResolution.selection!.model];
-    return caps?.vision ?? true;
+    if (caps) return caps.vision;
+    // Provider has capability data for other models but not this one
+    // (e.g. meta-models like openrouter/free) → assume no vision
+    return Object.keys(provider.modelCapabilities).length > 0 ? false : true;
   }, [modelResolution.selection, providers]);
 
   // Check if conversation has any image attachments in its history
@@ -504,7 +507,6 @@ export const ChatScreen = () => {
         if (toolCalls.length === 0) {
           if (assistantText.length === 0) {
             updateMessage(conversationId, assistantMsgId, 'I received an empty response from the model.');
-            setChatError('Model returned an empty response.');
           } else {
             hasFinalAnswer = true;
           }
@@ -637,12 +639,14 @@ export const ChatScreen = () => {
     } catch (error: any) {
       const message = getErrorMessage(error);
       if (!stopRequestedRef.current) {
-        setChatError(message);
         if (conversationId) {
           addMessage(conversationId, {
             role: 'assistant',
-            content: `I ran into an error while processing your request: ${message}`,
+            content: message,
+            isError: true,
           });
+        } else {
+          setChatError(message);
         }
       }
     } finally {

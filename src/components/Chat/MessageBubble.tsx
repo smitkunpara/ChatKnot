@@ -98,14 +98,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               style={[
                 styles.assistantContent,
                 hasToolCalls ? styles.assistantWithTools : undefined,
+                message.isError ? styles.errorContent : undefined,
               ]}
             >
               <View style={styles.textRow}>
                 {message.content ? (
-                  <Markdown
-                    style={markdownStyles}
-                    rules={createTableRenderRules(colors)}
-                  >{message.content}</Markdown>
+                  message.isError ? (
+                    <Text style={styles.errorText}>{message.content}</Text>
+                  ) : (
+                    <Markdown
+                      style={markdownStyles}
+                      rules={createTableRenderRules(colors)}
+                    >{message.content}</Markdown>
+                  )
                 ) : null}
                 {isStreaming && <StreamingCursor color={colors.primary} />}
               </View>
@@ -186,6 +191,19 @@ const createStyles = (colors: any) =>
     },
     assistantWithTools: {
       width: '100%',
+    },
+    errorContent: {
+      backgroundColor: 'rgba(220, 80, 80, 0.08)',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(220, 80, 80, 0.2)',
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+    },
+    errorText: {
+      color: '#c45252',
+      fontSize: 14,
+      lineHeight: 20,
     },
     userText: {
       color: colors.onPrimary,
