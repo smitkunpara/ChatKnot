@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
+  Modal,
   View,
   FlatList,
   KeyboardAvoidingView,
@@ -20,7 +20,7 @@ import { ProviderFactory } from '../services/llm/ProviderFactory';
 import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
-import { ModelSelector } from '../components/Chat/ModelSelector';
+import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
 import { ToolCall, Attachment } from '../types';
 import { useAppTheme } from '../theme/useAppTheme';
 import {
@@ -48,6 +48,7 @@ import * as FileSystem from 'expo-file-system';
 export const ChatScreen = () => {
   const navigation = useNavigation<DrawerNavigationProp<any>>();
   const flatListRef = useRef<FlatList>(null);
+  const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
   const { colors } = useAppTheme();
@@ -74,6 +75,7 @@ export const ChatScreen = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [visionWarningVisible, setVisionWarningVisible] = useState(false);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
@@ -270,12 +272,9 @@ export const ChatScreen = () => {
     if (newModel && newModel !== previousModelRef.current) {
       previousModelRef.current = newModel;
 
-      // Immediate warning on model switch
+      // Show themed vision warning on model switch
       if (conversationHasImages && !currentModelVisionSupported) {
-        Alert.alert(
-          'Vision Not Supported',
-          `This conversation contains images but "${newModel}" doesn't support vision. Images will be ignored by this model.`
-        );
+        setVisionWarningVisible(true);
       }
     }
   }, [modelResolution.selection?.model, conversationHasImages, currentModelVisionSupported]);
@@ -314,27 +313,6 @@ export const ChatScreen = () => {
       return;
     }
 
-    // Vision mismatch warning
-    const hasImageAttachments = attachments.some(a => a.type === 'image');
-    if ((hasImageAttachments || conversationHasImages) && !currentModelVisionSupported) {
-      return new Promise<void>((resolve) => {
-        Alert.alert(
-          'Vision Not Supported',
-          `This conversation contains images but "${modelResolution.selection!.model}" doesn't support vision. Images will be ignored by this model.`,
-          [
-            { text: 'Select Different Model', onPress: () => resolve(), style: 'cancel' },
-            {
-              text: 'Continue Anyway',
-              onPress: async () => {
-                await doSend(text, conversationId!);
-                resolve();
-              },
-            },
-          ]
-        );
-      });
-    }
-
     await doSend(text, conversationId);
   };
 
@@ -342,11 +320,16 @@ export const ChatScreen = () => {
     setChatError(null);
     stopRequestedRef.current = false;
 
+    // Filter out image attachments if model doesn't support vision
+    const filteredAttachments = currentModelVisionSupported
+      ? attachments
+      : attachments.filter(a => a.type !== 'image');
+
     // Prepare attachments with base64
     let messageAttachments: Attachment[] | undefined;
-    if (attachments.length > 0) {
+    if (filteredAttachments.length > 0) {
       messageAttachments = [];
-      for (const att of attachments) {
+      for (const att of filteredAttachments) {
         let base64 = att.base64;
         if (!base64) {
           try {
@@ -678,6 +661,7 @@ export const ChatScreen = () => {
         </TouchableOpacity>
         <View style={styles.selectorWrapper}>
           <ModelSelector
+            ref={modelSelectorRef}
             activeProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
             activeModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
             onSelect={(pid, model) => {
@@ -756,6 +740,39 @@ export const ChatScreen = () => {
           visionSupported={currentModelVisionSupported}
         />
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={visionWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVisionWarningVisible(false)}
+      >
+        <View style={styles.visionOverlay}>
+          <View style={styles.visionContent}>
+            <Text style={styles.visionTitle}>Vision Not Supported</Text>
+            <Text style={styles.visionMessage}>
+              This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included.
+            </Text>
+            <View style={styles.visionActions}>
+              <TouchableOpacity
+                style={styles.visionSwitchBtn}
+                onPress={() => {
+                  setVisionWarningVisible(false);
+                  setTimeout(() => modelSelectorRef.current?.open(), 300);
+                }}
+              >
+                <Text style={styles.visionSwitchText}>Switch Model</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.visionContinueBtn}
+                onPress={() => setVisionWarningVisible(false)}
+              >
+                <Text style={styles.visionContinueText}>Continue with Text Only</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -834,5 +851,55 @@ const createStyles = (colors: any) =>
       color: colors.text,
       fontSize: 12,
       flex: 1,
+    },
+    visionOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    visionContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+    },
+    visionTitle: {
+      fontSize: 17,
+      fontWeight: '600' as const,
+      color: colors.text,
+      marginBottom: 10,
+    },
+    visionMessage: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.textSecondary,
+      marginBottom: 20,
+    },
+    visionActions: {
+      gap: 10,
+    },
+    visionSwitchBtn: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+      alignItems: 'center' as const,
+    },
+    visionSwitchText: {
+      fontSize: 15,
+      fontWeight: '600' as const,
+      color: colors.onPrimary,
+    },
+    visionContinueBtn: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center' as const,
+    },
+    visionContinueText: {
+      fontSize: 15,
+      color: colors.textSecondary,
     },
   });
