@@ -23,29 +23,50 @@ function formatToolCallMarkdown(
   opts: ExportOptions,
   toolMessages: Message[],
 ): string {
-  const lines: string[] = [];
-  lines.push(`> **Tool:** \`${tc.name}\``);
+  const hasInput = opts.includeToolInput && tc.arguments;
+  const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
+  const hasOutput = opts.includeToolOutput && (toolMsg?.content || tc.error);
 
-  if (opts.includeToolInput && tc.arguments) {
-    try {
-      const args = JSON.parse(tc.arguments);
-      lines.push(`> **Input:**\n> \`\`\`json\n> ${JSON.stringify(args, null, 2).split('\n').join('\n> ')}\n> \`\`\``);
-    } catch {
-      lines.push(`> **Input:** \`${tc.arguments}\``);
+  // If there are expandable details, use a collapsible <details> block
+  if (hasInput || hasOutput) {
+    const lines: string[] = [];
+    lines.push(`<details>`);
+    lines.push(`<summary><strong>Tool:</strong> <code>${tc.name}</code></summary>`);
+    lines.push('');
+
+    if (hasInput) {
+      try {
+        const args = JSON.parse(tc.arguments!);
+        lines.push(`**Input:**`);
+        lines.push('```json');
+        lines.push(JSON.stringify(args, null, 2));
+        lines.push('```');
+      } catch {
+        lines.push(`**Input:** \`${tc.arguments}\``);
+      }
+      lines.push('');
     }
+
+    if (opts.includeToolOutput) {
+      if (toolMsg?.content) {
+        lines.push(`**Output:**`);
+        lines.push('```');
+        lines.push(toolMsg.content);
+        lines.push('```');
+        lines.push('');
+      }
+      if (tc.error) {
+        lines.push(`**Error:** ${tc.error}`);
+        lines.push('');
+      }
+    }
+
+    lines.push(`</details>`);
+    return lines.join('\n');
   }
 
-  if (opts.includeToolOutput) {
-    const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
-    if (toolMsg?.content) {
-      lines.push(`> **Output:**\n> \`\`\`\n> ${toolMsg.content.split('\n').join('\n> ')}\n> \`\`\``);
-    }
-    if (tc.error) {
-      lines.push(`> **Error:** ${tc.error}`);
-    }
-  }
-
-  return lines.join('\n');
+  // No expandable details — just show the tool name inline
+  return `> **Tool:** \`${tc.name}\``;
 }
 
 function toMarkdown(conversation: Conversation, opts: ExportOptions): string {
@@ -143,30 +164,38 @@ function formatToolCallHtml(
   opts: ExportOptions,
   toolMessages: Message[],
 ): string {
-  const parts: string[] = [];
-  parts.push(`<div class="tool"><strong>Tool:</strong> <code>${escapeHtml(tc.name)}</code>`);
+  const hasInput = opts.includeToolInput && tc.arguments;
+  const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
+  const hasOutput = opts.includeToolOutput && (toolMsg?.content || tc.error);
 
-  if (opts.includeToolInput && tc.arguments) {
-    try {
-      const args = JSON.parse(tc.arguments);
-      parts.push(`<div class="tool-detail"><strong>Input:</strong><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`);
-    } catch {
-      parts.push(`<div class="tool-detail"><strong>Input:</strong> <code>${escapeHtml(tc.arguments)}</code></div>`);
+  if (hasInput || hasOutput) {
+    const parts: string[] = [];
+    parts.push(`<details class="tool">`);
+    parts.push(`<summary><strong>Tool:</strong> <code>${escapeHtml(tc.name)}</code></summary>`);
+
+    if (hasInput) {
+      try {
+        const args = JSON.parse(tc.arguments!);
+        parts.push(`<div class="tool-detail"><strong>Input:</strong><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`);
+      } catch {
+        parts.push(`<div class="tool-detail"><strong>Input:</strong> <code>${escapeHtml(tc.arguments!)}</code></div>`);
+      }
     }
+
+    if (opts.includeToolOutput) {
+      if (toolMsg?.content) {
+        parts.push(`<div class="tool-detail"><strong>Output:</strong><pre>${escapeHtml(toolMsg.content)}</pre></div>`);
+      }
+      if (tc.error) {
+        parts.push(`<div class="tool-error"><strong>Error:</strong> ${escapeHtml(tc.error)}</div>`);
+      }
+    }
+
+    parts.push('</details>');
+    return parts.join('');
   }
 
-  if (opts.includeToolOutput) {
-    const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
-    if (toolMsg?.content) {
-      parts.push(`<div class="tool-detail"><strong>Output:</strong><pre>${escapeHtml(toolMsg.content)}</pre></div>`);
-    }
-    if (tc.error) {
-      parts.push(`<div class="tool-error"><strong>Error:</strong> ${escapeHtml(tc.error)}</div>`);
-    }
-  }
-
-  parts.push('</div>');
-  return parts.join('');
+  return `<div class="tool"><strong>Tool:</strong> <code>${escapeHtml(tc.name)}</code></div>`;
 }
 
 function toHtml(conversation: Conversation, opts: ExportOptions): string {
@@ -225,6 +254,9 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     .message-content th, .message-content td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
     .message-content th { background: #f0f0f0; font-weight: 600; }
     .tool { margin-top: 8px; padding: 8px; background: #fff3e0; border-radius: 6px; font-size: 13px; }
+    details.tool { cursor: pointer; }
+    details.tool summary { list-style: revert; padding: 4px 0; }
+    details.tool[open] summary { margin-bottom: 6px; }
     .tool-detail { margin-top: 4px; }
     .tool-error { margin-top: 4px; color: #c62828; }
     pre { background: #f0f0f0; padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
