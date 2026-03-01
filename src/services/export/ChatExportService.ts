@@ -164,38 +164,30 @@ function formatToolCallHtml(
   opts: ExportOptions,
   toolMessages: Message[],
 ): string {
-  const hasInput = opts.includeToolInput && tc.arguments;
-  const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
-  const hasOutput = opts.includeToolOutput && (toolMsg?.content || tc.error);
+  const parts: string[] = [];
+  parts.push(`<div class="tool"><strong>Tool:</strong> <code>${escapeHtml(tc.name)}</code>`);
 
-  if (hasInput || hasOutput) {
-    const parts: string[] = [];
-    parts.push(`<details class="tool">`);
-    parts.push(`<summary><strong>Tool:</strong> <code>${escapeHtml(tc.name)}</code></summary>`);
-
-    if (hasInput) {
-      try {
-        const args = JSON.parse(tc.arguments!);
-        parts.push(`<div class="tool-detail"><strong>Input:</strong><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`);
-      } catch {
-        parts.push(`<div class="tool-detail"><strong>Input:</strong> <code>${escapeHtml(tc.arguments!)}</code></div>`);
-      }
+  if (opts.includeToolInput && tc.arguments) {
+    try {
+      const args = JSON.parse(tc.arguments);
+      parts.push(`<div class="tool-detail"><strong>Input:</strong><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`);
+    } catch {
+      parts.push(`<div class="tool-detail"><strong>Input:</strong> <code>${escapeHtml(tc.arguments)}</code></div>`);
     }
-
-    if (opts.includeToolOutput) {
-      if (toolMsg?.content) {
-        parts.push(`<div class="tool-detail"><strong>Output:</strong><pre>${escapeHtml(toolMsg.content)}</pre></div>`);
-      }
-      if (tc.error) {
-        parts.push(`<div class="tool-error"><strong>Error:</strong> ${escapeHtml(tc.error)}</div>`);
-      }
-    }
-
-    parts.push('</details>');
-    return parts.join('');
   }
 
-  return `<div class="tool"><strong>Tool:</strong> <code>${escapeHtml(tc.name)}</code></div>`;
+  if (opts.includeToolOutput) {
+    const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
+    if (toolMsg?.content) {
+      parts.push(`<div class="tool-detail"><strong>Output:</strong><pre>${escapeHtml(toolMsg.content)}</pre></div>`);
+    }
+    if (tc.error) {
+      parts.push(`<div class="tool-error"><strong>Error:</strong> ${escapeHtml(tc.error)}</div>`);
+    }
+  }
+
+  parts.push('</div>');
+  return parts.join('');
 }
 
 function toHtml(conversation: Conversation, opts: ExportOptions): string {
@@ -254,9 +246,6 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     .message-content th, .message-content td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
     .message-content th { background: #f0f0f0; font-weight: 600; }
     .tool { margin-top: 8px; padding: 8px; background: #fff3e0; border-radius: 6px; font-size: 13px; }
-    details.tool { cursor: pointer; }
-    details.tool summary { list-style: revert; padding: 4px 0; }
-    details.tool[open] summary { margin-bottom: 6px; }
     .tool-detail { margin-top: 4px; }
     .tool-error { margin-top: 4px; color: #c62828; }
     pre { background: #f0f0f0; padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
