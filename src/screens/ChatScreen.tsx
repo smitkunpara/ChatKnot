@@ -854,8 +854,15 @@ const createStyles = (colors: any) =>
       flex: 1,
     },
     exportButton: {
-      padding: 6,
-      marginLeft: 4,
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      marginLeft: 8,
     },
     exportButtonDisabled: {
       opacity: 0.35,
