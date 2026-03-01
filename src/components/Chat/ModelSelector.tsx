@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Brain, Check, ChevronDown, Search } from 'lucide-react-native';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -10,6 +10,10 @@ import {
   resolveModelSelection,
 } from '../../services/llm/modelSelection';
 import { isModelOptionActive } from './modelSelectorState';
+
+export interface ModelSelectorHandle {
+  open: () => void;
+}
 
 interface ModelSelectorProps {
   activeProviderId: string;
@@ -26,15 +30,19 @@ const getCapabilityTags = (caps?: ModelCapabilities): string[] => {
   return tags;
 };
 
-export const ModelSelector: React.FC<ModelSelectorProps> = ({
+export const ModelSelector = forwardRef<ModelSelectorHandle, ModelSelectorProps>(({
   activeProviderId,
   activeModel,
   onSelect,
-}) => {
+}, ref) => {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState('');
+
+  useImperativeHandle(ref, () => ({
+    open: () => setModalVisible(true),
+  }));
 
   const allProviders = useSettingsStore(state => state.providers);
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
@@ -177,7 +185,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       </Modal>
     </View>
   );
-};
+});
 
 const createStyles = (colors: any) =>
   StyleSheet.create({

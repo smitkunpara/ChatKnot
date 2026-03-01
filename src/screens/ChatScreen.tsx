@@ -22,13 +22,17 @@ import { ProviderFactory } from '../services/llm/ProviderFactory';
 import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
-import { ModelSelector } from '../components/Chat/ModelSelector';
+import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
 import { ToolCall, Attachment } from '../types';
 import { useAppTheme } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
   resolveModelSelection,
 } from '../services/llm/modelSelection';
+import {
+  resolveModelCapabilities,
+  sanitizeMessagesForRequest,
+} from '../services/llm/requestMessageSanitizer';
 import {
   normalizeToolCalls,
   extractLegacyXmlToolCalls,
@@ -51,6 +55,7 @@ import { ExportFormat, ExportOptions, exportChat } from '../services/export/Chat
 export const ChatScreen = () => {
   const navigation = useNavigation<DrawerNavigationProp<any>>();
   const flatListRef = useRef<FlatList>(null);
+  const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
   const { colors } = useAppTheme();
@@ -69,6 +74,7 @@ export const ChatScreen = () => {
   const setLoading = useChatStore(state => state.setLoading);
   const systemPrompt = useSettingsStore(state => state.systemPrompt);
   const providers = useSettingsStore(state => state.providers);
+  const mcpServers = useSettingsStore(state => state.mcpServers);
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
@@ -77,6 +83,9 @@ export const ChatScreen = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [visionWarningVisible, setVisionWarningVisible] = useState(false);
+  const [toolsWarningVisible, setToolsWarningVisible] = useState(false);
+  const [enabledMcpToolsCount, setEnabledMcpToolsCount] = useState<number>(() => McpManager.getTools().length);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
@@ -211,6 +220,19 @@ export const ChatScreen = () => {
     };
   }, [chatError]);
 
+  useEffect(() => {
+    const syncEnabledMcpToolsCount = () => {
+      setEnabledMcpToolsCount(McpManager.getTools().length);
+    };
+
+    syncEnabledMcpToolsCount();
+    const unsubscribe = McpManager.subscribe(() => {
+      syncEnabledMcpToolsCount();
+    });
+
+    return unsubscribe;
+  }, []);
+
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
@@ -252,17 +274,43 @@ export const ChatScreen = () => {
     }
   };
 
-  // Check if the current model supports vision
-  const currentModelVisionSupported = useMemo(() => {
-    if (!modelResolution.selection) return false;
+  const currentModelCapabilities = useMemo(() => {
+    if (!modelResolution.selection) {
+      return {
+        vision: false,
+        fileInput: false,
+        tools: false,
+      };
+    }
+
     const provider = providers.find(p => p.id === modelResolution.selection!.providerId);
-    if (!provider?.modelCapabilities) return true; // no capability data at all → default true
-    const caps = provider.modelCapabilities[modelResolution.selection!.model];
-    if (caps) return caps.vision;
-    // Provider has capability data for other models but not this one
-    // (e.g. meta-models like openrouter/free) → assume no vision
-    return Object.keys(provider.modelCapabilities).length > 0 ? false : true;
+    return resolveModelCapabilities(provider, modelResolution.selection.model);
   }, [modelResolution.selection, providers]);
+
+  const currentModelVisionSupported = currentModelCapabilities.vision;
+  const currentModelToolsSupported = currentModelCapabilities.tools;
+  const configuredEnabledMcpToolsCount = useMemo(() => {
+    return mcpServers.reduce((count, server) => {
+      if (!server.enabled) {
+        return count;
+      }
+
+      const allowedTools = Array.isArray(server.allowedTools) ? server.allowedTools : [];
+      const knownTools = Array.isArray(server.tools) ? server.tools : [];
+      if (allowedTools.length > 0) {
+        return count + allowedTools.length;
+      }
+
+      return count + knownTools.length;
+    }, 0);
+  }, [mcpServers]);
+  const hasEnabledMcpServer = useMemo(
+    () => mcpServers.some((server) => server.enabled),
+    [mcpServers]
+  );
+  const hasEnabledMcpTools =
+    hasEnabledMcpServer &&
+    (enabledMcpToolsCount > 0 || configuredEnabledMcpToolsCount > 0);
 
   // Check if conversation has any image attachments in its history
   const conversationHasImages = useMemo(() => {
@@ -271,22 +319,41 @@ export const ChatScreen = () => {
     return conv.messages.some(m => m.attachments?.some(a => a.type === 'image'));
   }, [conversations, activeConversationId]);
 
-  const previousModelRef = useRef<string | undefined>(modelResolution.selection?.model);
+  const previousModelSelectionRef = useRef<string | undefined>(
+    modelResolution.selection
+      ? `${modelResolution.selection.providerId}:${modelResolution.selection.model}`
+      : undefined
+  );
 
   useEffect(() => {
-    const newModel = modelResolution.selection?.model;
-    if (newModel && newModel !== previousModelRef.current) {
-      previousModelRef.current = newModel;
+    if (!hasEnabledMcpTools || currentModelToolsSupported) {
+      setToolsWarningVisible(false);
+    }
+  }, [hasEnabledMcpTools, currentModelToolsSupported]);
 
-      // Immediate warning on model switch
+  useEffect(() => {
+    const nextSelectionKey = modelResolution.selection
+      ? `${modelResolution.selection.providerId}:${modelResolution.selection.model}`
+      : undefined;
+    if (nextSelectionKey && nextSelectionKey !== previousModelSelectionRef.current) {
+      previousModelSelectionRef.current = nextSelectionKey;
+
+      // Show themed vision warning on model switch
       if (conversationHasImages && !currentModelVisionSupported) {
-        Alert.alert(
-          'Vision Not Supported',
-          `This conversation contains images but "${newModel}" doesn't support vision. Images will be ignored by this model.`
-        );
+        setVisionWarningVisible(true);
+      } else if (hasEnabledMcpTools && !currentModelToolsSupported) {
+        setToolsWarningVisible(true);
       }
     }
-  }, [modelResolution.selection?.model, conversationHasImages, currentModelVisionSupported]);
+  }, [
+    modelResolution.selection?.providerId,
+    modelResolution.selection?.model,
+    conversationHasImages,
+    currentModelVisionSupported,
+    configuredEnabledMcpToolsCount,
+    hasEnabledMcpTools,
+    currentModelToolsSupported,
+  ]);
 
   const readFileAsBase64 = async (uri: string): Promise<string> => {
     const base64 = await FileSystem.readAsStringAsync(uri, {
@@ -322,27 +389,6 @@ export const ChatScreen = () => {
       return;
     }
 
-    // Vision mismatch warning
-    const hasImageAttachments = attachments.some(a => a.type === 'image');
-    if ((hasImageAttachments || conversationHasImages) && !currentModelVisionSupported) {
-      return new Promise<void>((resolve) => {
-        Alert.alert(
-          'Vision Not Supported',
-          `This conversation contains images but "${modelResolution.selection!.model}" doesn't support vision. Images will be ignored by this model.`,
-          [
-            { text: 'Select Different Model', onPress: () => resolve(), style: 'cancel' },
-            {
-              text: 'Continue Anyway',
-              onPress: async () => {
-                await doSend(text, conversationId!);
-                resolve();
-              },
-            },
-          ]
-        );
-      });
-    }
-
     await doSend(text, conversationId);
   };
 
@@ -350,11 +396,21 @@ export const ChatScreen = () => {
     setChatError(null);
     stopRequestedRef.current = false;
 
+    const filteredAttachments = attachments.filter((attachment) => {
+      if (attachment.type === 'image') {
+        return currentModelCapabilities.vision;
+      }
+      if (attachment.type === 'file') {
+        return currentModelCapabilities.fileInput;
+      }
+      return true;
+    });
+
     // Prepare attachments with base64
     let messageAttachments: Attachment[] | undefined;
-    if (attachments.length > 0) {
+    if (filteredAttachments.length > 0) {
       messageAttachments = [];
-      for (const att of attachments) {
+      for (const att of filteredAttachments) {
         let base64 = att.base64;
         if (!base64) {
           try {
@@ -440,9 +496,17 @@ export const ChatScreen = () => {
           ...providerConfig,
           model: selectedModel,
         };
+        const selectedModelCapabilities = resolveModelCapabilities(providerConfig, selectedModel);
+        const mcpTools = selectedModelCapabilities.tools
+          ? McpManager.getTools()
+          : [];
+        const toolsEnabledForRequest = mcpTools.length > 0;
+        const requestMessages = sanitizeMessagesForRequest(currentConv.messages, {
+          ...selectedModelCapabilities,
+          tools: toolsEnabledForRequest,
+        });
 
         const service = ProviderFactory.create(effectiveConfig);
-        const mcpTools = McpManager.getTools();
 
         const openAiTools = mcpTools.map(t => ({
           type: 'function',
@@ -468,7 +532,7 @@ export const ChatScreen = () => {
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
           service
             .sendChatCompletion(
-              currentConv.messages,
+              requestMessages,
               finalSystemPrompt,
               openAiTools,
               (chunk) => {
@@ -491,10 +555,12 @@ export const ChatScreen = () => {
         updateMessage(conversationId, assistantMsgId, assistantText);
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
-        let toolCalls = normalizeToolCalls(result.toolCalls);
+        let toolCalls = toolsEnabledForRequest
+          ? normalizeToolCalls(result.toolCalls)
+          : [];
 
         // Fallback for providers/models that emit XML-based pseudo tool calls instead of native tool_calls.
-        if (toolCalls.length === 0 && assistantText) {
+        if (toolsEnabledForRequest && toolCalls.length === 0 && assistantText) {
           const xmlToolCalls = extractLegacyXmlToolCalls(assistantText, toolNameMap);
           if (xmlToolCalls.length > 0) {
             toolCalls = xmlToolCalls;
@@ -706,6 +772,7 @@ export const ChatScreen = () => {
         </TouchableOpacity>
         <View style={styles.selectorWrapper}>
           <ModelSelector
+            ref={modelSelectorRef}
             activeProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
             activeModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
             onSelect={(pid, model) => {
@@ -871,6 +938,77 @@ export const ChatScreen = () => {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal
+        visible={visionWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVisionWarningVisible(false)}
+      >
+        <View style={styles.visionOverlay}>
+          <View style={styles.visionContent}>
+            <Text style={styles.visionTitle}>Vision Not Supported</Text>
+            <Text style={styles.visionMessage}>
+              This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included.
+            </Text>
+            <View style={styles.visionActions}>
+              <TouchableOpacity
+                style={styles.visionSwitchBtn}
+                onPress={() => {
+                  setVisionWarningVisible(false);
+                  setTimeout(() => modelSelectorRef.current?.open(), 300);
+                }}
+              >
+                <Text style={styles.visionSwitchText}>Switch Model</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.visionContinueBtn}
+                onPress={() => {
+                  setVisionWarningVisible(false);
+                  if (hasEnabledMcpTools && !currentModelToolsSupported) {
+                    setToolsWarningVisible(true);
+                  }
+                }}
+              >
+                <Text style={styles.visionContinueText}>Continue with Text Only</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={toolsWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setToolsWarningVisible(false)}
+      >
+        <View style={styles.visionOverlay}>
+          <View style={styles.visionContent}>
+            <Text style={styles.visionTitle}>MCP Tools Not Supported</Text>
+            <Text style={styles.visionMessage}>
+              This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI.
+            </Text>
+            <View style={styles.visionActions}>
+              <TouchableOpacity
+                style={styles.visionSwitchBtn}
+                onPress={() => {
+                  setToolsWarningVisible(false);
+                  setTimeout(() => modelSelectorRef.current?.open(), 300);
+                }}
+              >
+                <Text style={styles.visionSwitchText}>Switch Model</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.visionContinueBtn}
+                onPress={() => setToolsWarningVisible(false)}
+              >
+                <Text style={styles.visionContinueText}>Continue Without MCP</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1077,5 +1215,55 @@ const createStyles = (colors: any) =>
       fontSize: 14,
       fontWeight: '600' as const,
       color: colors.onPrimary,
+    },
+    visionOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    visionContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+    },
+    visionTitle: {
+      fontSize: 17,
+      fontWeight: '600' as const,
+      color: colors.text,
+      marginBottom: 10,
+    },
+    visionMessage: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.textSecondary,
+      marginBottom: 20,
+    },
+    visionActions: {
+      gap: 10,
+    },
+    visionSwitchBtn: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+      alignItems: 'center' as const,
+    },
+    visionSwitchText: {
+      fontSize: 15,
+      fontWeight: '600' as const,
+      color: colors.onPrimary,
+    },
+    visionContinueBtn: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center' as const,
+    },
+    visionContinueText: {
+      fontSize: 15,
+      color: colors.textSecondary,
     },
   });

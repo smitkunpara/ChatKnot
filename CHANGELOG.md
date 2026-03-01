@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- _No unreleased entries yet._
+
+## [0.2.0-beta] - 2026-03-01
+
+### Added
 
 #### Chat Export
 - Export conversations as **PDF**, **Markdown**, or **JSON** via share button in the chat header
