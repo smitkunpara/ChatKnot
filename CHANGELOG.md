@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- _No unreleased entries yet._
+- Chat requests now send two explicit system messages:
+  - First: user prompt (global or conversation override)
+  - Second: application defaults (markdown/tool guidance)
+- MCP/OpenAPI runtime instruction text is now appended only when at least one MCP server is connected.
 
 ## [0.2.0-beta] - 2026-03-01
 

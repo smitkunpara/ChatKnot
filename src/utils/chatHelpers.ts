@@ -106,3 +106,31 @@ export const buildEffectiveSystemPrompt = ({
 }): string => {
   return conversationPrompt?.trim() || globalPrompt?.trim() || 'You are a helpful AI assistant.';
 };
+
+export const buildAppSystemPrompt = ({
+  toolsEnabledForRequest,
+  hasConnectedMcpServer,
+  mcpInstruction,
+}: {
+  toolsEnabledForRequest: boolean;
+  hasConnectedMcpServer: boolean;
+  mcpInstruction?: string;
+}): string => {
+  const lines: string[] = [
+    'Application default instructions:',
+    '- Always respond in Markdown format.',
+    '- Keep answers clear, concise, and actionable.',
+  ];
+
+  if (toolsEnabledForRequest) {
+    lines.push('- Multiple tool calls are supported in a single turn when useful.');
+  }
+
+  if (hasConnectedMcpServer && mcpInstruction?.trim()) {
+    lines.push('');
+    lines.push('Connected MCP/OpenAPI context:');
+    lines.push(mcpInstruction.trim());
+  }
+
+  return lines.join('\n');
+};

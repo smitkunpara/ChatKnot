@@ -11,6 +11,7 @@ A privacy-focused React Native mobile application for chatting with AI providers
 - [x] Export chat (markdown/pdf/json)
 - [ ] AI Search and AI Tab rename
 - [ ] iamge/file support
+- [ ] add custom resoning effort/other parameter in the app
 
 
 ## 🌟 Key Features
@@ -52,7 +53,11 @@ In **Settings -> MCP Servers**:
 3. The app will validate your endpoint spec before saving.
 
 ## 📝 System Prompts
-You can set a **Global System Prompt** in General Settings or override it for individual conversations to control AI behavior.
+Chat requests use two system instructions:
+1. User instruction (global or conversation override prompt)
+2. Application default instruction (app behavior, markdown response preference, tool guidance)
+
+MCP/OpenAPI instruction context is only appended in the app instruction when at least one MCP server is connected.
 
 ## 📦 Build Release
 To generate a production APK for Android:

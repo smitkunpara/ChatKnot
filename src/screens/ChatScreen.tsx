@@ -47,6 +47,7 @@ import {
   MAX_TOOL_ITERATIONS,
   FALLBACK_FINAL_TEXT,
   getErrorMessage,
+  buildAppSystemPrompt,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
 import * as FileSystem from 'expo-file-system';
@@ -524,6 +525,14 @@ export const ChatScreen = () => {
           conversationPrompt: currentConv.systemPrompt,
           globalPrompt: systemPrompt,
         });
+        const hasConnectedMcpServer = McpManager
+          .getRuntimeStates()
+          .some((state) => state.status === 'connected');
+        const appSystemPrompt = buildAppSystemPrompt({
+          toolsEnabledForRequest,
+          hasConnectedMcpServer,
+          mcpInstruction: hasConnectedMcpServer ? McpManager.getOpenApiContexts() : '',
+        });
 
         let streamedContent = '';
         const requestController = new AbortController();
@@ -534,6 +543,7 @@ export const ChatScreen = () => {
             .sendChatCompletion(
               requestMessages,
               finalSystemPrompt,
+              appSystemPrompt,
               openAiTools,
               (chunk) => {
                 if (!chunk) return;

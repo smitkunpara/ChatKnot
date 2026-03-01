@@ -370,7 +370,8 @@ export class OpenAiService {
 
   async sendChatCompletion(
     messages: Message[],
-    systemPrompt: string,
+    userSystemPrompt: string,
+    appSystemPrompt: string | undefined,
     tools: any[],
     onChunk: (content: string, toolCalls?: any[]) => void,
     onComplete: (fullContent: string, fullToolCalls?: any[]) => void,
@@ -378,8 +379,13 @@ export class OpenAiService {
     abortSignal?: AbortSignal
   ) {
     try {
+      const systemMessages = [userSystemPrompt, appSystemPrompt]
+        .map((prompt) => (prompt || '').trim())
+        .filter(Boolean)
+        .map((prompt) => ({ role: 'system', content: prompt }));
+
       const msgs = [
-        { role: 'system', content: systemPrompt },
+        ...systemMessages,
         ...messages.map(m => {
           const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
           const hasAttachments = m.attachments && m.attachments.length > 0 && m.role === 'user';
