@@ -8,7 +8,7 @@ A privacy-focused React Native mobile application for chatting with AI providers
 - [x] MCP support
 - [ ] Multiple mode support
     - each mode has its own system prompt + model + mcp configuration
-- [ ] Export chat (markdown/pdf/json)
+- [x] Export chat (markdown/pdf/json)
 - [ ] AI Search and AI Tab rename
 - [ ] iamge/file support
 
@@ -22,6 +22,7 @@ A privacy-focused React Native mobile application for chatting with AI providers
 - **User-Friendly Errors**: API errors are parsed and displayed as clean, readable messages.
 - **Encrypted Storage**: Sensitive data and keys are protected with hardware-backed encryption.
 - **Health Checks**: Automatic verification of AI and MCP endpoints on startup.
+- **Chat Export**: Export conversations as PDF (rendered markdown), Markdown (collapsible tool details), or JSON (OpenAI format).
 - **Clean UI**: Modern dark/light interface with organized conversation management.
 
 ## 🛠️ Getting Started

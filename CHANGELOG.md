@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Chat Export
+- Export conversations as **PDF**, **Markdown**, or **JSON** via share button in the chat header
+- PDF export renders full markdown (headings, bold, code blocks, lists, tables) using `marked`
+- Markdown export uses collapsible `<details>` blocks for tool call input/output
+- JSON export uses OpenAI-compatible message format with `tool_calls`
+- Export options modal with format selector and toggles for tool input/output inclusion
+- Export button styled consistently with menu button (same border, background, size)
+
 #### Chat UI
 - Added multimodal attachment support (`+` icon) allowing users to attach Images and Text/PDF documents
 - Added image thumbnail and file layout previews inside the message composer

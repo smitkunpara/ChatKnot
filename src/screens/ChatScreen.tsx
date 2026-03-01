@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Modal,
   View,
   FlatList,
   KeyboardAvoidingView,
@@ -8,11 +9,12 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
-import { AlertTriangle, Menu } from 'lucide-react-native';
+import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { useChatStore } from '../store/useChatStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -44,6 +46,7 @@ import {
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
 import * as FileSystem from 'expo-file-system';
+import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
 
 export const ChatScreen = () => {
   const navigation = useNavigation<DrawerNavigationProp<any>>();
@@ -75,6 +78,11 @@ export const ChatScreen = () => {
   const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
+  const [includeToolInput, setIncludeToolInput] = useState(false);
+  const [includeToolOutput, setIncludeToolOutput] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
     approvalResolversRef.current.forEach((resolve) => {
@@ -670,6 +678,26 @@ export const ChatScreen = () => {
 
   const bannerMessage = noModelAvailableMessage || chatError;
 
+  const chatHasMessages = !!activeConversation?.messages.some(m => m.role === 'user' || m.role === 'assistant');
+
+  const handleExport = async () => {
+    if (!activeConversation) return;
+    setIsExporting(true);
+    try {
+      const opts: ExportOptions = {
+        format: exportFormat,
+        includeToolInput,
+        includeToolOutput,
+      };
+      await exportChat(activeConversation, opts);
+    } catch (e: any) {
+      Alert.alert('Export Failed', e?.message || 'Unable to export chat.');
+    } finally {
+      setIsExporting(false);
+      setExportModalVisible(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -688,6 +716,20 @@ export const ChatScreen = () => {
             }}
           />
         </View>
+        <TouchableOpacity
+          style={[styles.exportButton, !chatHasMessages && styles.exportButtonDisabled]}
+          onPress={() => {
+            setExportFormat('pdf');
+            setIncludeToolInput(false);
+            setIncludeToolOutput(false);
+            setExportModalVisible(true);
+          }}
+          disabled={!chatHasMessages}
+          accessibilityLabel="Export chat"
+          accessibilityRole="button"
+        >
+          <Share2 size={18} color={chatHasMessages ? colors.text : colors.placeholder} />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
@@ -756,6 +798,80 @@ export const ChatScreen = () => {
           visionSupported={currentModelVisionSupported}
         />
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setExportModalVisible(false)}>
+          <View style={styles.exportOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.exportContent}>
+                <View style={styles.exportHeader}>
+                  <Text style={styles.exportTitle}>Export Chat</Text>
+                  <TouchableOpacity onPress={() => setExportModalVisible(false)} style={styles.exportCloseBtn}>
+                    <X size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.exportSectionLabel}>Export Format</Text>
+                <View style={styles.exportFormatRow}>
+                  {(['pdf', 'markdown', 'json'] as ExportFormat[]).map(fmt => (
+                    <TouchableOpacity
+                      key={fmt}
+                      style={[styles.exportFormatBtn, exportFormat === fmt && styles.exportFormatBtnActive]}
+                      onPress={() => setExportFormat(fmt)}
+                    >
+                      <Text style={[styles.exportFormatText, exportFormat === fmt && styles.exportFormatTextActive]}>
+                        {fmt === 'pdf' ? 'PDF' : fmt === 'markdown' ? 'Markdown' : 'JSON'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {exportFormat !== 'json' && (
+                  <>
+                    <Text style={styles.exportSectionLabel}>Tool Details</Text>
+                    <TouchableOpacity
+                      style={styles.exportCheckRow}
+                      onPress={() => setIncludeToolInput(v => !v)}
+                    >
+                      <View style={[styles.exportCheckBox, includeToolInput && styles.exportCheckBoxActive]}>
+                        {includeToolInput && <Check size={14} color={colors.onPrimary} />}
+                      </View>
+                      <Text style={styles.exportCheckLabel}>Include tool input</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.exportCheckRow}
+                      onPress={() => setIncludeToolOutput(v => !v)}
+                    >
+                      <View style={[styles.exportCheckBox, includeToolOutput && styles.exportCheckBoxActive]}>
+                        {includeToolOutput && <Check size={14} color={colors.onPrimary} />}
+                      </View>
+                      <Text style={styles.exportCheckLabel}>Include tool output</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                <View style={styles.exportActions}>
+                  <TouchableOpacity style={styles.exportCancelBtn} onPress={() => setExportModalVisible(false)}>
+                    <Text style={styles.exportCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.exportConfirmBtn, isExporting && styles.exportConfirmBtnDisabled]}
+                    onPress={handleExport}
+                    disabled={isExporting}
+                  >
+                    <Text style={styles.exportConfirmText}>{isExporting ? 'Exporting...' : 'Export'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -834,5 +950,132 @@ const createStyles = (colors: any) =>
       color: colors.text,
       fontSize: 12,
       flex: 1,
+    },
+    exportButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      marginLeft: 8,
+    },
+    exportButtonDisabled: {
+      opacity: 0.35,
+    },
+    exportOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    exportContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+    },
+    exportHeader: {
+      flexDirection: 'row' as const,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    exportTitle: {
+      fontSize: 18,
+      fontWeight: '600' as const,
+      color: colors.text,
+    },
+    exportCloseBtn: {
+      padding: 4,
+    },
+    exportSectionLabel: {
+      fontSize: 13,
+      fontWeight: '500' as const,
+      color: colors.textSecondary,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    exportFormatRow: {
+      flexDirection: 'row' as const,
+      gap: 8,
+      marginBottom: 16,
+    },
+    exportFormatBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center' as const,
+    },
+    exportFormatBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft ?? 'rgba(99,102,241,0.08)',
+    },
+    exportFormatText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    exportFormatTextActive: {
+      color: colors.primary,
+      fontWeight: '600' as const,
+    },
+    exportCheckRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      paddingVertical: 8,
+      gap: 10,
+    },
+    exportCheckBox: {
+      width: 22,
+      height: 22,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+    },
+    exportCheckBoxActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    exportCheckLabel: {
+      fontSize: 14,
+      color: colors.text,
+    },
+    exportActions: {
+      flexDirection: 'row' as const,
+      justifyContent: 'flex-end',
+      gap: 10,
+      marginTop: 20,
+    },
+    exportCancelBtn: {
+      paddingVertical: 10,
+      paddingHorizontal: 18,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    exportCancelText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    exportConfirmBtn: {
+      paddingVertical: 10,
+      paddingHorizontal: 22,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+    },
+    exportConfirmBtnDisabled: {
+      opacity: 0.5,
+    },
+    exportConfirmText: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      color: colors.onPrimary,
     },
   });

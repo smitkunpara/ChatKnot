@@ -11,6 +11,7 @@
 - **📊 Better Markdown Tables**: Tables now scroll horizontally when content is wide, with proper theme-aware borders and aligned columns.
 - **🔔 Fixed Warning Banner**: Startup warnings now appear centered on screen with proper dark/light theme support.
 - **🌙 Dark Mode Detection**: Fixed system dark/light mode detection so the app correctly follows your device theme setting.
+- **📤 Chat Export**: Export any conversation as PDF, Markdown, or JSON. PDF renders full markdown formatting; Markdown uses collapsible sections for tool call details. Customize what to include with tool input/output toggles.
 - **🎨 Refined Light Mode**: Softer gray tones replace harsh whites for a more comfortable reading experience, with consistent component styling across the header.
 - **⚡ Faster Streaming**: Removed artificial delays from the streaming pipeline — AI responses now render token-by-token at full provider speed.
 - **🖼️ Image Attachment Fix**: Image option now correctly disables when the model doesn't support vision.
