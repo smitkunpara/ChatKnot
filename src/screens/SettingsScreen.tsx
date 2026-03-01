@@ -1000,13 +1000,16 @@ export const SettingsScreen = () => {
                   <View style={styles.rowRight}>
                     <Switch
                       value={effectiveProvider.enabled}
-                      disabled={!isEditing}
                       onValueChange={enabled => {
-                        if (!isEditing) {
+                        if (isEditing) {
+                          setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
                           return;
                         }
 
-                        setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
+                        updateProvider({
+                          ...provider,
+                          enabled,
+                        });
                       }}
                       trackColor={{ false: colors.border, true: colors.primarySoft }}
                       thumbColor={effectiveProvider.enabled ? colors.primary : colors.textTertiary}
@@ -1212,13 +1215,18 @@ export const SettingsScreen = () => {
                     <View style={styles.rowRight}>
                       <Switch
                         value={effectiveServer.enabled}
-                        disabled={!isEditing}
                         onValueChange={enabled => {
-                          if (!isEditing) {
+                          if (isEditing) {
+                            clearServerValidationError(server.id);
+                            setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
                             return;
                           }
 
-                          setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
+                          clearServerValidationError(server.id);
+                          updateMcpServer({
+                            ...server,
+                            enabled,
+                          });
                         }}
                         trackColor={{ false: colors.border, true: colors.primarySoft }}
                         thumbColor={effectiveServer.enabled ? colors.primary : colors.textTertiary}

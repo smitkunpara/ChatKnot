@@ -28,6 +28,10 @@ import {
   resolveModelSelection,
 } from '../services/llm/modelSelection';
 import {
+  resolveModelCapabilities,
+  sanitizeMessagesForRequest,
+} from '../services/llm/requestMessageSanitizer';
+import {
   normalizeToolCalls,
   extractLegacyXmlToolCalls,
   extractLegacyJsonToolCalls,
@@ -67,6 +71,7 @@ export const ChatScreen = () => {
   const setLoading = useChatStore(state => state.setLoading);
   const systemPrompt = useSettingsStore(state => state.systemPrompt);
   const providers = useSettingsStore(state => state.providers);
+  const mcpServers = useSettingsStore(state => state.mcpServers);
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
@@ -76,6 +81,8 @@ export const ChatScreen = () => {
   const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [visionWarningVisible, setVisionWarningVisible] = useState(false);
+  const [toolsWarningVisible, setToolsWarningVisible] = useState(false);
+  const [enabledMcpToolsCount, setEnabledMcpToolsCount] = useState<number>(() => McpManager.getTools().length);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
@@ -205,6 +212,19 @@ export const ChatScreen = () => {
     };
   }, [chatError]);
 
+  useEffect(() => {
+    const syncEnabledMcpToolsCount = () => {
+      setEnabledMcpToolsCount(McpManager.getTools().length);
+    };
+
+    syncEnabledMcpToolsCount();
+    const unsubscribe = McpManager.subscribe(() => {
+      syncEnabledMcpToolsCount();
+    });
+
+    return unsubscribe;
+  }, []);
+
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
@@ -246,17 +266,43 @@ export const ChatScreen = () => {
     }
   };
 
-  // Check if the current model supports vision
-  const currentModelVisionSupported = useMemo(() => {
-    if (!modelResolution.selection) return false;
+  const currentModelCapabilities = useMemo(() => {
+    if (!modelResolution.selection) {
+      return {
+        vision: false,
+        fileInput: false,
+        tools: false,
+      };
+    }
+
     const provider = providers.find(p => p.id === modelResolution.selection!.providerId);
-    if (!provider?.modelCapabilities) return true; // no capability data at all → default true
-    const caps = provider.modelCapabilities[modelResolution.selection!.model];
-    if (caps) return caps.vision;
-    // Provider has capability data for other models but not this one
-    // (e.g. meta-models like openrouter/free) → assume no vision
-    return Object.keys(provider.modelCapabilities).length > 0 ? false : true;
+    return resolveModelCapabilities(provider, modelResolution.selection.model);
   }, [modelResolution.selection, providers]);
+
+  const currentModelVisionSupported = currentModelCapabilities.vision;
+  const currentModelToolsSupported = currentModelCapabilities.tools;
+  const configuredEnabledMcpToolsCount = useMemo(() => {
+    return mcpServers.reduce((count, server) => {
+      if (!server.enabled) {
+        return count;
+      }
+
+      const allowedTools = Array.isArray(server.allowedTools) ? server.allowedTools : [];
+      const knownTools = Array.isArray(server.tools) ? server.tools : [];
+      if (allowedTools.length > 0) {
+        return count + allowedTools.length;
+      }
+
+      return count + knownTools.length;
+    }, 0);
+  }, [mcpServers]);
+  const hasEnabledMcpServer = useMemo(
+    () => mcpServers.some((server) => server.enabled),
+    [mcpServers]
+  );
+  const hasEnabledMcpTools =
+    hasEnabledMcpServer &&
+    (enabledMcpToolsCount > 0 || configuredEnabledMcpToolsCount > 0);
 
   // Check if conversation has any image attachments in its history
   const conversationHasImages = useMemo(() => {
@@ -265,19 +311,41 @@ export const ChatScreen = () => {
     return conv.messages.some(m => m.attachments?.some(a => a.type === 'image'));
   }, [conversations, activeConversationId]);
 
-  const previousModelRef = useRef<string | undefined>(modelResolution.selection?.model);
+  const previousModelSelectionRef = useRef<string | undefined>(
+    modelResolution.selection
+      ? `${modelResolution.selection.providerId}:${modelResolution.selection.model}`
+      : undefined
+  );
 
   useEffect(() => {
-    const newModel = modelResolution.selection?.model;
-    if (newModel && newModel !== previousModelRef.current) {
-      previousModelRef.current = newModel;
+    if (!hasEnabledMcpTools || currentModelToolsSupported) {
+      setToolsWarningVisible(false);
+    }
+  }, [hasEnabledMcpTools, currentModelToolsSupported]);
+
+  useEffect(() => {
+    const nextSelectionKey = modelResolution.selection
+      ? `${modelResolution.selection.providerId}:${modelResolution.selection.model}`
+      : undefined;
+    if (nextSelectionKey && nextSelectionKey !== previousModelSelectionRef.current) {
+      previousModelSelectionRef.current = nextSelectionKey;
 
       // Show themed vision warning on model switch
       if (conversationHasImages && !currentModelVisionSupported) {
         setVisionWarningVisible(true);
+      } else if (hasEnabledMcpTools && !currentModelToolsSupported) {
+        setToolsWarningVisible(true);
       }
     }
-  }, [modelResolution.selection?.model, conversationHasImages, currentModelVisionSupported]);
+  }, [
+    modelResolution.selection?.providerId,
+    modelResolution.selection?.model,
+    conversationHasImages,
+    currentModelVisionSupported,
+    configuredEnabledMcpToolsCount,
+    hasEnabledMcpTools,
+    currentModelToolsSupported,
+  ]);
 
   const readFileAsBase64 = async (uri: string): Promise<string> => {
     const base64 = await FileSystem.readAsStringAsync(uri, {
@@ -320,10 +388,15 @@ export const ChatScreen = () => {
     setChatError(null);
     stopRequestedRef.current = false;
 
-    // Filter out image attachments if model doesn't support vision
-    const filteredAttachments = currentModelVisionSupported
-      ? attachments
-      : attachments.filter(a => a.type !== 'image');
+    const filteredAttachments = attachments.filter((attachment) => {
+      if (attachment.type === 'image') {
+        return currentModelCapabilities.vision;
+      }
+      if (attachment.type === 'file') {
+        return currentModelCapabilities.fileInput;
+      }
+      return true;
+    });
 
     // Prepare attachments with base64
     let messageAttachments: Attachment[] | undefined;
@@ -415,9 +488,17 @@ export const ChatScreen = () => {
           ...providerConfig,
           model: selectedModel,
         };
+        const selectedModelCapabilities = resolveModelCapabilities(providerConfig, selectedModel);
+        const mcpTools = selectedModelCapabilities.tools
+          ? McpManager.getTools()
+          : [];
+        const toolsEnabledForRequest = mcpTools.length > 0;
+        const requestMessages = sanitizeMessagesForRequest(currentConv.messages, {
+          ...selectedModelCapabilities,
+          tools: toolsEnabledForRequest,
+        });
 
         const service = ProviderFactory.create(effectiveConfig);
-        const mcpTools = McpManager.getTools();
 
         const openAiTools = mcpTools.map(t => ({
           type: 'function',
@@ -443,7 +524,7 @@ export const ChatScreen = () => {
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
           service
             .sendChatCompletion(
-              currentConv.messages,
+              requestMessages,
               finalSystemPrompt,
               openAiTools,
               (chunk) => {
@@ -466,10 +547,12 @@ export const ChatScreen = () => {
         updateMessage(conversationId, assistantMsgId, assistantText);
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
-        let toolCalls = normalizeToolCalls(result.toolCalls);
+        let toolCalls = toolsEnabledForRequest
+          ? normalizeToolCalls(result.toolCalls)
+          : [];
 
         // Fallback for providers/models that emit XML-based pseudo tool calls instead of native tool_calls.
-        if (toolCalls.length === 0 && assistantText) {
+        if (toolsEnabledForRequest && toolCalls.length === 0 && assistantText) {
           const xmlToolCalls = extractLegacyXmlToolCalls(assistantText, toolNameMap);
           if (xmlToolCalls.length > 0) {
             toolCalls = xmlToolCalls;
@@ -765,9 +848,47 @@ export const ChatScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.visionContinueBtn}
-                onPress={() => setVisionWarningVisible(false)}
+                onPress={() => {
+                  setVisionWarningVisible(false);
+                  if (hasEnabledMcpTools && !currentModelToolsSupported) {
+                    setToolsWarningVisible(true);
+                  }
+                }}
               >
                 <Text style={styles.visionContinueText}>Continue with Text Only</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={toolsWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setToolsWarningVisible(false)}
+      >
+        <View style={styles.visionOverlay}>
+          <View style={styles.visionContent}>
+            <Text style={styles.visionTitle}>MCP Tools Not Supported</Text>
+            <Text style={styles.visionMessage}>
+              This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI.
+            </Text>
+            <View style={styles.visionActions}>
+              <TouchableOpacity
+                style={styles.visionSwitchBtn}
+                onPress={() => {
+                  setToolsWarningVisible(false);
+                  setTimeout(() => modelSelectorRef.current?.open(), 300);
+                }}
+              >
+                <Text style={styles.visionSwitchText}>Switch Model</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.visionContinueBtn}
+                onPress={() => setToolsWarningVisible(false)}
+              >
+                <Text style={styles.visionContinueText}>Continue Without MCP</Text>
               </TouchableOpacity>
             </View>
           </View>

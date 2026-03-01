@@ -78,6 +78,52 @@ const normalizeProviderConfig = (provider: LlmProviderConfig): LlmProviderConfig
   };
 };
 
+const normalizeSettingValue = (value: string | undefined | null): string => (value || '').trim();
+
+const shouldClearLastUsedModelForProvider = (
+  lastUsedModel: LastUsedModelPreference | null,
+  provider: LlmProviderConfig
+): boolean => {
+  if (!lastUsedModel || lastUsedModel.providerId !== provider.id) {
+    return false;
+  }
+
+  if (!provider.enabled) {
+    return true;
+  }
+
+  if (
+    normalizeSettingValue(provider.baseUrl).length === 0 ||
+    normalizeSettingValue(provider.apiKey).length === 0
+  ) {
+    return true;
+  }
+
+  const normalizedModel = normalizeSettingValue(lastUsedModel.model);
+  if (!normalizedModel) {
+    return true;
+  }
+
+  const hiddenModels = new Set(
+    (provider.hiddenModels || []).map((model) => normalizeSettingValue(model))
+  );
+  if (hiddenModels.has(normalizedModel)) {
+    return true;
+  }
+
+  const availableModels = Array.isArray(provider.availableModels)
+    ? provider.availableModels
+      .map((model) => normalizeSettingValue(model))
+      .filter(Boolean)
+    : [];
+
+  if (availableModels.length > 0 && !availableModels.includes(normalizedModel)) {
+    return true;
+  }
+
+  return false;
+};
+
 const shouldClearLastUsedModel = (
   lastUsedModel: LastUsedModelPreference | null,
   providerId: string,
@@ -117,11 +163,18 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'system',
       lastUsedModel: null,
       
-      updateProvider: (updatedProvider) => set((state) => ({
-        providers: state.providers.map((p) =>
-          p.id === updatedProvider.id ? normalizeProviderConfig(updatedProvider) : p
-        ),
-      })),
+      updateProvider: (updatedProvider) =>
+        set((state) => {
+          const normalizedProvider = normalizeProviderConfig(updatedProvider);
+          return {
+            providers: state.providers.map((p) =>
+              p.id === normalizedProvider.id ? normalizedProvider : p
+            ),
+            lastUsedModel: shouldClearLastUsedModelForProvider(state.lastUsedModel, normalizedProvider)
+              ? null
+              : state.lastUsedModel,
+          };
+        }),
       addProvider: (provider) => set((state) => ({
         providers: [...state.providers, normalizeProviderConfig(provider)],
       })),

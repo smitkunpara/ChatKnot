@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- _No unreleased entries yet._
+
+## [0.2.0-beta] - 2026-03-01
+
+### Added
 
 #### Chat UI
 - Added multimodal attachment support (`+` icon) allowing users to attach Images and Text/PDF documents

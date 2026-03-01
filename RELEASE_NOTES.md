@@ -1,6 +1,6 @@
-# 🚀 ChatKnot vX.X.X (Unreleased Draft)
+# 🚀 ChatKnot v0.2.0-beta
 
-> **Note:** Version number, date, and final details TBD. This section will be finalized before release.
+> **Release Date:** 2026-03-01
 
 - **💬 ChatGPT-Style Messages**: Assistant responses now render directly on the chat background without a bordered bubble, giving a cleaner, more modern feel. User messages keep their distinctive green bubble.
 - **🏷️ Smart Conversation Titles**: New conversations are automatically titled from your first message instead of staying as "New Chat" forever.
@@ -37,4 +37,4 @@ Full technical details available in [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 ### ⚠️ Beta Version Note
-This is a `v0.1.0` Beta release. Please ensure you back up your settings import/export JSON periodically, as internal schemas may evolve during this beta phase.
+This is a `v0.2.0-beta` Beta release. Please ensure you back up your settings import/export JSON periodically, as internal schemas may evolve during this beta phase.
