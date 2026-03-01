@@ -5,6 +5,69 @@ All notable changes to ChatKnot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Chat requests now send two explicit system messages:
+  - First: user prompt (global or conversation override)
+  - Second: application defaults (markdown/tool guidance)
+- MCP/OpenAPI runtime instruction text is now appended only when at least one MCP server is connected.
+
+## [0.2.0-beta] - 2026-03-01
+
+### Added
+
+#### Chat Export
+- Export conversations as **PDF**, **Markdown**, or **JSON** via share button in the chat header
+- PDF export renders full markdown (headings, bold, code blocks, lists, tables) using `marked`
+- Markdown export uses collapsible `<details>` blocks for tool call input/output
+- JSON export uses OpenAI-compatible message format with `tool_calls`
+- Export options modal with format selector and toggles for tool input/output inclusion
+- Export button styled consistently with menu button (same border, background, size)
+
+#### Chat UI
+- Added multimodal attachment support (`+` icon) allowing users to attach Images and Text/PDF documents
+- Added image thumbnail and file layout previews inside the message composer
+- Assistant and User Message bubbles now display attached image thumbnails and files directly
+- Handled vision mismatch warning: app alerts users if a non-vision model is selected in a chat with images
+- ChatGPT-style message layout — assistant messages render directly on background without a bubble; user messages keep their green rounded bubble
+- Haptic feedback on key interactions: light impact on send and copy, medium impact on delete (via `expo-haptics`)
+
+#### Conversations
+- Auto-title conversations from the first user message (~50 char word-boundary truncation) instead of staying as "New Chat"
+- Sidebar conversation search/filter bar (appears when >3 conversations) with case-insensitive title matching
+
+#### Internationalization
+- Locale-aware date formatting — replaced hardcoded IST (Asia/Kolkata) timezone with device-local `Intl.DateTimeFormat`
+
+#### Accessibility
+- Added `accessibilityLabel` and `accessibilityRole` to all interactive elements across 5 components: Input, MessageBubble, ConversationList, ChatScreen, ModelSelector
+
+### Fixed
+- Image attachment option now correctly **disabled/blurred** when the selected model lacks vision support — previously defaulted to enabled for models without capability metadata (e.g. `openrouter/free` meta-models)
+- Model capability tags (`vision`, `tools`, `file`) now display beside model names in both the **Chat model selector** and **Settings model picker** — previously missing due to capabilities not being persisted when the model list hadn't changed
+- Startup health check now persists model capabilities even when the model list is unchanged — fixes tags not appearing after app restart
+- Settings model picker now auto-fetches capabilities when they are missing (not just when models are empty)
+- API error messages shown in chat are now **user-friendly** instead of raw JSON dumps:
+  - `429` → "Rate limit reached. Please try again in a few moments."
+  - `401` → "Authentication failed. Please check your API key in settings."
+  - `500/502/503` → "The AI service is temporarily unavailable. Please try again shortly."
+- Removed duplicate error notification **banner** for chat API errors — errors now show only as styled messages inline in the chat
+- Error messages in chat render with a **muted red** background and text to visually distinguish them from normal responses
+
+### Changed
+- `dateFormat.ts`: `formatIstDateTime` is now a deprecated alias for `formatLocalDateTime`
+- Dark mode warning palette updated to amber tones (`#fbbf24` / `#453509`) for better readability
+- Light mode palette softened — replaced bright whites with warmer gray tones for reduced eye strain
+- Unified header component backgrounds: model selector and menu button now share same theme tokens (`surfaceAlt`/`subtleBorder`)
+- Model Selector now explicitly shows capability badges (e.g. `vision`, `tools`, `file`)
+- OpenAiService `/models` fetch now pulls `capabilities` mapping directly into provider config
+
+### Performance
+- Removed artificial 12ms delay and 12-char splitting from SSE streaming — tokens now render immediately as they arrive from the provider
+- Eliminated unnecessary async/await overhead in the streaming pipeline (`emitContentChunk`, `processDelta`, `processSsePayload` are now synchronous)
+- Added zero-delay event-loop yields (`setTimeout(0)`) to allow React to flush renders between network reads
+
 ## [0.1.0] - 2026-02-27
 
 ### Added

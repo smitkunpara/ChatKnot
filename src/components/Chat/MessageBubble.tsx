@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, Edit2, RotateCcw } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { Copy, Edit2, FileText, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
@@ -47,67 +48,107 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isSystem = message.role === 'system';
   const hasToolCalls = !!message.toolCalls?.length;
   const hasText = !!message.content?.trim();
-  const shouldRenderBubble = hasText || hasToolCalls || !!isStreaming;
+  const hasAttachments = !!message.attachments?.length;
+  const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || !!isStreaming;
 
   // Tool outputs are kept in history for LLM context, but hidden from the UI.
   if (isSystem || isTool) return null;
   if (!shouldRenderBubble) return null;
 
   const copyToClipboard = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     await Clipboard.setStringAsync(message.content || '');
   };
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
-      <View
-        style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.assistantBubble,
-          hasToolCalls ? styles.assistantWithTools : undefined,
-        ]}
-      >
-        <View style={styles.textRow}>
-          {message.content ? (
-            isUser ? (
-              <Text style={styles.userText}>{message.content}</Text>
-            ) : (
-              <Markdown style={markdownStyles}>{message.content}</Markdown>
-            )
-          ) : null}
-          {isStreaming && <StreamingCursor color={colors.primary} />}
-        </View>
+      <View style={styles.messageRow}>
+        <View style={{ flex: 1 }}>
+          {isUser ? (
+            <View style={[styles.bubble, styles.userBubble]}>
+              {hasAttachments && (
+                <View style={styles.attachmentsContainer}>
+                  {message.attachments?.map((att) => (
+                    <View key={att.id} style={styles.attachmentItem}>
+                      {att.type === 'image' && att.base64 ? (
+                        <Image
+                          source={{ uri: `data:${att.mimeType};base64,${att.base64}` }}
+                          style={styles.attachedImage}
+                        />
+                      ) : (
+                        <View style={styles.attachedFileWrap}>
+                          <FileText size={16} color={colors.onPrimary} />
+                          <Text style={styles.attachedFileName} numberOfLines={1}>
+                            {att.name}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+              {hasText && (
+                <View style={styles.textRow}>
+                  <Text style={styles.userText}>{message.content}</Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.assistantContent,
+                hasToolCalls ? styles.assistantWithTools : undefined,
+                message.isError ? styles.errorContent : undefined,
+              ]}
+            >
+              <View style={styles.textRow}>
+                {message.content ? (
+                  message.isError ? (
+                    <Text style={styles.errorText}>{message.content}</Text>
+                  ) : (
+                    <Markdown
+                      style={markdownStyles}
+                      rules={createTableRenderRules(colors)}
+                    >{message.content}</Markdown>
+                  )
+                ) : null}
+                {isStreaming && <StreamingCursor color={colors.primary} />}
+              </View>
 
-        {hasToolCalls ? (
-          <View style={styles.toolCallsContainer}>
-            {message.toolCalls!.map((tc) => (
-              <ToolCallComponent
-                key={tc.id}
-                toolCall={tc}
-                requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
-                onApprove={() => onToolApprovalDecision?.(tc.id, true)}
-                onDeny={() => onToolApprovalDecision?.(tc.id, false)}
-              />
-            ))}
+              {hasToolCalls ? (
+                <View style={styles.toolCallsContainer}>
+                  {message.toolCalls!.map((tc) => (
+                    <ToolCallComponent
+                      key={tc.id}
+                      toolCall={tc}
+                      requiresApproval={!!pendingToolApprovalIds?.[tc.id]}
+                      onApprove={() => onToolApprovalDecision?.(tc.id, true)}
+                      onDeny={() => onToolApprovalDecision?.(tc.id, false)}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
+            {!isStreaming && message.content ? (
+              <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
+                <Copy size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+            {!isUser && !isStreaming && onRetryAssistant ? (
+              <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
+                <RotateCcw size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+            {isUser && onEdit ? (
+              <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton} accessibilityLabel="Edit message" accessibilityRole="button">
+                <Edit2 size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
           </View>
-        ) : null}
-      </View>
-
-      <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
-        {!isStreaming && message.content ? (
-          <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton}>
-            <Copy size={13} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
-        {!isUser && !isStreaming && onRetryAssistant ? (
-          <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton}>
-            <RotateCcw size={13} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
-        {isUser && onEdit ? (
-          <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton}>
-            <Edit2 size={13} color={colors.textTertiary} />
-          </TouchableOpacity>
-        ) : null}
+        </View>
       </View>
     </View>
   );
@@ -126,30 +167,78 @@ const createStyles = (colors: any) =>
     assistantContainer: {
       alignItems: 'flex-start',
     },
+    messageRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      maxWidth: '100%',
+    },
     bubble: {
       maxWidth: '88%',
       padding: 12,
       borderRadius: 14,
       minWidth: 44,
       borderWidth: 1,
+      alignSelf: 'flex-end',
     },
     userBubble: {
       backgroundColor: colors.userBubble,
       borderBottomRightRadius: 6,
       borderColor: colors.primary,
     },
-    assistantBubble: {
-      backgroundColor: colors.assistantBubble,
-      borderBottomLeftRadius: 6,
-      borderColor: colors.subtleBorder,
+    assistantContent: {
+      paddingVertical: 4,
+      paddingHorizontal: 2,
     },
     assistantWithTools: {
-      width: '96%',
+      width: '100%',
+    },
+    errorContent: {
+      backgroundColor: 'rgba(220, 80, 80, 0.08)',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(220, 80, 80, 0.2)',
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+    },
+    errorText: {
+      color: '#c45252',
+      fontSize: 14,
+      lineHeight: 20,
     },
     userText: {
       color: colors.onPrimary,
       fontSize: 15,
       lineHeight: 22,
+    },
+    attachmentsContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 6,
+    },
+    attachmentItem: {
+      marginBottom: 2,
+    },
+    attachedImage: {
+      width: 140,
+      height: 140,
+      borderRadius: 8,
+    },
+    attachedFileWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      maxWidth: 200,
+    },
+    attachedFileName: {
+      color: colors.onPrimary,
+      fontSize: 12,
+      fontWeight: '500',
+      marginLeft: 6,
+      flex: 1,
     },
     actions: {
       flexDirection: 'row',
@@ -221,4 +310,88 @@ const createMarkdownStyles = (colors: any) => ({
   link: {
     color: colors.link,
   },
+  table: {
+    borderWidth: 0,
+    borderColor: 'transparent',
+  },
+  thead: {},
+  tbody: {},
+  tr: {
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row' as const,
+  },
+  th: {
+    padding: 8,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  td: {
+    padding: 8,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+  },
+});
+
+const createTableRenderRules = (colors: any) => ({
+  table: (node: any, children: any) => (
+    <ScrollView
+      key={node.key}
+      horizontal
+      showsHorizontalScrollIndicator={true}
+      contentContainerStyle={{ flexDirection: 'column' as const }}
+      style={{
+        marginVertical: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 6,
+      }}
+    >
+      {children}
+    </ScrollView>
+  ),
+  th: (node: any, children: any) => (
+    <View
+      key={node.key}
+      style={{
+        padding: 8,
+        minWidth: 120,
+        borderRightWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceAlt,
+      }}
+    >
+      <Text style={{ color: colors.text, fontWeight: '700', fontSize: 13 }}>
+        {children}
+      </Text>
+    </View>
+  ),
+  td: (node: any, children: any) => (
+    <View
+      key={node.key}
+      style={{
+        padding: 8,
+        minWidth: 120,
+        borderRightWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <Text style={{ color: colors.text, fontSize: 13 }}>
+        {children}
+      </Text>
+    </View>
+  ),
+  tr: (node: any, children: any) => (
+    <View
+      key={node.key}
+      style={{
+        flexDirection: 'row' as const,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      {children}
+    </View>
+  ),
 });

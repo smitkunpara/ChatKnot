@@ -1,5 +1,10 @@
-import { LlmProviderConfig, Message } from '../../types';
+import { LlmProviderConfig, Message, ModelCapabilities } from '../../types';
 import { filterModelsForTextOutput } from './modelFilter';
+
+export interface ModelsWithCapabilities {
+  models: string[];
+  capabilities: Record<string, ModelCapabilities>;
+}
 
 export class OpenAiService {
   private config: LlmProviderConfig;
@@ -9,31 +14,350 @@ export class OpenAiService {
   }
 
   private getBaseUrl(): string {
-    return this.config.baseUrl || 'https://api.openai.com/v1';
+    const configuredBaseUrl = (this.config.baseUrl || '').trim();
+    const fallbackBaseUrl = 'https://api.openai.com/v1';
+    const normalizedBaseUrl = (configuredBaseUrl || fallbackBaseUrl).replace(/\/+$/, '');
+    const finalBaseUrl = normalizedBaseUrl || fallbackBaseUrl;
+
+    try {
+      const parsed = new URL(finalBaseUrl);
+      if (parsed.hostname === '0.0.0.0') {
+        throw new Error(
+          'Invalid base URL host "0.0.0.0". Use a reachable client host such as 127.0.0.1, 10.0.2.2 (Android emulator), or your machine LAN IP.'
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+    }
+
+    return finalBaseUrl;
   }
 
   private getHeaders(): HeadersInit {
-    return {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.config.apiKey}`,
+    };
+
+    const apiKey = (this.config.apiKey || '').trim();
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+      headers['x-api-key'] = apiKey;
+      headers['api-key'] = apiKey;
+    }
+
+    return headers;
+  }
+
+  private getModelEndpointCandidates(): string[] {
+    const baseUrl = this.getBaseUrl();
+    const candidates = new Set<string>();
+    const addCandidate = (urlPrefix: string) => {
+      const normalizedPrefix = (urlPrefix || '').replace(/\/+$/, '');
+      if (!normalizedPrefix) return;
+      candidates.add(`${normalizedPrefix}/models`);
+    };
+
+    addCandidate(baseUrl);
+
+    try {
+      const parsed = new URL(baseUrl);
+      const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+      const hasVersionSuffix = /\/v\d+$/i.test(normalizedPath);
+
+      if (hasVersionSuffix) {
+        const trimmedPath = normalizedPath.replace(/\/v\d+$/i, '');
+        parsed.pathname = trimmedPath || '/';
+        parsed.search = '';
+        parsed.hash = '';
+        addCandidate(parsed.toString());
+      } else {
+        const slashPrefix = normalizedPath && normalizedPath !== '/' ? normalizedPath : '';
+        parsed.pathname = `${slashPrefix}/v1`;
+        parsed.search = '';
+        parsed.hash = '';
+        addCandidate(parsed.toString());
+      }
+    } catch {
+      // Ignore malformed URLs; the primary candidate will still be attempted.
+    }
+
+    return Array.from(candidates);
+  }
+
+  private async fetchModelsPayload(): Promise<any> {
+    const endpointCandidates = this.getModelEndpointCandidates();
+    let lastError: Error | null = null;
+
+    for (let index = 0; index < endpointCandidates.length; index += 1) {
+      const endpoint = endpointCandidates[index];
+      const hasFallback = index < endpointCandidates.length - 1;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'GET',
+          headers: this.getHeaders(),
+        });
+
+        if (!response.ok) {
+          const statusLabel = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+
+          if ((response.status === 404 || response.status === 405) && hasFallback) {
+            lastError = new Error(`Failed to fetch models from ${endpoint} (${statusLabel})`);
+            continue;
+          }
+
+          const responseText =
+            typeof (response as any).text === 'function'
+              ? await response.text().catch(() => '')
+              : '';
+          const compactBody = responseText.replace(/\s+/g, ' ').trim();
+          const bodyPreview = compactBody ? `: ${compactBody.slice(0, 180)}` : '';
+          throw new Error(`Failed to fetch models from ${endpoint} (${statusLabel})${bodyPreview}`);
+        }
+
+        return await response.json();
+      } catch (error) {
+        if (error instanceof Error) {
+          lastError = error;
+        } else {
+          lastError = new Error(String(error));
+        }
+
+        if (hasFallback) {
+          continue;
+        }
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new Error('Failed to fetch models from all candidate endpoints.');
+  }
+
+  private static getNestedValue(source: any, path: string[]): any {
+    return path.reduce((value, key) => {
+      if (value == null || typeof value !== 'object') {
+        return undefined;
+      }
+      return value[key];
+    }, source);
+  }
+
+  private static toStringArray(value: any): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim().toLowerCase() : ''))
+      .filter(Boolean);
+  }
+
+  private static parseBoolean(value: any): boolean | undefined {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+      if (value === 1) return true;
+      if (value === 0) return false;
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', 'yes', '1'].includes(normalized)) return true;
+      if (['false', 'no', '0'].includes(normalized)) return false;
+    }
+    return undefined;
+  }
+
+  private static getBooleanAtPaths(source: any, paths: string[][]): boolean | undefined {
+    for (const path of paths) {
+      const parsed = OpenAiService.parseBoolean(OpenAiService.getNestedValue(source, path));
+      if (parsed !== undefined) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  private static collectTokens(source: any, paths: string[][]): Set<string> {
+    const tokens = new Set<string>();
+    for (const path of paths) {
+      const value = OpenAiService.getNestedValue(source, path);
+      for (const token of OpenAiService.toStringArray(value)) {
+        tokens.add(token);
+      }
+    }
+    return tokens;
+  }
+
+  private static extractModelList(data: any): any[] {
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.models)) return data.models;
+    if (Array.isArray(data?.result?.data)) return data.result.data;
+    if (Array.isArray(data)) return data;
+    return [];
+  }
+
+  private static hasAnyToken(tokens: Set<string>, matches: string[]): boolean {
+    for (const token of tokens) {
+      for (const match of matches) {
+        if (token === match || token.includes(match)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static extractCapabilities(model: any): ModelCapabilities | null {
+    const modalityTokens = OpenAiService.collectTokens(model, [
+      ['architecture', 'input_modalities'],
+      ['architecture', 'output_modalities'],
+      ['input_modalities'],
+      ['output_modalities'],
+      ['supported_input_modalities'],
+      ['supported_output_modalities'],
+      ['modalities'],
+      ['modalities', 'input'],
+      ['modalities', 'output'],
+      ['capabilities', 'modalities'],
+      ['capabilities', 'input_modalities'],
+      ['capabilities', 'output_modalities'],
+      ['capabilities', 'input'],
+      ['capabilities', 'output'],
+      ['model_capabilities', 'modalities'],
+      ['model_capabilities', 'input_modalities'],
+      ['model_capabilities', 'output_modalities'],
+      ['model_capabilities', 'input'],
+      ['model_capabilities', 'output'],
+    ]);
+
+    const parameterTokens = OpenAiService.collectTokens(model, [
+      ['supported_parameters'],
+      ['supported_params'],
+      ['parameters'],
+      ['capabilities', 'supported_parameters'],
+      ['capabilities', 'supported_params'],
+      ['capabilities', 'parameters'],
+      ['model_capabilities', 'supported_parameters'],
+      ['model_capabilities', 'supported_params'],
+      ['model_capabilities', 'parameters'],
+    ]);
+
+    const featureTokens = OpenAiService.collectTokens(model, [
+      ['features'],
+      ['supported_features'],
+      ['capabilities', 'features'],
+      ['model_capabilities', 'features'],
+    ]);
+
+    const toolTokens = new Set<string>([...parameterTokens, ...featureTokens]);
+
+    const explicitVision = OpenAiService.getBooleanAtPaths(model, [
+      ['supports_vision'],
+      ['supports_images'],
+      ['vision'],
+      ['capabilities', 'vision'],
+      ['capabilities', 'supports_vision'],
+      ['capabilities', 'supports_images'],
+      ['model_capabilities', 'vision'],
+      ['model_capabilities', 'supports_vision'],
+      ['model_capabilities', 'supports_images'],
+    ]);
+
+    const explicitTools = OpenAiService.getBooleanAtPaths(model, [
+      ['supports_tools'],
+      ['tools'],
+      ['tool_calling'],
+      ['supports_tool_calling'],
+      ['function_calling'],
+      ['supports_function_calling'],
+      ['capabilities', 'tools'],
+      ['capabilities', 'supports_tools'],
+      ['capabilities', 'tool_calling'],
+      ['capabilities', 'supports_tool_calling'],
+      ['capabilities', 'function_calling'],
+      ['capabilities', 'supports_function_calling'],
+      ['model_capabilities', 'tools'],
+      ['model_capabilities', 'supports_tools'],
+      ['model_capabilities', 'tool_calling'],
+      ['model_capabilities', 'supports_tool_calling'],
+      ['model_capabilities', 'function_calling'],
+      ['model_capabilities', 'supports_function_calling'],
+    ]);
+
+    const explicitFileInput = OpenAiService.getBooleanAtPaths(model, [
+      ['supports_file_input'],
+      ['supports_files'],
+      ['file_input'],
+      ['capabilities', 'file_input'],
+      ['capabilities', 'supports_file_input'],
+      ['capabilities', 'supports_files'],
+      ['model_capabilities', 'file_input'],
+      ['model_capabilities', 'supports_file_input'],
+      ['model_capabilities', 'supports_files'],
+    ]);
+
+    const inferredVision = modalityTokens.size > 0
+      ? OpenAiService.hasAnyToken(modalityTokens, ['image', 'vision', 'multimodal'])
+      : undefined;
+    const inferredFileInput = modalityTokens.size > 0
+      ? OpenAiService.hasAnyToken(modalityTokens, ['file', 'files', 'document', 'pdf'])
+      : undefined;
+    const inferredTools = toolTokens.size > 0
+      ? OpenAiService.hasAnyToken(toolTokens, [
+        'tools',
+        'tool_calling',
+        'function_calling',
+        'function_call',
+        'functions',
+        'parallel_tool_calls',
+      ])
+      : undefined;
+
+    const hasSignals =
+      explicitVision !== undefined ||
+      explicitTools !== undefined ||
+      explicitFileInput !== undefined ||
+      modalityTokens.size > 0 ||
+      parameterTokens.size > 0 ||
+      featureTokens.size > 0;
+
+    if (!hasSignals) return null;
+
+    return {
+      // Keep permissive fallback for unknown modalities to avoid blocking attachments
+      // on providers that expose partial capability metadata.
+      vision: explicitVision ?? inferredVision ?? true,
+      // Tool-calling remains opt-in by metadata.
+      tools: explicitTools ?? inferredTools ?? false,
+      fileInput: explicitFileInput ?? inferredFileInput ?? true,
     };
   }
 
   async listModels(): Promise<string[]> {
+    const result = await this.listModelsWithCapabilities();
+    return result.models;
+  }
+
+  async listModelsWithCapabilities(): Promise<ModelsWithCapabilities> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/models`, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch models (${response.status}${response.statusText ? ` ${response.statusText}` : ''})`);
+      const data = await this.fetchModelsPayload();
+      const rawModels = OpenAiService.extractModelList(data);
+      const supportedModels = filterModelsForTextOutput(rawModels);
+
+      const capabilities: Record<string, ModelCapabilities> = {};
+      for (const model of rawModels) {
+        const id = typeof model === 'string' ? model : model?.id || model?.name || '';
+        if (id && supportedModels.includes(id)) {
+          const caps = OpenAiService.extractCapabilities(model);
+          if (caps) {
+            capabilities[id] = caps;
+          }
+        }
       }
 
-      const data = await response.json();
-      const rawModels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-      const supportedModels = filterModelsForTextOutput(rawModels);
-      return supportedModels;
+      return { models: supportedModels, capabilities };
     } catch (error) {
       console.error('Error fetching models:', error);
       if (error instanceof Error) {
@@ -46,7 +370,8 @@ export class OpenAiService {
 
   async sendChatCompletion(
     messages: Message[],
-    systemPrompt: string,
+    userSystemPrompt: string,
+    appSystemPrompt: string | undefined,
     tools: any[],
     onChunk: (content: string, toolCalls?: any[]) => void,
     onComplete: (fullContent: string, fullToolCalls?: any[]) => void,
@@ -54,14 +379,48 @@ export class OpenAiService {
     abortSignal?: AbortSignal
   ) {
     try {
+      const systemMessages = [userSystemPrompt, appSystemPrompt]
+        .map((prompt) => (prompt || '').trim())
+        .filter(Boolean)
+        .map((prompt) => ({ role: 'system', content: prompt }));
+
       const msgs = [
-        { role: 'system', content: systemPrompt },
+        ...systemMessages,
         ...messages.map(m => {
           const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
-          const msg: any = {
-            role: m.role,
-            content: hasToolCalls && m.role === 'assistant' ? (m.content?.trim() ? m.content : null) : (m.content || ''),
-          };
+          const hasAttachments = m.attachments && m.attachments.length > 0 && m.role === 'user';
+
+          // Build multimodal content array when attachments exist
+          let content: any;
+          if (hasAttachments) {
+            const parts: any[] = [];
+            if (m.content?.trim()) {
+              parts.push({ type: 'text', text: m.content });
+            }
+            for (const att of m.attachments!) {
+              if (att.type === 'image' && att.base64) {
+                parts.push({
+                  type: 'image_url',
+                  image_url: { url: `data:${att.mimeType};base64,${att.base64}` },
+                });
+              } else if (att.type === 'file' && att.base64) {
+                parts.push({
+                  type: 'file',
+                  file: {
+                    filename: att.name,
+                    file_data: `data:${att.mimeType};base64,${att.base64}`,
+                  },
+                });
+              }
+            }
+            content = parts.length > 0 ? parts : (m.content || '');
+          } else {
+            content = hasToolCalls && m.role === 'assistant'
+              ? (m.content?.trim() ? m.content : null)
+              : (m.content || '');
+          }
+
+          const msg: any = { role: m.role, content };
           if (hasToolCalls) {
             msg.tool_calls = m.toolCalls!.map(tc => ({
               id: tc.id,
@@ -142,10 +501,10 @@ export class OpenAiService {
               },
             };
           } else {
-             if (!result[index].function) result[index].function = { arguments: '' };
-             if (argsChunk) result[index].function.arguments += argsChunk;
-             if (call.function?.name) result[index].function.name = call.function.name;
-             if (call.id) result[index].id = call.id;
+            if (!result[index].function) result[index].function = { arguments: '' };
+            if (argsChunk) result[index].function.arguments += argsChunk;
+            if (call.function?.name) result[index].function.name = call.function.name;
+            if (call.id) result[index].id = call.id;
           }
         });
         return result;
@@ -155,29 +514,19 @@ export class OpenAiService {
       let toolCallsBuffer: any[] = [];
       const reader = (response as any).body?.getReader();
 
-      const emitContentChunk = async (contentChunk: string) => {
+      const emitContentChunk = (contentChunk: string) => {
         if (!contentChunk) return;
-
-        // Split larger chunks so UI updates stay visibly progressive even when providers batch tokens.
-        const segments = contentChunk.length > 12
-          ? contentChunk.match(/.{1,12}/g) || [contentChunk]
-          : [contentChunk];
-
-        for (const segment of segments) {
-          if (abortSignal?.aborted) {
-            throw new Error('Request cancelled by user');
-          }
-
-          fullContent += segment;
-          onChunk(segment, undefined);
-          await new Promise(resolve => setTimeout(resolve, 12));
+        if (abortSignal?.aborted) {
+          throw new Error('Request cancelled by user');
         }
+        fullContent += contentChunk;
+        onChunk(contentChunk, undefined);
       };
 
-      const processDelta = async (delta: any) => {
+      const processDelta = (delta: any) => {
         if (!delta) return;
         if (delta.content) {
-          await emitContentChunk(delta.content);
+          emitContentChunk(delta.content);
         }
         if (delta.tool_calls) {
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
@@ -199,18 +548,21 @@ export class OpenAiService {
         }
       };
 
-      const processSsePayload = async (payload: string) => {
+      const processSsePayload = (payload: string) => {
         const cleanPayload = payload.trim();
         if (!cleanPayload || cleanPayload === '[DONE]') return;
         try {
           const json = JSON.parse(cleanPayload);
           const delta = json.choices?.[0]?.delta;
-          await processDelta(delta);
+          processDelta(delta);
         } catch (e) {
           // Ignore partial or non-JSON control events.
         }
       };
-      
+
+      // Yield to the event loop so React can flush a render.
+      const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
       if (reader) {
         const decoder = new TextDecoder();
         let pendingBuffer = '';
@@ -231,9 +583,11 @@ export class OpenAiService {
               .filter(line => line.startsWith('data:'))
               .map(line => line.replace(/^data:\s?/, ''));
             if (dataLines.length > 0) {
-              await processSsePayload(dataLines.join('\n'));
+              processSsePayload(dataLines.join('\n'));
             }
           }
+          // Yield once per reader.read() so React can paint whatever was updated
+          await yieldToUI();
         }
 
         if (pendingBuffer.trim().length > 0) {
@@ -242,7 +596,7 @@ export class OpenAiService {
             .filter(line => line.startsWith('data:'))
             .map(line => line.replace(/^data:\s?/, ''));
           if (dataLines.length > 0) {
-            await processSsePayload(dataLines.join('\n'));
+            processSsePayload(dataLines.join('\n'));
           }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
@@ -254,7 +608,9 @@ export class OpenAiService {
 
         if (sseLines.length > 0) {
           for (const line of sseLines) {
-            await processSsePayload(line.replace(/^data:\s?/, ''));
+            processSsePayload(line.replace(/^data:\s?/, ''));
+            // Yield per SSE event so the UI renders progressively
+            await yieldToUI();
           }
         } else {
           try {
@@ -262,7 +618,7 @@ export class OpenAiService {
             const choice = json.choices?.[0];
             const message = choice?.message;
             if (message?.content) {
-              await emitContentChunk(message.content);
+              emitContentChunk(message.content);
             }
             if (message?.tool_calls) {
               toolCallsBuffer = mergeToolCalls([], message.tool_calls);

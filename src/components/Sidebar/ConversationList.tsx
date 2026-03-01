@@ -1,16 +1,18 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   FlatList,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MessageSquare, PlusCircle, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
+import { MessageSquare, PlusCircle, Search, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
 import { useChatStore } from '../../store/useChatStore';
 import { useAppTheme } from '../../theme/useAppTheme';
+import * as Haptics from 'expo-haptics';
 import {
   getSidebarConversationLabel,
   getSidebarNewChatCtaLabel,
@@ -24,6 +26,16 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const setActive = useChatStore(state => state.setActiveConversation);
   const deleteConversation = useChatStore(state => state.deleteConversation);
   const newChatLabel = getSidebarNewChatCtaLabel();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return conversations;
+    const query = searchQuery.toLowerCase();
+    return conversations.filter(c => {
+      const label = getSidebarConversationLabel(c).toLowerCase();
+      return label.includes(query);
+    });
+  }, [conversations, searchQuery]);
 
   const handleCreateConversation = () => {
     setActive(null);
@@ -39,6 +51,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
 
   const handleDelete = (id: string, e: any) => {
     e.stopPropagation();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
     deleteConversation(id);
   };
 
@@ -46,25 +59,44 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.brand}>ChatKnot</Text>
-        <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation}>
+        <TouchableOpacity style={styles.newChatButton} onPress={handleCreateConversation} accessibilityLabel="Start new chat" accessibilityRole="button">
           <PlusCircle size={20} color={colors.onPrimary} />
           <Text style={styles.newChatText}>{newChatLabel}</Text>
         </TouchableOpacity>
       </View>
 
+      {conversations.length > 3 && (
+        <View style={styles.searchBar}>
+          <Search size={15} color={colors.textTertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search conversations..."
+            placeholderTextColor={colors.placeholder}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            accessibilityLabel="Search conversations"
+            accessibilityRole="search"
+          />
+        </View>
+      )}
+
       <FlatList
-        data={conversations}
+        data={filteredConversations}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No conversations yet.</Text>
+            <Text style={styles.emptyText}>
+              {searchQuery.trim() ? 'No conversations found.' : 'No conversations yet.'}
+            </Text>
           </View>
         }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.item, item.id === activeId ? styles.activeItem : undefined]}
             onPress={() => handleSelect(item.id)}
+            accessibilityLabel={`Open conversation: ${getSidebarConversationLabel(item)}`}
+            accessibilityRole="button"
           >
             <View style={styles.itemMain}>
               <MessageSquare size={17} color={item.id === activeId ? colors.primary : colors.textTertiary} />
@@ -75,7 +107,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
                 {getSidebarConversationLabel(item)}
               </Text>
             </View>
-            <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn}>
+            <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn} accessibilityLabel="Delete conversation" accessibilityRole="button">
               <Trash2 size={15} color={colors.textTertiary} />
             </TouchableOpacity>
           </TouchableOpacity>
@@ -83,7 +115,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
       />
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.settingsButton} onPress={() => props.navigation.navigate('Settings')}>
+        <TouchableOpacity style={styles.settingsButton} onPress={() => props.navigation.navigate('Settings')} accessibilityLabel="Open settings" accessibilityRole="button">
           <SettingsIcon size={18} color={colors.text} />
           <Text style={styles.settingsText}>Settings</Text>
         </TouchableOpacity>
@@ -112,6 +144,26 @@ const createStyles = (colors: any) =>
       marginBottom: 10,
       letterSpacing: 0.4,
       textTransform: 'uppercase',
+    },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.inputBackground,
+      marginHorizontal: 10,
+      marginTop: 8,
+      marginBottom: 2,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      height: 38,
+      borderWidth: 1,
+      borderColor: colors.inputBorder,
+    },
+    searchInput: {
+      flex: 1,
+      color: colors.text,
+      marginLeft: 8,
+      fontSize: 13,
+      paddingVertical: 0,
     },
     newChatButton: {
       flexDirection: 'row',

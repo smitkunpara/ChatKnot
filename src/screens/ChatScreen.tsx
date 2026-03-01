@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
+  Modal,
   View,
   FlatList,
   KeyboardAvoidingView,
@@ -7,11 +9,12 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
-import { AlertTriangle, Menu } from 'lucide-react-native';
+import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { useChatStore } from '../store/useChatStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -19,13 +22,17 @@ import { ProviderFactory } from '../services/llm/ProviderFactory';
 import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
-import { ModelSelector } from '../components/Chat/ModelSelector';
-import { ToolCall } from '../types';
+import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
+import { ToolCall, Attachment } from '../types';
 import { useAppTheme } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
   resolveModelSelection,
 } from '../services/llm/modelSelection';
+import {
+  resolveModelCapabilities,
+  sanitizeMessagesForRequest,
+} from '../services/llm/requestMessageSanitizer';
 import {
   normalizeToolCalls,
   extractLegacyXmlToolCalls,
@@ -40,12 +47,16 @@ import {
   MAX_TOOL_ITERATIONS,
   FALLBACK_FINAL_TEXT,
   getErrorMessage,
+  buildAppSystemPrompt,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
+import * as FileSystem from 'expo-file-system';
+import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
 
 export const ChatScreen = () => {
   const navigation = useNavigation<DrawerNavigationProp<any>>();
   const flatListRef = useRef<FlatList>(null);
+  const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
   const { colors } = useAppTheme();
@@ -64,6 +75,7 @@ export const ChatScreen = () => {
   const setLoading = useChatStore(state => state.setLoading);
   const systemPrompt = useSettingsStore(state => state.systemPrompt);
   const providers = useSettingsStore(state => state.providers);
+  const mcpServers = useSettingsStore(state => state.mcpServers);
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
@@ -71,7 +83,16 @@ export const ChatScreen = () => {
   const [editingContent, setEditingContent] = useState<string | undefined>(undefined);
   const [chatError, setChatError] = useState<string | null>(null);
   const [pendingToolApprovalIds, setPendingToolApprovalIds] = useState<Record<string, true>>({});
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [visionWarningVisible, setVisionWarningVisible] = useState(false);
+  const [toolsWarningVisible, setToolsWarningVisible] = useState(false);
+  const [enabledMcpToolsCount, setEnabledMcpToolsCount] = useState<number>(() => McpManager.getTools().length);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
+  const [includeToolInput, setIncludeToolInput] = useState(false);
+  const [includeToolOutput, setIncludeToolOutput] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
     approvalResolversRef.current.forEach((resolve) => {
@@ -200,6 +221,19 @@ export const ChatScreen = () => {
     };
   }, [chatError]);
 
+  useEffect(() => {
+    const syncEnabledMcpToolsCount = () => {
+      setEnabledMcpToolsCount(McpManager.getTools().length);
+    };
+
+    syncEnabledMcpToolsCount();
+    const unsubscribe = McpManager.subscribe(() => {
+      syncEnabledMcpToolsCount();
+    });
+
+    return unsubscribe;
+  }, []);
+
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
@@ -241,6 +275,94 @@ export const ChatScreen = () => {
     }
   };
 
+  const currentModelCapabilities = useMemo(() => {
+    if (!modelResolution.selection) {
+      return {
+        vision: false,
+        fileInput: false,
+        tools: false,
+      };
+    }
+
+    const provider = providers.find(p => p.id === modelResolution.selection!.providerId);
+    return resolveModelCapabilities(provider, modelResolution.selection.model);
+  }, [modelResolution.selection, providers]);
+
+  const currentModelVisionSupported = currentModelCapabilities.vision;
+  const currentModelToolsSupported = currentModelCapabilities.tools;
+  const configuredEnabledMcpToolsCount = useMemo(() => {
+    return mcpServers.reduce((count, server) => {
+      if (!server.enabled) {
+        return count;
+      }
+
+      const allowedTools = Array.isArray(server.allowedTools) ? server.allowedTools : [];
+      const knownTools = Array.isArray(server.tools) ? server.tools : [];
+      if (allowedTools.length > 0) {
+        return count + allowedTools.length;
+      }
+
+      return count + knownTools.length;
+    }, 0);
+  }, [mcpServers]);
+  const hasEnabledMcpServer = useMemo(
+    () => mcpServers.some((server) => server.enabled),
+    [mcpServers]
+  );
+  const hasEnabledMcpTools =
+    hasEnabledMcpServer &&
+    (enabledMcpToolsCount > 0 || configuredEnabledMcpToolsCount > 0);
+
+  // Check if conversation has any image attachments in its history
+  const conversationHasImages = useMemo(() => {
+    const conv = conversations.find(c => c.id === activeConversationId);
+    if (!conv) return false;
+    return conv.messages.some(m => m.attachments?.some(a => a.type === 'image'));
+  }, [conversations, activeConversationId]);
+
+  const previousModelSelectionRef = useRef<string | undefined>(
+    modelResolution.selection
+      ? `${modelResolution.selection.providerId}:${modelResolution.selection.model}`
+      : undefined
+  );
+
+  useEffect(() => {
+    if (!hasEnabledMcpTools || currentModelToolsSupported) {
+      setToolsWarningVisible(false);
+    }
+  }, [hasEnabledMcpTools, currentModelToolsSupported]);
+
+  useEffect(() => {
+    const nextSelectionKey = modelResolution.selection
+      ? `${modelResolution.selection.providerId}:${modelResolution.selection.model}`
+      : undefined;
+    if (nextSelectionKey && nextSelectionKey !== previousModelSelectionRef.current) {
+      previousModelSelectionRef.current = nextSelectionKey;
+
+      // Show themed vision warning on model switch
+      if (conversationHasImages && !currentModelVisionSupported) {
+        setVisionWarningVisible(true);
+      } else if (hasEnabledMcpTools && !currentModelToolsSupported) {
+        setToolsWarningVisible(true);
+      }
+    }
+  }, [
+    modelResolution.selection?.providerId,
+    modelResolution.selection?.model,
+    conversationHasImages,
+    currentModelVisionSupported,
+    configuredEnabledMcpToolsCount,
+    hasEnabledMcpTools,
+    currentModelToolsSupported,
+  ]);
+
+  const readFileAsBase64 = async (uri: string): Promise<string> => {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: 'base64',
+    });
+    return base64;
+  };
+
   const handleSend = async (text: string) => {
     let conversationId = activeConversationId;
 
@@ -268,15 +390,52 @@ export const ChatScreen = () => {
       return;
     }
 
+    await doSend(text, conversationId);
+  };
+
+  const doSend = async (text: string, conversationId: string) => {
     setChatError(null);
     stopRequestedRef.current = false;
+
+    const filteredAttachments = attachments.filter((attachment) => {
+      if (attachment.type === 'image') {
+        return currentModelCapabilities.vision;
+      }
+      if (attachment.type === 'file') {
+        return currentModelCapabilities.fileInput;
+      }
+      return true;
+    });
+
+    // Prepare attachments with base64
+    let messageAttachments: Attachment[] | undefined;
+    if (filteredAttachments.length > 0) {
+      messageAttachments = [];
+      for (const att of filteredAttachments) {
+        let base64 = att.base64;
+        if (!base64) {
+          try {
+            base64 = await readFileAsBase64(att.uri);
+          } catch (e) {
+            console.error('Failed to read file:', att.name, e);
+            continue;
+          }
+        }
+        messageAttachments.push({ ...att, base64 });
+      }
+      setAttachments([]);
+    }
 
     if (editingMessageId) {
       editMessage(conversationId, editingMessageId, text);
       setEditingMessageId(null);
       setEditingContent(undefined);
     } else {
-      addMessage(conversationId, { role: 'user', content: text });
+      addMessage(conversationId, {
+        role: 'user',
+        content: text,
+        ...(messageAttachments && messageAttachments.length > 0 ? { attachments: messageAttachments } : {}),
+      });
     }
 
     setLoading(true);
@@ -338,9 +497,17 @@ export const ChatScreen = () => {
           ...providerConfig,
           model: selectedModel,
         };
+        const selectedModelCapabilities = resolveModelCapabilities(providerConfig, selectedModel);
+        const mcpTools = selectedModelCapabilities.tools
+          ? McpManager.getTools()
+          : [];
+        const toolsEnabledForRequest = mcpTools.length > 0;
+        const requestMessages = sanitizeMessagesForRequest(currentConv.messages, {
+          ...selectedModelCapabilities,
+          tools: toolsEnabledForRequest,
+        });
 
         const service = ProviderFactory.create(effectiveConfig);
-        const mcpTools = McpManager.getTools();
 
         const openAiTools = mcpTools.map(t => ({
           type: 'function',
@@ -358,6 +525,14 @@ export const ChatScreen = () => {
           conversationPrompt: currentConv.systemPrompt,
           globalPrompt: systemPrompt,
         });
+        const hasConnectedMcpServer = McpManager
+          .getRuntimeStates()
+          .some((state) => state.status === 'connected');
+        const appSystemPrompt = buildAppSystemPrompt({
+          toolsEnabledForRequest,
+          hasConnectedMcpServer,
+          mcpInstruction: hasConnectedMcpServer ? McpManager.getOpenApiContexts() : '',
+        });
 
         let streamedContent = '';
         const requestController = new AbortController();
@@ -366,8 +541,9 @@ export const ChatScreen = () => {
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
           service
             .sendChatCompletion(
-              currentConv.messages,
+              requestMessages,
               finalSystemPrompt,
+              appSystemPrompt,
               openAiTools,
               (chunk) => {
                 if (!chunk) return;
@@ -389,10 +565,12 @@ export const ChatScreen = () => {
         updateMessage(conversationId, assistantMsgId, assistantText);
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
-        let toolCalls = normalizeToolCalls(result.toolCalls);
+        let toolCalls = toolsEnabledForRequest
+          ? normalizeToolCalls(result.toolCalls)
+          : [];
 
         // Fallback for providers/models that emit XML-based pseudo tool calls instead of native tool_calls.
-        if (toolCalls.length === 0 && assistantText) {
+        if (toolsEnabledForRequest && toolCalls.length === 0 && assistantText) {
           const xmlToolCalls = extractLegacyXmlToolCalls(assistantText, toolNameMap);
           if (xmlToolCalls.length > 0) {
             toolCalls = xmlToolCalls;
@@ -413,7 +591,6 @@ export const ChatScreen = () => {
         if (toolCalls.length === 0) {
           if (assistantText.length === 0) {
             updateMessage(conversationId, assistantMsgId, 'I received an empty response from the model.');
-            setChatError('Model returned an empty response.');
           } else {
             hasFinalAnswer = true;
           }
@@ -546,12 +723,14 @@ export const ChatScreen = () => {
     } catch (error: any) {
       const message = getErrorMessage(error);
       if (!stopRequestedRef.current) {
-        setChatError(message);
         if (conversationId) {
           addMessage(conversationId, {
             role: 'assistant',
-            content: `I ran into an error while processing your request: ${message}`,
+            content: message,
+            isError: true,
           });
+        } else {
+          setChatError(message);
         }
       }
     } finally {
@@ -575,14 +754,35 @@ export const ChatScreen = () => {
 
   const bannerMessage = noModelAvailableMessage || chatError;
 
+  const chatHasMessages = !!activeConversation?.messages.some(m => m.role === 'user' || m.role === 'assistant');
+
+  const handleExport = async () => {
+    if (!activeConversation) return;
+    setIsExporting(true);
+    try {
+      const opts: ExportOptions = {
+        format: exportFormat,
+        includeToolInput,
+        includeToolOutput,
+      };
+      await exportChat(activeConversation, opts);
+    } catch (e: any) {
+      Alert.alert('Export Failed', e?.message || 'Unable to export chat.');
+    } finally {
+      setIsExporting(false);
+      setExportModalVisible(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton} accessibilityLabel="Open navigation menu" accessibilityRole="button">
           <Menu size={20} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.selectorWrapper}>
           <ModelSelector
+            ref={modelSelectorRef}
             activeProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
             activeModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
             onSelect={(pid, model) => {
@@ -593,6 +793,20 @@ export const ChatScreen = () => {
             }}
           />
         </View>
+        <TouchableOpacity
+          style={[styles.exportButton, !chatHasMessages && styles.exportButtonDisabled]}
+          onPress={() => {
+            setExportFormat('pdf');
+            setIncludeToolInput(false);
+            setIncludeToolOutput(false);
+            setExportModalVisible(true);
+          }}
+          disabled={!chatHasMessages}
+          accessibilityLabel="Export chat"
+          accessibilityRole="button"
+        >
+          <Share2 size={18} color={chatHasMessages ? colors.text : colors.placeholder} />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
@@ -655,8 +869,157 @@ export const ChatScreen = () => {
             setEditingContent(undefined);
           }}
           onFocus={handleInputFocus}
+          attachments={attachments}
+          onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
+          onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
+          visionSupported={currentModelVisionSupported}
         />
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setExportModalVisible(false)}>
+          <View style={styles.exportOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.exportContent}>
+                <View style={styles.exportHeader}>
+                  <Text style={styles.exportTitle}>Export Chat</Text>
+                  <TouchableOpacity onPress={() => setExportModalVisible(false)} style={styles.exportCloseBtn}>
+                    <X size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.exportSectionLabel}>Export Format</Text>
+                <View style={styles.exportFormatRow}>
+                  {(['pdf', 'markdown', 'json'] as ExportFormat[]).map(fmt => (
+                    <TouchableOpacity
+                      key={fmt}
+                      style={[styles.exportFormatBtn, exportFormat === fmt && styles.exportFormatBtnActive]}
+                      onPress={() => setExportFormat(fmt)}
+                    >
+                      <Text style={[styles.exportFormatText, exportFormat === fmt && styles.exportFormatTextActive]}>
+                        {fmt === 'pdf' ? 'PDF' : fmt === 'markdown' ? 'Markdown' : 'JSON'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {exportFormat !== 'json' && (
+                  <>
+                    <Text style={styles.exportSectionLabel}>Tool Details</Text>
+                    <TouchableOpacity
+                      style={styles.exportCheckRow}
+                      onPress={() => setIncludeToolInput(v => !v)}
+                    >
+                      <View style={[styles.exportCheckBox, includeToolInput && styles.exportCheckBoxActive]}>
+                        {includeToolInput && <Check size={14} color={colors.onPrimary} />}
+                      </View>
+                      <Text style={styles.exportCheckLabel}>Include tool input</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.exportCheckRow}
+                      onPress={() => setIncludeToolOutput(v => !v)}
+                    >
+                      <View style={[styles.exportCheckBox, includeToolOutput && styles.exportCheckBoxActive]}>
+                        {includeToolOutput && <Check size={14} color={colors.onPrimary} />}
+                      </View>
+                      <Text style={styles.exportCheckLabel}>Include tool output</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                <View style={styles.exportActions}>
+                  <TouchableOpacity style={styles.exportCancelBtn} onPress={() => setExportModalVisible(false)}>
+                    <Text style={styles.exportCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.exportConfirmBtn, isExporting && styles.exportConfirmBtnDisabled]}
+                    onPress={handleExport}
+                    disabled={isExporting}
+                  >
+                    <Text style={styles.exportConfirmText}>{isExporting ? 'Exporting...' : 'Export'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal
+        visible={visionWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVisionWarningVisible(false)}
+      >
+        <View style={styles.visionOverlay}>
+          <View style={styles.visionContent}>
+            <Text style={styles.visionTitle}>Vision Not Supported</Text>
+            <Text style={styles.visionMessage}>
+              This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included.
+            </Text>
+            <View style={styles.visionActions}>
+              <TouchableOpacity
+                style={styles.visionSwitchBtn}
+                onPress={() => {
+                  setVisionWarningVisible(false);
+                  setTimeout(() => modelSelectorRef.current?.open(), 300);
+                }}
+              >
+                <Text style={styles.visionSwitchText}>Switch Model</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.visionContinueBtn}
+                onPress={() => {
+                  setVisionWarningVisible(false);
+                  if (hasEnabledMcpTools && !currentModelToolsSupported) {
+                    setToolsWarningVisible(true);
+                  }
+                }}
+              >
+                <Text style={styles.visionContinueText}>Continue with Text Only</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={toolsWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setToolsWarningVisible(false)}
+      >
+        <View style={styles.visionOverlay}>
+          <View style={styles.visionContent}>
+            <Text style={styles.visionTitle}>MCP Tools Not Supported</Text>
+            <Text style={styles.visionMessage}>
+              This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI.
+            </Text>
+            <View style={styles.visionActions}>
+              <TouchableOpacity
+                style={styles.visionSwitchBtn}
+                onPress={() => {
+                  setToolsWarningVisible(false);
+                  setTimeout(() => modelSelectorRef.current?.open(), 300);
+                }}
+              >
+                <Text style={styles.visionSwitchText}>Switch Model</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.visionContinueBtn}
+                onPress={() => setToolsWarningVisible(false)}
+              >
+                <Text style={styles.visionContinueText}>Continue Without MCP</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -735,5 +1098,182 @@ const createStyles = (colors: any) =>
       color: colors.text,
       fontSize: 12,
       flex: 1,
+    },
+    exportButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      marginLeft: 8,
+    },
+    exportButtonDisabled: {
+      opacity: 0.35,
+    },
+    exportOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    exportContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+    },
+    exportHeader: {
+      flexDirection: 'row' as const,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    exportTitle: {
+      fontSize: 18,
+      fontWeight: '600' as const,
+      color: colors.text,
+    },
+    exportCloseBtn: {
+      padding: 4,
+    },
+    exportSectionLabel: {
+      fontSize: 13,
+      fontWeight: '500' as const,
+      color: colors.textSecondary,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    exportFormatRow: {
+      flexDirection: 'row' as const,
+      gap: 8,
+      marginBottom: 16,
+    },
+    exportFormatBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center' as const,
+    },
+    exportFormatBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft ?? 'rgba(99,102,241,0.08)',
+    },
+    exportFormatText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    exportFormatTextActive: {
+      color: colors.primary,
+      fontWeight: '600' as const,
+    },
+    exportCheckRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      paddingVertical: 8,
+      gap: 10,
+    },
+    exportCheckBox: {
+      width: 22,
+      height: 22,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+    },
+    exportCheckBoxActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    exportCheckLabel: {
+      fontSize: 14,
+      color: colors.text,
+    },
+    exportActions: {
+      flexDirection: 'row' as const,
+      justifyContent: 'flex-end',
+      gap: 10,
+      marginTop: 20,
+    },
+    exportCancelBtn: {
+      paddingVertical: 10,
+      paddingHorizontal: 18,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    exportCancelText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    exportConfirmBtn: {
+      paddingVertical: 10,
+      paddingHorizontal: 22,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+    },
+    exportConfirmBtnDisabled: {
+      opacity: 0.5,
+    },
+    exportConfirmText: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      color: colors.onPrimary,
+    },
+    visionOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    visionContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+    },
+    visionTitle: {
+      fontSize: 17,
+      fontWeight: '600' as const,
+      color: colors.text,
+      marginBottom: 10,
+    },
+    visionMessage: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.textSecondary,
+      marginBottom: 20,
+    },
+    visionActions: {
+      gap: 10,
+    },
+    visionSwitchBtn: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+      alignItems: 'center' as const,
+    },
+    visionSwitchText: {
+      fontSize: 15,
+      fontWeight: '600' as const,
+      color: colors.onPrimary,
+    },
+    visionContinueBtn: {
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center' as const,
+    },
+    visionContinueText: {
+      fontSize: 15,
+      color: colors.textSecondary,
     },
   });

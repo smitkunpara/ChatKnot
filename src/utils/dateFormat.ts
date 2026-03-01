@@ -1,8 +1,6 @@
-const IST_TIME_ZONE = 'Asia/Kolkata';
 const SIDEBAR_PLACEHOLDER_TITLE = 'New Chat';
 
-const IST_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  timeZone: IST_TIME_ZONE,
+const LOCAL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
@@ -20,9 +18,9 @@ interface SidebarConversationLabelInput {
 const getTimestampOrNow = (timestamp?: number): number =>
   Number.isFinite(timestamp) ? (timestamp as number) : Date.now();
 
-export const formatIstDateTime = (timestamp: number): string => {
+export const formatLocalDateTime = (timestamp: number): string => {
   const resolvedTimestamp = getTimestampOrNow(timestamp);
-  const parts = IST_DATE_TIME_FORMATTER.formatToParts(resolvedTimestamp);
+  const parts = LOCAL_DATE_TIME_FORMATTER.formatToParts(resolvedTimestamp);
 
   const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
   const month = parts.find((part) => part.type === 'month')?.value ?? '00';
@@ -30,8 +28,11 @@ export const formatIstDateTime = (timestamp: number): string => {
   const hour = parts.find((part) => part.type === 'hour')?.value ?? '00';
   const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
 
-  return `${year}-${month}-${day} ${hour}:${minute} IST`;
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 };
+
+/** @deprecated Use formatLocalDateTime instead. Kept for backward compatibility. */
+export const formatIstDateTime = formatLocalDateTime;
 
 export const getSidebarConversationLabel = (
   conversation: SidebarConversationLabelInput
@@ -43,8 +44,8 @@ export const getSidebarConversationLabel = (
   }
 
   const timestamp = conversation.createdAt ?? conversation.updatedAt;
-  return formatIstDateTime(getTimestampOrNow(timestamp));
+  return formatLocalDateTime(getTimestampOrNow(timestamp));
 };
 
 export const getSidebarNewChatCtaLabel = (timestamp: number = Date.now()): string =>
-  formatIstDateTime(timestamp);
+  formatLocalDateTime(timestamp);

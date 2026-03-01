@@ -1,4 +1,4 @@
-import { McpServerConfig, LlmProviderConfig } from '../../types';
+import { McpServerConfig, LlmProviderConfig, ModelCapabilities } from '../../types';
 import { validateOpenApiEndpoint } from '../mcp/OpenApiValidationService';
 import { OpenAiService } from '../llm/OpenAiService';
 
@@ -29,6 +29,7 @@ export interface AiHealthResult {
   modelsChanged: boolean;
   removedModels: string[];
   currentModels: string[];
+  capabilities?: Record<string, ModelCapabilities>;
   error?: string;
 }
 
@@ -37,6 +38,7 @@ export interface HealthCheckReport {
   aiResults: AiHealthResult[];
   warnings: string[];
   disabledMcpServers: string[];
+  disabledAiProviders: string[];
   removedVisibleModels: { providerId: string; models: string[] }[];
 }
 
@@ -47,13 +49,80 @@ export type HealthCheckProgressCallback = (
 ) => void;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label}: network timeout after ${ms / 1000}s`)), ms)
-    ),
-  ]);
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label}: network timeout after ${ms / 1000}s`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
 }
+
+const normalizeHealthReason = (reason?: string): string => {
+  if (!reason || !reason.trim()) {
+    return 'unknown connectivity issue';
+  }
+
+  return reason
+    .replace(/^Unable to fetch models:\s*/i, '')
+    .replace(/^Failed to fetch models from \S+\s*\(/i, 'Failed to fetch models (')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.]+$/, '');
+};
+
+const toWarningLabel = (name: string, suffix: string): string => {
+  const normalizedName = String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const base = normalizedName || 'unknown';
+  return base.endsWith(`_${suffix}`) ? base : `${base}_${suffix}`;
+};
+
+const isLikelyNetworkIssue = (reason?: string): boolean => {
+  const message = String(reason || '').toLowerCase();
+  if (!message) {
+    return false;
+  }
+
+  const statusCodeMatch = message.match(/\b([1-5]\d{2})\b/);
+  if (statusCodeMatch) {
+    const statusCode = Number(statusCodeMatch[1]);
+    if (statusCode >= 400 && statusCode < 500) {
+      return false;
+    }
+    if (statusCode >= 500) {
+      return true;
+    }
+  }
+
+  return [
+    'network timeout',
+    'timed out',
+    'unable to reach',
+    'failed to fetch',
+    'network request failed',
+    'network connectivity',
+    'enotfound',
+    'econn',
+    'etimedout',
+    'eai_again',
+    'connection refused',
+    'socket hang up',
+    'ssl',
+    'certificate',
+    'dns',
+  ].some((pattern) => message.includes(pattern));
+};
 
 async function checkMcpServer(
   server: McpServerConfig
@@ -115,14 +184,15 @@ async function checkAiProvider(
 
   try {
     const service = new OpenAiService(provider);
-    const models = await withTimeout(
-      service.listModels(),
+    const { models, capabilities } = await withTimeout(
+      service.listModelsWithCapabilities(),
       NETWORK_TIMEOUT_MS,
       `AI ${provider.name}`
     );
 
     result.reachable = true;
     result.currentModels = models;
+    result.capabilities = capabilities;
 
     // Check if any previously visible models are no longer available
     const previousModels = provider.availableModels || [];
@@ -147,6 +217,7 @@ export async function runStartupHealthCheck(
     aiResults: [],
     warnings: [],
     disabledMcpServers: [],
+    disabledAiProviders: [],
     removedVisibleModels: [],
   };
 
@@ -166,8 +237,13 @@ export async function runStartupHealthCheck(
       report.mcpResults.push(mcpResult);
 
       if (!mcpResult.reachable) {
-        report.disabledMcpServers.push(server.id);
-        report.warnings.push(`MCP "${server.name}" is unreachable and has been disabled.`);
+        const reason = normalizeHealthReason(mcpResult.error);
+        if (isLikelyNetworkIssue(reason)) {
+          report.disabledMcpServers.push(server.id);
+          report.warnings.push(`(${toWarningLabel(server.name, 'mcp')}) is turned off due to ${reason}.`);
+        } else {
+          report.warnings.push(`MCP "${server.name}" check failed: ${reason}.`);
+        }
       } else if (mcpResult.toolsChanged) {
         report.warnings.push(`MCP tool list for "${server.name}" is updated.`);
       }
@@ -192,7 +268,13 @@ export async function runStartupHealthCheck(
       report.aiResults.push(aiResult);
 
       if (!aiResult.reachable) {
-        report.warnings.push(`AI "${provider.name}" endpoint is unreachable: ${aiResult.error}`);
+        const reason = normalizeHealthReason(aiResult.error);
+        if (isLikelyNetworkIssue(reason)) {
+          report.disabledAiProviders.push(provider.id);
+          report.warnings.push(`(${toWarningLabel(provider.name, 'ai_provider')}) is turned off due to ${reason}.`);
+        } else {
+          report.warnings.push(`AI provider "${provider.name}" check failed: ${reason}.`);
+        }
       } else if (aiResult.modelsChanged) {
         report.warnings.push(`AI list for "${provider.name}" is updated.`);
         if (aiResult.removedModels.length > 0) {
@@ -237,6 +319,14 @@ export function applyHealthCheckReport(
     }
   }
 
+  // Disable AI providers that failed startup connectivity checks
+  for (const providerId of report.disabledAiProviders) {
+    const provider = providers.find(p => p.id === providerId);
+    if (provider) {
+      updateProvider({ ...provider, enabled: false });
+    }
+  }
+
   // Update MCP tool lists where tools changed
   for (const mcpResult of report.mcpResults) {
     if (!mcpResult.reachable || !mcpResult.validatedTools) continue;
@@ -277,7 +367,7 @@ export function applyHealthCheckReport(
     });
   }
 
-  // Update AI provider available models
+  // Update AI provider available models and capabilities
   for (const aiResult of report.aiResults) {
     if (!aiResult.reachable) continue;
 
@@ -289,11 +379,16 @@ export function applyHealthCheckReport(
     const currentModelSet = new Set(currentModels);
 
     // Check if model list actually changed
-    const hasChange =
+    const hasModelChange =
       prevModels.size !== currentModelSet.size ||
       [...prevModels].some(m => !currentModelSet.has(m));
 
-    if (!hasChange) continue;
+    // Check if capabilities need updating
+    const hasNewCapabilities = aiResult.capabilities && Object.keys(aiResult.capabilities).length > 0;
+    const hadCapabilities = provider.modelCapabilities && Object.keys(provider.modelCapabilities).length > 0;
+    const needsCapabilityUpdate = hasNewCapabilities && !hadCapabilities;
+
+    if (!hasModelChange && !needsCapabilityUpdate) continue;
 
     // New models not previously known: visible by default (we do not add to hiddenModels)
     const hiddenModels = new Set(provider.hiddenModels || []);
@@ -311,9 +406,15 @@ export function applyHealthCheckReport(
       }
     }
 
+    const mergedCapabilities = {
+      ...(provider.modelCapabilities || {}),
+      ...(aiResult.capabilities || {}),
+    };
+
     updateProvider({
       ...provider,
       availableModels: currentModels,
+      modelCapabilities: Object.keys(mergedCapabilities).length > 0 ? mergedCapabilities : provider.modelCapabilities,
       hiddenModels: Array.from(hiddenModels),
     });
   }

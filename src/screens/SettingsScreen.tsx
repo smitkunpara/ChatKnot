@@ -21,7 +21,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Pencil, Plu
 import uuid from 'react-native-uuid';
 import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { LlmProviderConfig, McpServerConfig } from '../types';
+import { LlmProviderConfig, McpServerConfig, ModelCapabilities } from '../types';
 import { OpenAiService } from '../services/llm/OpenAiService';
 import { useAppTheme } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
@@ -51,6 +51,15 @@ const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }
   { label: 'Light', value: 'light' },
   { label: 'Dark', value: 'dark' },
 ];
+
+const getCapabilityTags = (caps?: ModelCapabilities): string[] => {
+  if (!caps) return [];
+  const tags: string[] = [];
+  if (caps.vision) tags.push('vision');
+  if (caps.tools) tags.push('tools');
+  if (caps.fileInput) tags.push('file');
+  return tags;
+};
 
 type SettingsView = 'index' | 'appearance' | 'prompt' | 'providers' | 'mcpServers';
 
@@ -117,6 +126,7 @@ export const SettingsScreen = () => {
   const [editingProviders, setEditingProviders] = useState<Record<string, boolean>>({});
   const [editingServers, setEditingServers] = useState<Record<string, boolean>>({});
   const [draftAvailableModels, setDraftAvailableModels] = useState<Record<string, string[]>>({});
+  const [draftModelCapabilities, setDraftModelCapabilities] = useState<Record<string, Record<string, ModelCapabilities>>>({});
   const [isEditingSystemPrompt, setIsEditingSystemPrompt] = useState(false);
   const [systemPromptDraft, setSystemPromptDraft] = useState(systemPrompt);
   const [activeView, setActiveView] = useState<SettingsView>('index');
@@ -130,6 +140,7 @@ export const SettingsScreen = () => {
     setProviderDrafts({});
     setServerDrafts({});
     setDraftAvailableModels({});
+    setDraftModelCapabilities({});
     setModelPickerVisible(false);
     setActiveProviderIdForPicker(null);
     setModelSearch('');
@@ -215,7 +226,7 @@ export const SettingsScreen = () => {
     setIsValidatingNewProvider(true);
     try {
       const validationService = new OpenAiService(provider);
-      const models = await validationService.listModels();
+      const { models, capabilities } = await validationService.listModelsWithCapabilities();
 
       if (!models.length) {
         Alert.alert('Invalid Provider', 'No compatible text models found at this endpoint.');
@@ -226,6 +237,7 @@ export const SettingsScreen = () => {
       const providerWithModels = {
         ...provider,
         availableModels: models,
+        modelCapabilities: capabilities,
         model: models[0],
       };
 
@@ -313,11 +325,32 @@ export const SettingsScreen = () => {
     setIsFetchingModels(provider.id);
     try {
       const service = new OpenAiService(provider);
-      const models = await service.listModels();
+      const { models, capabilities } = await service.listModelsWithCapabilities();
       setDraftAvailableModels(prev => ({
         ...prev,
         [provider.id]: models,
       }));
+
+      // Always store capabilities in draft state so they're available in the model picker
+      if (Object.keys(capabilities).length > 0) {
+        setDraftModelCapabilities(prev => ({
+          ...prev,
+          [provider.id]: capabilities,
+        }));
+      }
+
+      // Always persist capabilities to the provider in the store,
+      // even when persistProvider is false (capabilities are metadata, not user prefs)
+      const mergedCapabilities = {
+        ...(provider.modelCapabilities || {}),
+        ...capabilities,
+      };
+      if (Object.keys(mergedCapabilities).length > 0) {
+        updateProvider({
+          ...provider,
+          modelCapabilities: mergedCapabilities,
+        });
+      }
 
       if (models.length > 0) {
         if (persistProvider) {
@@ -330,6 +363,7 @@ export const SettingsScreen = () => {
           const nextProvider = {
             ...provider,
             availableModels: models,
+            modelCapabilities: mergedCapabilities,
             hiddenModels,
           };
           const visibleModels = getProviderVisibleModels(nextProvider);
@@ -407,6 +441,11 @@ export const SettingsScreen = () => {
       delete next[providerId];
       return next;
     });
+    setDraftModelCapabilities(prev => {
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
 
     if (activeProviderIdForPicker === providerId) {
       setModelPickerVisible(false);
@@ -415,17 +454,24 @@ export const SettingsScreen = () => {
   };
 
   const saveProviderEdit = (provider: LlmProviderConfig) => {
-    const providerWithDraftModels = {
+    const draftCaps = draftModelCapabilities[provider.id];
+    const providerWithDraftData = {
       ...provider,
       availableModels: draftAvailableModels[provider.id] || provider.availableModels,
+      ...(draftCaps ? { modelCapabilities: { ...(provider.modelCapabilities || {}), ...draftCaps } } : {}),
     };
 
-    setProviderDrafts(prev => saveProviderDraft(prev, providerWithDraftModels, updateProvider));
+    setProviderDrafts(prev => saveProviderDraft(prev, providerWithDraftData, updateProvider));
     setEditingProviders(prev => ({
       ...prev,
       [provider.id]: false,
     }));
     setDraftAvailableModels(prev => {
+      const next = { ...prev };
+      delete next[provider.id];
+      return next;
+    });
+    setDraftModelCapabilities(prev => {
       const next = { ...prev };
       delete next[provider.id];
       return next;
@@ -633,7 +679,9 @@ export const SettingsScreen = () => {
     setModelPickerVisible(true);
 
     const currentModels = draftAvailableModels[provider.id] || provider.availableModels || [];
-    if (currentModels.length === 0) {
+    const hasCapabilities = Object.keys(draftModelCapabilities[provider.id] || provider.modelCapabilities || {}).length > 0;
+    // Fetch if no models loaded OR if capabilities are missing (e.g. provider added before capability code)
+    if (currentModels.length === 0 || !hasCapabilities) {
       fetchModels(provider, { persistProvider: false });
     }
   };
@@ -952,13 +1000,16 @@ export const SettingsScreen = () => {
                   <View style={styles.rowRight}>
                     <Switch
                       value={effectiveProvider.enabled}
-                      disabled={!isEditing}
                       onValueChange={enabled => {
-                        if (!isEditing) {
+                        if (isEditing) {
+                          setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
                           return;
                         }
 
-                        setProviderDrafts(prev => updateProviderDraft(prev, provider.id, { enabled }));
+                        updateProvider({
+                          ...provider,
+                          enabled,
+                        });
                       }}
                       trackColor={{ false: colors.border, true: colors.primarySoft }}
                       thumbColor={effectiveProvider.enabled ? colors.primary : colors.textTertiary}
@@ -1164,13 +1215,18 @@ export const SettingsScreen = () => {
                     <View style={styles.rowRight}>
                       <Switch
                         value={effectiveServer.enabled}
-                        disabled={!isEditing}
                         onValueChange={enabled => {
-                          if (!isEditing) {
+                          if (isEditing) {
+                            clearServerValidationError(server.id);
+                            setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
                             return;
                           }
 
-                          setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
+                          clearServerValidationError(server.id);
+                          updateMcpServer({
+                            ...server,
+                            enabled,
+                          });
                         }}
                         trackColor={{ false: colors.border, true: colors.primarySoft }}
                         thumbColor={effectiveServer.enabled ? colors.primary : colors.textTertiary}
@@ -1502,7 +1558,19 @@ export const SettingsScreen = () => {
                       setActiveProviderIdForPicker(null);
                     }}
                   >
-                    <Text style={styles.modelRowText}>{item}</Text>
+                    <View style={styles.modelRowTextWrap}>
+                      <Text style={styles.modelRowText}>{item}</Text>
+                      {(() => {
+                        const draftCaps = draftModelCapabilities[activeProviderForPicker?.id || '']?.[item];
+                        const storedCaps = activeProviderForPicker?.modelCapabilities?.[item];
+                        const tags = getCapabilityTags(draftCaps || storedCaps);
+                        return tags.length > 0 ? (
+                          <Text style={styles.modelRowCaps}>
+                            ({tags.join(', ')})
+                          </Text>
+                        ) : null;
+                      })()}
+                    </View>
                     <View style={styles.modelRowActions}>
                       <TouchableOpacity
                         style={styles.modelEyeButton}
@@ -2095,11 +2163,21 @@ const createStyles = (colors: any) =>
       borderWidth: 1,
       borderColor: colors.border,
     },
+    modelRowTextWrap: {
+      flex: 1,
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      marginRight: 10,
+    },
     modelRowText: {
       color: colors.text,
       fontSize: 14,
-      flex: 1,
-      marginRight: 10,
+    },
+    modelRowCaps: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '500' as const,
+      marginLeft: 6,
     },
     modelBulkActionRow: {
       flexDirection: 'row',

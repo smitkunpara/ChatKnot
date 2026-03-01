@@ -180,4 +180,26 @@ describe('OpenApiValidationService', () => {
     expect(result.error.code).toBe('NO_OPERATIONS');
     expect(result.error.field).toBe('spec');
   });
+
+  it('includes token-derived auth headers when token is provided', async () => {
+    const fetchImpl = jest.fn(async () => makeJsonResponse(200, validSpec));
+
+    const result = await validateOpenApiEndpoint({
+      url: 'https://demo.example.com',
+      token: 'secret-token',
+      fetchImpl: fetchImpl as any,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://demo.example.com/openapi.json',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer secret-token',
+          'x-api-key': 'secret-token',
+          'api-key': 'secret-token',
+        }),
+      })
+    );
+  });
 });

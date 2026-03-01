@@ -79,4 +79,25 @@ describe('useSettingsStore model visibility + last-used persistence', () => {
     expect(rehydratedState.providers[0].hiddenModels).toEqual(['gpt-4.1-mini']);
     expect(rehydratedState.lastUsedModel).toEqual({ providerId: 'p1', model: 'gpt-4o-mini' });
   });
+
+  it('clears last-used model when its provider is disabled', async () => {
+    const storageSeed = new Map<string, string>();
+    const { store } = await loadStore(storageSeed);
+
+    store.getState().addProvider(createProvider('p1'));
+    store.getState().setLastUsedModel('p1', 'gpt-4o-mini');
+
+    const provider = store.getState().providers.find(p => p.id === 'p1');
+    expect(provider).toBeTruthy();
+    if (!provider) {
+      throw new Error('Expected provider p1 to exist');
+    }
+
+    store.getState().updateProvider({
+      ...provider,
+      enabled: false,
+    });
+
+    expect(store.getState().lastUsedModel).toBeNull();
+  });
 });

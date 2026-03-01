@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { Message, Conversation, ToolCall } from '../types';
 import uuid from 'react-native-uuid';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+import { generateConversationTitle, isPlaceholderTitle } from '../utils/conversationHelpers';
 
 const chatPersistStorage = createEncryptedStateStorage({
   id: 'chat-storage',
@@ -13,7 +14,7 @@ interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
   isLoading: boolean;
-  
+
   createConversation: (providerId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
@@ -59,14 +60,14 @@ export const useChatStore = create<ChatState>()(
       },
 
       setActiveConversation: (id) => set({ activeConversationId: id }),
-      
+
       deleteConversation: (id) => set((state) => ({
         conversations: state.conversations.filter((c) => c.id !== id),
         activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
       })),
 
       updateProviderInConversation: (conversationId, providerId) => set((state) => ({
-        conversations: state.conversations.map((c) => 
+        conversations: state.conversations.map((c) =>
           c.id === conversationId ? { ...c, providerId } : c
         ),
       })),
@@ -74,9 +75,9 @@ export const useChatStore = create<ChatState>()(
       updateModelInConversation: (conversationId, providerId, model) => set((state) => ({
         conversations: state.conversations.map((c) => {
           if (c.id === conversationId) {
-             // We need a way to pass the model override to the LLM service.
-             // For now we'll store it in a custom property on the conversation.
-             return { ...c, providerId, modelOverride: model };
+            // We need a way to pass the model override to the LLM service.
+            // For now we'll store it in a custom property on the conversation.
+            return { ...c, providerId, modelOverride: model };
           }
           return c;
         }),
@@ -90,8 +91,18 @@ export const useChatStore = create<ChatState>()(
               id: message.id || (uuid.v4() as string),
               timestamp: Date.now(),
             };
+
+            // Auto-title from first user message
+            const shouldAutoTitle =
+              message.role === 'user' &&
+              !!message.content?.trim() &&
+              isPlaceholderTitle(c.title);
+
             return {
               ...c,
+              title: shouldAutoTitle
+                ? generateConversationTitle(message.content)
+                : c.title,
               messages: [...c.messages, newMessage],
               updatedAt: Date.now(),
             };
@@ -105,7 +116,7 @@ export const useChatStore = create<ChatState>()(
           if (c.id === conversationId) {
             return {
               ...c,
-              messages: c.messages.map((m) => 
+              messages: c.messages.map((m) =>
                 m.id === messageId ? { ...m, content } : m
               ),
             };
@@ -119,7 +130,7 @@ export const useChatStore = create<ChatState>()(
           if (c.id === conversationId) {
             const index = c.messages.findIndex(m => m.id === messageId);
             if (index === -1) return c;
-            const newMessages = c.messages.slice(0, index + 1).map(m => 
+            const newMessages = c.messages.slice(0, index + 1).map(m =>
               m.id === messageId ? { ...m, content: newContent, timestamp: Date.now() } : m
             );
             return { ...c, messages: newMessages, updatedAt: Date.now() };
@@ -156,14 +167,14 @@ export const useChatStore = create<ChatState>()(
                 if (m.id === messageId && m.toolCalls) {
                   return {
                     ...m,
-                    toolCalls: m.toolCalls.map((t) => 
+                    toolCalls: m.toolCalls.map((t) =>
                       t.id === toolCallId
                         ? {
-                            ...t,
-                            status,
-                            result: payload?.result ?? (status === 'failed' ? undefined : t.result),
-                            error: payload?.error ?? (status !== 'failed' ? undefined : t.error),
-                          }
+                          ...t,
+                          status,
+                          result: payload?.result ?? (status === 'failed' ? undefined : t.result),
+                          error: payload?.error ?? (status !== 'failed' ? undefined : t.error),
+                        }
                         : t
                     ),
                   };
