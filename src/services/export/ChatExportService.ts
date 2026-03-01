@@ -1,8 +1,12 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Paths, File } from 'expo-file-system';
+import { marked } from 'marked';
 import { Conversation, Message, ToolCall } from '../../types';
 import { formatLocalDateTime } from '../../utils/dateFormat';
+
+// Configure marked for synchronous, safe HTML output
+marked.setOptions({ async: false, gfm: true, breaks: true });
 
 export type ExportFormat = 'pdf' | 'markdown' | 'json';
 
@@ -181,7 +185,8 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     block += `<div class="message-header"><strong>${label}</strong><span class="time">${escapeHtml(time)}</span></div>`;
 
     if (msg.content?.trim()) {
-      block += `<div class="message-content">${escapeHtml(msg.content.trim()).replace(/\n/g, '<br>')}</div>`;
+      const rendered = marked.parse(msg.content.trim()) as string;
+      block += `<div class="message-content">${rendered}</div>`;
     }
 
     if (msg.toolCalls?.length) {
@@ -200,20 +205,31 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
   <meta charset="utf-8">
   <title>${escapeHtml(conversation.title)}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; color: #222; line-height: 1.5; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; color: #222; line-height: 1.6; }
     h1 { font-size: 20px; margin-bottom: 4px; }
     .meta { color: #666; font-size: 12px; margin-bottom: 16px; }
-    .message { margin-bottom: 16px; padding: 12px; border-radius: 8px; }
+    .message { margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; }
     .user { background: #e8f5e9; }
     .assistant { background: #f5f5f5; }
     .message-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
     .time { color: #888; font-size: 11px; }
-    .message-content { white-space: pre-wrap; }
+    .message-content h1, .message-content h2, .message-content h3, .message-content h4 { margin: 8px 0 4px 0; }
+    .message-content h1 { font-size: 18px; }
+    .message-content h2 { font-size: 16px; }
+    .message-content h3 { font-size: 14px; }
+    .message-content p { margin: 4px 0; }
+    .message-content ul, .message-content ol { margin: 4px 0; padding-left: 20px; }
+    .message-content li { margin: 2px 0; }
+    .message-content blockquote { border-left: 3px solid #ccc; margin: 8px 0; padding: 4px 12px; color: #555; }
+    .message-content table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+    .message-content th, .message-content td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+    .message-content th { background: #f0f0f0; font-weight: 600; }
     .tool { margin-top: 8px; padding: 8px; background: #fff3e0; border-radius: 6px; font-size: 13px; }
     .tool-detail { margin-top: 4px; }
     .tool-error { margin-top: 4px; color: #c62828; }
     pre { background: #f0f0f0; padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
     code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+    pre code { background: none; padding: 0; }
     hr { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
   </style>
 </head>
