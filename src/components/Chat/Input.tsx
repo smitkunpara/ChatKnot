@@ -13,6 +13,7 @@ import {
   View,
   Modal,
 } from 'react-native';
+import uuid from 'react-native-uuid';
 import { FileText, ImageIcon, Paperclip, Send, StopCircle, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -34,7 +35,7 @@ interface InputProps {
   visionSupported?: boolean;
 }
 
-let attachmentIdCounter = 0;
+
 
 export const Input: React.FC<InputProps> = ({
   onSend,
@@ -77,7 +78,7 @@ export const Input: React.FC<InputProps> = ({
 
   const handleSend = () => {
     if (!text.trim() && attachments.length === 0) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(text.trim());
     setText('');
   };
@@ -99,11 +100,16 @@ export const Input: React.FC<InputProps> = ({
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
+        if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
+          Alert.alert('File too large', 'Please select an image smaller than 10MB.');
+          return;
+        }
+
         const mimeType = asset.mimeType || 'image/jpeg';
         const name = asset.fileName || `image_${Date.now()}.jpg`;
 
         onAddAttachment({
-          id: `att_${++attachmentIdCounter}_${Date.now()}`,
+          id: `att_${uuid.v4()}`,
           type: 'image',
           uri: asset.uri,
           name,
@@ -141,8 +147,13 @@ export const Input: React.FC<InputProps> = ({
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
+        if (asset.size && asset.size > 10 * 1024 * 1024) {
+          Alert.alert('File too large', 'Please select a file smaller than 10MB.');
+          return;
+        }
+
         onAddAttachment({
-          id: `att_${++attachmentIdCounter}_${Date.now()}`,
+          id: `att_${uuid.v4()}`,
           type: 'file',
           uri: asset.uri,
           name: asset.name,
@@ -156,7 +167,7 @@ export const Input: React.FC<InputProps> = ({
   };
 
   const showAttachmentOptions = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowAttachmentMenu(true);
   };
 

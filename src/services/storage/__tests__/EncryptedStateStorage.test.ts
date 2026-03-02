@@ -1,4 +1,11 @@
 import type { StateStorage } from 'zustand/middleware';
+
+jest.mock('react-native', () => ({
+  Alert: {
+    alert: jest.fn(),
+  },
+}));
+
 import {
   createEncryptedStateStorage,
   type MMKVLike,

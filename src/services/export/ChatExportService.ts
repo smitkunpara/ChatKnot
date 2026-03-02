@@ -4,6 +4,7 @@ import { Paths, File } from 'expo-file-system';
 import { marked } from 'marked';
 import { Conversation, Message, ToolCall } from '../../types';
 import { formatLocalDateTime } from '../../utils/dateFormat';
+import sanitizeHtml from 'sanitize-html';
 
 // Configure marked for synchronous, safe HTML output
 marked.setOptions({ async: false, gfm: true, breaks: true });
@@ -206,7 +207,8 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     block += `<div class="message-header"><strong>${label}</strong><span class="time">${escapeHtml(time)}</span></div>`;
 
     if (msg.content?.trim()) {
-      const rendered = marked.parse(msg.content.trim()) as string;
+      const parsed = marked.parse(msg.content.trim()) as string;
+      const rendered = sanitizeHtml(parsed);
       block += `<div class="message-content">${rendered}</div>`;
     }
 

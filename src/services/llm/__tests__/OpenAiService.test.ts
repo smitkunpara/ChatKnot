@@ -42,7 +42,7 @@ describe('OpenAiService.listModels', () => {
 
     const service = new OpenAiService(createProvider());
 
-    await expect(service.listModels()).rejects.toThrow(/401|Unauthorized/);
+    await expect(service.listModels()).rejects.toThrow('Unable to fetch models: Failed to fetch models from https://api.example.com/models (401 Unauthorized)');
   });
 
   it('throws an actionable error when model fetch fails at network layer', async () => {
@@ -50,7 +50,7 @@ describe('OpenAiService.listModels', () => {
 
     const service = new OpenAiService(createProvider());
 
-    await expect(service.listModels()).rejects.toThrow(/ETIMEDOUT/);
+    await expect(service.listModels()).rejects.toThrow('Unable to fetch models: Error: connect ETIMEDOUT api.example.com');
   });
 
   it('falls back to /models when /v1/models responds with 404', async () => {

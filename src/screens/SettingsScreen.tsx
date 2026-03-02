@@ -23,6 +23,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { LlmProviderConfig, McpServerConfig, ModelCapabilities } from '../types';
 import { OpenAiService } from '../services/llm/OpenAiService';
+import { DEFAULT_OPENAI_BASE_URL } from '../constants/api';
 import { useAppTheme } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
 import { McpManager, McpServerRuntimeState } from '../services/mcp/McpManager';
@@ -45,6 +46,7 @@ import {
   validateOpenApiEndpoint,
 } from '../services/mcp/OpenApiValidationService';
 import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
+import { validateImportPayload } from '../utils/settingsValidation';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -105,7 +107,7 @@ export const SettingsScreen = () => {
   } = useSettingsStore();
 
   const [newProviderName, setNewProviderName] = useState('');
-  const [newBaseUrl, setNewBaseUrl] = useState('https://api.openai.com/v1');
+  const [newBaseUrl, setNewBaseUrl] = useState(DEFAULT_OPENAI_BASE_URL);
   const [newApiKey, setNewApiKey] = useState('');
   const [isValidatingNewProvider, setIsValidatingNewProvider] = useState(false);
   const [newMcpName, setNewMcpName] = useState('');
@@ -243,7 +245,7 @@ export const SettingsScreen = () => {
 
       addProvider(providerWithModels);
       setNewProviderName('');
-      setNewBaseUrl('https://api.openai.com/v1');
+      setNewBaseUrl(DEFAULT_OPENAI_BASE_URL);
       setNewApiKey('');
     } catch (error: any) {
       Alert.alert(
@@ -763,8 +765,20 @@ export const SettingsScreen = () => {
       },
     };
 
-    await Clipboard.setStringAsync(JSON.stringify(payload, null, 2));
-    Alert.alert('Settings Exported', 'Settings JSON has been copied to your clipboard.');
+    Alert.alert(
+      'Export Contains Secrets',
+      'The exported JSON includes your API keys and tokens. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Copy to Clipboard',
+          onPress: async () => {
+            await Clipboard.setStringAsync(JSON.stringify(payload, null, 2));
+            Alert.alert('Settings Exported', 'Settings JSON has been copied to your clipboard.');
+          },
+        },
+      ]
+    );
   };
 
   const handleImportSettings = async () => {
@@ -783,6 +797,12 @@ export const SettingsScreen = () => {
       }
 
       const settings = parsed?.settings || parsed;
+
+      const validationError = validateImportPayload(settings);
+      if (validationError) {
+        Alert.alert('Import Error', validationError);
+        return;
+      }
 
       replaceAllSettings({
         providers: settings?.providers,
@@ -1453,7 +1473,7 @@ export const SettingsScreen = () => {
           <KeyboardAvoidingView
             style={styles.modalKeyboardAvoiding}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
           >
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>

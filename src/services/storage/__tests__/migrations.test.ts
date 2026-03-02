@@ -1,3 +1,9 @@
+jest.mock('react-native', () => ({
+  Alert: {
+    alert: jest.fn(),
+  },
+}));
+
 import {
   buildSecretRef,
   executeStorageHardeningBootstrap,

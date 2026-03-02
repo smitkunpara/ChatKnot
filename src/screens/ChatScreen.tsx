@@ -811,7 +811,7 @@ export const ChatScreen = () => {
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
         style={styles.content}
       >
         {!activeConversation ? (
@@ -1162,7 +1162,7 @@ const createStyles = (colors: any) =>
     },
     exportFormatBtnActive: {
       borderColor: colors.primary,
-      backgroundColor: colors.primarySoft ?? 'rgba(99,102,241,0.08)',
+      backgroundColor: colors.primarySoft,
     },
     exportFormatText: {
       fontSize: 14,

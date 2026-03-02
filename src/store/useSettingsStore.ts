@@ -57,7 +57,7 @@ interface SettingsState extends AppSettings {
   setModelVisibility: (providerId: string, model: string, visible: boolean) => void;
   setLastUsedModel: (providerId: string, model: string) => void;
   clearLastUsedModel: () => void;
-  
+
   updateMcpServer: (server: McpServerConfig) => void;
   addMcpServer: (server: McpServerConfig) => void;
   removeMcpServer: (id: string) => void;
@@ -92,9 +92,13 @@ const shouldClearLastUsedModelForProvider = (
     return true;
   }
 
+  if (normalizeSettingValue(provider.baseUrl).length === 0) {
+    return true;
+  }
+
   if (
-    normalizeSettingValue(provider.baseUrl).length === 0 ||
-    normalizeSettingValue(provider.apiKey).length === 0
+    normalizeSettingValue(provider.apiKey).length === 0 &&
+    !provider.apiKeyRef
   ) {
     return true;
   }
@@ -162,7 +166,7 @@ export const useSettingsStore = create<SettingsState>()(
       systemPrompt: 'You are a helpful AI assistant.',
       theme: 'system',
       lastUsedModel: null,
-      
+
       updateProvider: (updatedProvider) =>
         set((state) => {
           const normalizedProvider = normalizeProviderConfig(updatedProvider);
@@ -239,7 +243,7 @@ export const useSettingsStore = create<SettingsState>()(
       removeMcpServer: (id) => set((state) => ({
         mcpServers: state.mcpServers.filter((s) => s.id !== id),
       })),
-      
+
       updateSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
       setTheme: (theme) => set({ theme }),
       replaceAllSettings: (settings) =>
@@ -258,8 +262,8 @@ export const useSettingsStore = create<SettingsState>()(
 
           const nextLastUsedModel =
             settings.lastUsedModel &&
-            typeof settings.lastUsedModel.providerId === 'string' &&
-            typeof settings.lastUsedModel.model === 'string'
+              typeof settings.lastUsedModel.providerId === 'string' &&
+              typeof settings.lastUsedModel.model === 'string'
               ? settings.lastUsedModel
               : null;
 

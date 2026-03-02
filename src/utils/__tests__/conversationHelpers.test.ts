@@ -18,6 +18,28 @@ describe('generateConversationTitle', () => {
         const title = generateConversationTitle(long);
         expect(title.length).toBeLessThanOrEqual(51); // 50 chars + ellipsis
         expect(title).toMatch(/…$/);
+        expect(title).toBe('This is a much longer message that definitely…');
+    });
+
+    it('cuts at the last space even if it is near the beginning (B5 fix)', () => {
+        // Space at pos 5, total length > 50
+        const str = 'Short ' + 'a'.repeat(50);
+        const title = generateConversationTitle(str);
+        // It should cut at the space ("Short"), not at 50 chars mid-word
+        expect(title).toBe('Short…');
+    });
+
+    it('cuts at MAX_TITLE_LENGTH if there are absolutely no spaces', () => {
+        const exact = 'a'.repeat(60);
+        const title = generateConversationTitle(exact);
+        expect(title).toBe('a'.repeat(50) + '…');
+    });
+
+    it('cuts exactly at MAX_TITLE_LENGTH if the space is exactly there', () => {
+        // Space at index 50
+        const str = 'a'.repeat(50) + ' ' + 'b'.repeat(10);
+        const title = generateConversationTitle(str);
+        expect(title).toBe('a'.repeat(50) + '…');
     });
 
     it('collapses inline whitespace', () => {

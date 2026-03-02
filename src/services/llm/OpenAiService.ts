@@ -1,6 +1,8 @@
 import { LlmProviderConfig, Message, ModelCapabilities } from '../../types';
 import { filterModelsForTextOutput } from './modelFilter';
 
+import { DEFAULT_OPENAI_BASE_URL } from '../../constants/api';
+
 export interface ModelsWithCapabilities {
   models: string[];
   capabilities: Record<string, ModelCapabilities>;
@@ -15,7 +17,7 @@ export class OpenAiService {
 
   private getBaseUrl(): string {
     const configuredBaseUrl = (this.config.baseUrl || '').trim();
-    const fallbackBaseUrl = 'https://api.openai.com/v1';
+    const fallbackBaseUrl = DEFAULT_OPENAI_BASE_URL;
     const normalizedBaseUrl = (configuredBaseUrl || fallbackBaseUrl).replace(/\/+$/, '');
     const finalBaseUrl = normalizedBaseUrl || fallbackBaseUrl;
 
@@ -571,7 +573,13 @@ export class OpenAiService {
           if (abortSignal?.aborted) {
             throw new Error('Request cancelled by user');
           }
-          const { done, value } = await reader.read();
+
+          const readPromise = reader.read();
+          const timeoutPromise = new Promise<any>((_, reject) =>
+            setTimeout(() => reject(new Error('Stream stalled (timeout)')), 60000)
+          );
+          const { done, value } = await Promise.race([readPromise, timeoutPromise]);
+
           if (done) break;
           pendingBuffer += decoder.decode(value, { stream: true });
           const events = pendingBuffer.split('\n\n');

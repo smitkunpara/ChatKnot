@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import type { StateStorage } from 'zustand/middleware';
 import { defaultSecretVault } from './SecretVault';
 
@@ -119,6 +120,27 @@ export const createEncryptedStateStorage = (
         typeof vault.isPersistentStorageAvailable === 'function' &&
         !vault.isPersistentStorageAvailable()
       ) {
+        const consentKey = `${options.id}:plaintext-consent`;
+        const hasConsent = await fallbackStorage.getItem(consentKey);
+
+        if (hasConsent !== 'true') {
+          await new Promise<void>((resolve, reject) => {
+            Alert.alert(
+              'Security Warning',
+              'Secure hardware is unavailable on this device. Your data and API keys will be saved in plaintext. Do you wish to continue?',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => reject(new Error('User declined plaintext storage')) },
+                {
+                  text: 'Continue', onPress: () => {
+                    Promise.resolve(fallbackStorage.setItem(consentKey, 'true'))
+                      .then(() => resolve())
+                      .catch((_err: unknown) => resolve());
+                  }
+                }
+              ]
+            );
+          });
+        }
         return { fallback: fallbackStorage };
       }
 

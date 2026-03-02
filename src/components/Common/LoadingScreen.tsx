@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import pkg from '../../../package.json';
 import { useAppTheme } from '../../theme/useAppTheme';
 
 interface Props {
@@ -42,11 +43,13 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
     outputRange: ['0%', '100%'],
   });
 
+  const version = pkg.version || '0.2.0-beta';
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         <Text style={[styles.title, { color: colors.text }]}>ChatKnot</Text>
-        <Text style={[styles.version, { color: colors.textSecondary }]}>v0.1.0</Text>
+        <Text style={[styles.version, { color: colors.textSecondary }]}>v{version}</Text>
 
         <View style={styles.spinnerRow}>
           <ActivityIndicator size="small" color={colors.primary} />

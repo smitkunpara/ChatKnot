@@ -283,7 +283,7 @@ export const buildToolExecutionQueue = (
   const seen = new Set<string>();
 
   for (const call of calls) {
-    const key = `${call.id}:${call.name}:${call.arguments}`;
+    const key = call.id;
     if (seen.has(key)) continue;
     seen.add(key);
     queue.push(call);

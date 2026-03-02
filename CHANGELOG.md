@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Second: application defaults (markdown/tool guidance)
 - MCP/OpenAPI runtime instruction text is now appended only when at least one MCP server is connected.
 
+### Fixed
+- Corrected Last-Used Model clearing logic securely checking for legacy keys vs exact migrations.
+- Stopped McpClient initialization from hanging on `notifications/initialized` stream requests.
+- Prevented potential ID collisions in Chat Inputs by migrating mutable file counters to `uuid.v4()`.
+- Handled mid-word chat title truncation gracefully on word boundaries.
+- Gracefully handled OpenAPI tool responses that declare JSON but return non-JSON plain text payloads.
+- Loosened deduplication in `buildToolExecutionQueue` so language models can intentionally request consecutive identical parameters.
+- Replaced hardcoded Message Bubble error RGBA backgrounds with system-native `colors.dangerSoft`/`colors.danger`.
+- Expanded the robust test suite across 52+ unit tests validating these exact behaviors.
+
+### Security
+- Added interactive alert confirmation before exporting settings data containing sensitive secrets to clipboard.
+- Added strict schema shape validation blocker (`validateImportPayload`) when importing JSON settings into the application store.
+- Re-architected `callOpenApiTool` to safely filter and log API body errors internally while preventing external UI state bleeding.
+- Stopped silent background listener zombie states by handling `EventSource` failover correctly across connection statuses.
+
 ## [0.2.0-beta] - 2026-03-01
 
 ### Added

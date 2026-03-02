@@ -56,7 +56,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   if (!shouldRenderBubble) return null;
 
   const copyToClipboard = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await Clipboard.setStringAsync(message.content || '');
   };
 
@@ -193,15 +193,15 @@ const createStyles = (colors: any) =>
       width: '100%',
     },
     errorContent: {
-      backgroundColor: 'rgba(220, 80, 80, 0.08)',
+      backgroundColor: colors.dangerSoft,
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: 'rgba(220, 80, 80, 0.2)',
+      borderColor: colors.danger + '33',
       paddingVertical: 10,
       paddingHorizontal: 12,
     },
     errorText: {
-      color: '#c45252',
+      color: colors.danger,
       fontSize: 14,
       lineHeight: 20,
     },

@@ -3,6 +3,7 @@ import { McpServerConfig, McpToolSchema } from '../../types';
 import uuid from 'react-native-uuid';
 import { validateOpenApiEndpoint } from './OpenApiValidationService';
 import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
+import { MCP_PROTOCOL_VERSION, MCP_CLIENT_VERSION } from '../../constants/api';
 
 export class McpClient {
   private config: McpServerConfig;
@@ -13,7 +14,7 @@ export class McpClient {
   private openapiSpec: any = null;
   private isOpenApi: boolean = false;
   private normalizedBaseUrl: string;
-  
+
   constructor(config: McpServerConfig) {
     this.normalizedBaseUrl = ensureHttpUrl(config.url);
     this.config = {
@@ -47,7 +48,7 @@ export class McpClient {
 
     return headers;
   }
-  
+
   async connect(): Promise<void> {
     const openApiValidation = await validateOpenApiEndpoint({
       url: this.config.url,
@@ -74,7 +75,7 @@ export class McpClient {
           headers: this.getAuthHeaders(),
         });
 
-        this.eventSource.addEventListener('open', () => {});
+        this.eventSource.addEventListener('open', () => { });
 
         this.eventSource.addEventListener('endpoint' as any, (event: any) => {
           try {
@@ -84,17 +85,17 @@ export class McpClient {
             // Check if data is absolute or relative
             let endpoint = data;
             if (!endpoint.startsWith('http')) {
-               // Construct absolute URL
-               const baseUrl = new URL(this.config.url);
-               // Handle trailing slashes carefully
-               endpoint = new URL(endpoint, baseUrl).toString();
+              // Construct absolute URL
+              const baseUrl = new URL(this.config.url);
+              // Handle trailing slashes carefully
+              endpoint = new URL(endpoint, baseUrl).toString();
             }
             this.postUrl = endpoint;
             this.isConnected = true;
-            
+
             // After getting endpoint, initialize
             this.initialize().then(() => {
-                resolve();
+              resolve();
             }).catch(reject);
 
           } catch (e) {
@@ -104,10 +105,13 @@ export class McpClient {
         });
 
         this.eventSource.addEventListener('error', (event: any) => {
-           console.error('MCP SSE Error:', event);
-           if (!this.isConnected) {
-             reject(new Error('Failed to connect to MCP server'));
-           }
+          console.error('MCP SSE Error:', event);
+          if (!this.isConnected) {
+            reject(new Error('Failed to connect to MCP server'));
+          } else {
+            // Surface post-connection SSE errors (S6)
+            this.isConnected = false;
+          }
         });
 
       } catch (error) {
@@ -118,7 +122,7 @@ export class McpClient {
 
   private async post(method: string, params: any = {}) {
     if (!this.postUrl) throw new Error('MCP Client not connected (no POST URL)');
-    
+
     const response = await fetch(this.postUrl, {
       method: 'POST',
       headers: {
@@ -144,21 +148,36 @@ export class McpClient {
     return data.result;
   }
 
+  /**
+   * Fire-and-forget notification — JSON-RPC notifications have no response body.
+   */
+  private async postNotification(method: string, params: any = {}) {
+    if (!this.postUrl) throw new Error('MCP Client not connected (no POST URL)');
+    await fetch(this.postUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method, params }),
+    });
+  }
+
   async initialize() {
     // Send initialize
-    const info = await this.post('initialize', {
-      protocolVersion: '0.1.0',
+    await this.post('initialize', {
+      protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {
         tools: { listChanged: true },
       },
       clientInfo: {
         name: 'chatknot',
-        version: '1.0.0',
+        version: MCP_CLIENT_VERSION,
       }
     });
-    
-    // Send initialized notification
-    await this.post('notifications/initialized');
+
+    // Send initialized notification (fire-and-forget, no response expected)
+    await this.postNotification('notifications/initialized');
 
     // List tools
     await this.refreshTools();
@@ -211,11 +230,11 @@ export class McpClient {
 
     const toolBaseUrl = this.resolveToolBaseUrl(baseUrl);
     let url = toolBaseUrl.replace(/\/$/, '') + path;
-    
+
     // Replace path parameters
     Object.entries(args).forEach(([key, val]) => {
       if (url.includes(`{${key}}`)) {
-        url = url.replace(`{${key}}`, encodeURIComponent(String(val)));
+        url = url.replaceAll(`{${key}}`, encodeURIComponent(String(val)));
       }
     });
 
@@ -243,10 +262,15 @@ export class McpClient {
 
     const response = await fetch(url, options);
     if (!response.ok) {
-       const text = await response.text();
-       throw new Error(`API Error ${response.status}: ${text}`);
+      const text = await response.text();
+      console.error(`OpenAPI tool error ${response.status}:`, text);
+      throw new Error(`API Error ${response.status}`);
     }
-    return await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await response.json();
+    }
+    return { content: [{ type: 'text', text: await response.text() }] };
   }
 
   getProtocol(): 'openapi' | 'mcp' {
@@ -255,11 +279,11 @@ export class McpClient {
 
   getOpenApiMetadata():
     | {
-        title?: string;
-        version?: string;
-        serverUrl?: string;
-        securityHeaders: string[];
-      }
+      title?: string;
+      version?: string;
+      serverUrl?: string;
+      securityHeaders: string[];
+    }
     | null {
     if (!this.isOpenApi || !this.openapiSpec) return null;
 
@@ -281,10 +305,10 @@ export class McpClient {
   }
 
   getOpenApiContext(): string | null {
-     if (!this.isOpenApi || !this.openapiSpec) return null;
+    if (!this.isOpenApi || !this.openapiSpec) return null;
 
-     const meta = this.getOpenApiMetadata();
-     const toolLines = this.tools
+    const meta = this.getOpenApiMetadata();
+    const toolLines = this.tools
       .slice(0, 20)
       .map((tool: any) => {
         const required = Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required : [];
@@ -293,14 +317,14 @@ export class McpClient {
       })
       .join('\n');
 
-     const headerInstruction =
+    const headerInstruction =
       meta?.securityHeaders?.length
         ? `Authentication headers are already configured at MCP server level (${meta.securityHeaders.join(
-            ', '
-          )}). Do not add auth headers in tool arguments.`
+          ', '
+        )}). Do not add auth headers in tool arguments.`
         : 'No API-key header requirement detected from OpenAPI security schemes.';
 
-     return [
+    return [
       `MCP OpenAPI instructions for ${this.config.name}:`,
       `- API: ${meta?.title || 'Unknown'}${meta?.version ? ` (v${meta.version})` : ''}`,
       `- Base URL: ${meta?.serverUrl || this.normalizedBaseUrl}`,
@@ -310,7 +334,7 @@ export class McpClient {
       `- ${headerInstruction}`,
       '- Available tools:',
       toolLines || '- none',
-     ].join('\n');
+    ].join('\n');
   }
 
   disconnect() {

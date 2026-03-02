@@ -53,7 +53,7 @@ describe('StartupHealthCheck safety actions', () => {
     const report = await runStartupHealthCheck(
       [createServer()],
       [createProvider()],
-      () => {}
+      () => { }
     );
 
     expect(report.disabledMcpServers).toEqual(['server-1']);
@@ -100,7 +100,7 @@ describe('StartupHealthCheck safety actions', () => {
     const report = await runStartupHealthCheck(
       [createServer()],
       [createProvider()],
-      () => {}
+      () => { }
     );
 
     expect(report.disabledAiProviders).toEqual([]);

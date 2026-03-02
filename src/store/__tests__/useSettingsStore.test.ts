@@ -100,4 +100,63 @@ describe('useSettingsStore model visibility + last-used persistence', () => {
 
     expect(store.getState().lastUsedModel).toBeNull();
   });
+
+  describe('apiKeyRef migration fallback (B2 fix)', () => {
+    it('DOES NOT clear last-used model if apiKey is empty but apiKeyRef is present', async () => {
+      const storageSeed = new Map<string, string>();
+      const { store } = await loadStore(storageSeed);
+
+      store.getState().addProvider(createProvider('p1'));
+      store.getState().setLastUsedModel('p1', 'gpt-4o-mini');
+
+      const provider = store.getState().providers.find((p) => p.id === 'p1');
+      expect(provider).toBeTruthy();
+
+      store.getState().updateProvider({
+        ...provider!,
+        apiKey: '',
+        apiKeyRef: 'vault://test-key',
+      });
+
+      expect(store.getState().lastUsedModel).toEqual({ providerId: 'p1', model: 'gpt-4o-mini' });
+    });
+
+    it('CLEARS last-used model if both apiKey and apiKeyRef are empty', async () => {
+      const storageSeed = new Map<string, string>();
+      const { store } = await loadStore(storageSeed);
+
+      store.getState().addProvider(createProvider('p1'));
+      store.getState().setLastUsedModel('p1', 'gpt-4o-mini');
+
+      const provider = store.getState().providers.find((p) => p.id === 'p1');
+      expect(provider).toBeTruthy();
+
+      store.getState().updateProvider({
+        ...provider!,
+        apiKey: '',
+        apiKeyRef: undefined,
+      });
+
+      expect(store.getState().lastUsedModel).toBeNull();
+    });
+
+    it('DOES NOT clear last-used model if apiKey is present and apiKeyRef is missing', async () => {
+      const storageSeed = new Map<string, string>();
+      const { store } = await loadStore(storageSeed);
+
+      store.getState().addProvider(createProvider('p1'));
+      store.getState().setLastUsedModel('p1', 'gpt-4o-mini');
+
+      const provider = store.getState().providers.find((p) => p.id === 'p1');
+      expect(provider).toBeTruthy();
+
+      store.getState().updateProvider({
+        ...provider!,
+        apiKey: 'sk-test',
+        apiKeyRef: undefined,
+      });
+
+      expect(store.getState().lastUsedModel).toEqual({ providerId: 'p1', model: 'gpt-4o-mini' });
+    });
+  });
 });

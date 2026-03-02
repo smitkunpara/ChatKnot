@@ -51,7 +51,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
 
   const handleDelete = (id: string, e: any) => {
     e.stopPropagation();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     deleteConversation(id);
   };
 
