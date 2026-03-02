@@ -50,7 +50,7 @@ describe('OpenAiService.listModels', () => {
 
     const service = new OpenAiService(createProvider());
 
-    await expect(service.listModels()).rejects.toThrow('Unable to fetch models: Error: connect ETIMEDOUT api.example.com');
+    await expect(service.listModels()).rejects.toThrow('Unable to fetch models: connect ETIMEDOUT api.example.com');
   });
 
   it('falls back to /models when /v1/models responds with 404', async () => {

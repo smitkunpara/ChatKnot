@@ -44,7 +44,8 @@ import {
   buildToolExecutionQueue,
 } from '../utils/toolCallParsing';
 import {
-  MAX_TOOL_ITERATIONS,
+  MAX_ABSOLUTE_ITERATIONS,
+  MAX_IDENTICAL_TOOL_CALLS,
   FALLBACK_FINAL_TEXT,
   getErrorMessage,
   buildAppSystemPrompt,
@@ -407,22 +408,11 @@ export const ChatScreen = () => {
       return true;
     });
 
-    // Prepare attachments with base64
-    let messageAttachments: Attachment[] | undefined;
+    // Prepare attachments — strip base64 to keep Zustand/MMKV ultra-light.
+    // base64 will be read lazily from the uri only when sending to the LLM.
+    let persistedAttachments: Attachment[] | undefined;
     if (filteredAttachments.length > 0) {
-      messageAttachments = [];
-      for (const att of filteredAttachments) {
-        let base64 = att.base64;
-        if (!base64) {
-          try {
-            base64 = await readFileAsBase64(att.uri);
-          } catch (e) {
-            console.error('Failed to read file:', att.name, e);
-            continue;
-          }
-        }
-        messageAttachments.push({ ...att, base64 });
-      }
+      persistedAttachments = filteredAttachments.map(({ base64, ...rest }) => rest);
       setAttachments([]);
     }
 
@@ -434,7 +424,7 @@ export const ChatScreen = () => {
       addMessage(conversationId, {
         role: 'user',
         content: text,
-        ...(messageAttachments && messageAttachments.length > 0 ? { attachments: messageAttachments } : {}),
+        ...(persistedAttachments && persistedAttachments.length > 0 ? { attachments: persistedAttachments } : {}),
       });
     }
 
@@ -446,11 +436,16 @@ export const ChatScreen = () => {
     if (!conversationId) return;
 
     let hasFinalAnswer = false;
-    let maxIterationsReached = false;
+    let absoluteIterationCount = 0;
+    const toolCallFrequencies = new Map<string, number>();
 
     try {
-      for (let iteration = 1; iteration <= MAX_TOOL_ITERATIONS; iteration++) {
-        if (stopRequestedRef.current) break;
+      while (!hasFinalAnswer && !stopRequestedRef.current) {
+        absoluteIterationCount++;
+        if (absoluteIterationCount > MAX_ABSOLUTE_ITERATIONS) {
+          setChatError(`Stopped: Reached maximum safety limit of ${MAX_ABSOLUTE_ITERATIONS} tool iterations.`);
+          break;
+        }
 
         const currentConv = useChatStore
           .getState()
@@ -507,6 +502,25 @@ export const ChatScreen = () => {
           tools: toolsEnabledForRequest,
         });
 
+        // Hydrate base64 lazily from file URIs — never persisted in Zustand
+        const hydratedMessages = await Promise.all(
+          requestMessages.map(async (m) => {
+            if (m.role !== 'user' || !m.attachments || m.attachments.length === 0) return m;
+            const hydratedAttachments = await Promise.all(
+              m.attachments.map(async (att) => {
+                if (att.base64) return att;
+                try {
+                  const b64 = await readFileAsBase64(att.uri);
+                  return { ...att, base64: b64 };
+                } catch {
+                  return att;
+                }
+              })
+            );
+            return { ...m, attachments: hydratedAttachments };
+          })
+        );
+
         const service = ProviderFactory.create(effectiveConfig);
 
         const openAiTools = mcpTools.map(t => ({
@@ -541,7 +555,7 @@ export const ChatScreen = () => {
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
           service
             .sendChatCompletion(
-              requestMessages,
+              hydratedMessages,
               finalSystemPrompt,
               appSystemPrompt,
               openAiTools,
@@ -596,6 +610,24 @@ export const ChatScreen = () => {
           }
           break;
         }
+
+        // --- LOOP DETECTION (3-strike rule) ---
+        let loopDetected = false;
+        for (const call of toolCalls) {
+          const signature = `${call.name}:::${call.arguments}`;
+          const count = (toolCallFrequencies.get(signature) || 0) + 1;
+          toolCallFrequencies.set(signature, count);
+          if (count >= MAX_IDENTICAL_TOOL_CALLS) {
+            loopDetected = true;
+            break;
+          }
+        }
+        if (loopDetected) {
+          setChatError('Process stopped: AI got stuck in a repetitive loop.');
+          updateMessage(conversationId, assistantMsgId, 'I stopped processing because I got stuck repeating the exact same tool call.');
+          break;
+        }
+        // --- END LOOP DETECTION ---
 
         const toolQueue = buildToolExecutionQueue(toolCalls);
 
@@ -716,9 +748,6 @@ export const ChatScreen = () => {
           }
         }
 
-        if (iteration === MAX_TOOL_ITERATIONS) {
-          maxIterationsReached = true;
-        }
       }
     } catch (error: any) {
       const message = getErrorMessage(error);
@@ -738,7 +767,7 @@ export const ChatScreen = () => {
       clearPendingToolApprovals(false);
       setLoading(false);
 
-      if (!stopRequestedRef.current && !hasFinalAnswer && maxIterationsReached && conversationId) {
+      if (!stopRequestedRef.current && !hasFinalAnswer && absoluteIterationCount > 0 && conversationId) {
         const conversation = useChatStore.getState().conversations.find(c => c.id === conversationId);
         const lastAssistant = [...(conversation?.messages || [])]
           .reverse()
@@ -747,7 +776,6 @@ export const ChatScreen = () => {
         if (lastAssistant && !lastAssistant.content?.trim()) {
           updateMessage(conversationId, lastAssistant.id, FALLBACK_FINAL_TEXT);
         }
-        setChatError(`Stopped after ${MAX_TOOL_ITERATIONS} tool rounds without a final text response.`);
       }
     }
   };

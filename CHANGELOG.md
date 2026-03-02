@@ -21,13 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gracefully handled OpenAPI tool responses that declare JSON but return non-JSON plain text payloads.
 - Loosened deduplication in `buildToolExecutionQueue` so language models can intentionally request consecutive identical parameters.
 - Replaced hardcoded Message Bubble error RGBA backgrounds with system-native `colors.dangerSoft`/`colors.danger`.
-- Expanded the robust test suite across 52+ unit tests validating these exact behaviors.
+- **Removed `sanitize-html`** — crashes React Native because it depends on Node.js `stream`/`Buffer`. Replaced with HTML entity escaping before `marked.parse()`.
+- **Fixed SSE stream memory leak** — `Promise.race` in streaming reader left 60s `setTimeout` timers active for every chunk. Now cleared in `finally` block.
+- **Fixed Zustand/MMKV storage bloat** — base64 image data no longer persisted to Zustand. Read lazily from file URI only when sending to the LLM API.
+- **Replaced `MAX_TOOL_ITERATIONS = 8`** with unlimited `while` loop + 3-strike repetitive tool call detection (hard safety cap at 30 iterations).
+- **Fixed `extractLegacyJsonToolCalls` dedup** — dedup key now uses `name:arguments` instead of `id:name:arguments` to prevent duplicate results from overlapping parse candidates.
+- Replaced hardcoded `Platform.OS` modal padding with `useSafeAreaInsets().bottom` for correct rendering on all device types.
+- Expanded the robust test suite across 151 unit tests validating all edge cases.
 
 ### Security
 - Added interactive alert confirmation before exporting settings data containing sensitive secrets to clipboard.
 - Added strict schema shape validation blocker (`validateImportPayload`) when importing JSON settings into the application store.
 - Re-architected `callOpenApiTool` to safely filter and log API body errors internally while preventing external UI state bleeding.
 - Stopped silent background listener zombie states by handling `EventSource` failover correctly across connection statuses.
+- **Fixed plaintext consent crash** — declining the security warning now falls back to volatile in-memory storage instead of crashing the app with an unhandled promise rejection.
 
 ## [0.2.0-beta] - 2026-03-01
 

@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
 
 interface InputProps {
@@ -51,7 +52,8 @@ export const Input: React.FC<InputProps> = ({
   visionSupported = true,
 }) => {
   const { colors } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => createStyles(colors, insets.bottom), [colors, insets.bottom]);
   const [text, setText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -325,7 +327,7 @@ export const Input: React.FC<InputProps> = ({
   );
 };
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: any, insetBottom: number) =>
   StyleSheet.create({
     wrap: {
       paddingHorizontal: 10,
@@ -466,7 +468,7 @@ const createStyles = (colors: any) =>
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       padding: 20,
-      paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+      paddingBottom: Math.max(insetBottom, 20),
     },
     modalTitle: {
       color: colors.textSecondary,

@@ -574,11 +574,18 @@ export class OpenAiService {
             throw new Error('Request cancelled by user');
           }
 
-          const readPromise = reader.read();
-          const timeoutPromise = new Promise<any>((_, reject) =>
-            setTimeout(() => reject(new Error('Stream stalled (timeout)')), 60000)
-          );
-          const { done, value } = await Promise.race([readPromise, timeoutPromise]);
+          let timeoutId: ReturnType<typeof setTimeout>;
+          const timeoutPromise = new Promise<any>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Stream stalled (timeout)')), 60000);
+          });
+
+          let done: boolean;
+          let value: any;
+          try {
+            ({ done, value } = await Promise.race([reader.read(), timeoutPromise]));
+          } finally {
+            clearTimeout(timeoutId!);
+          }
 
           if (done) break;
           pendingBuffer += decoder.decode(value, { stream: true });

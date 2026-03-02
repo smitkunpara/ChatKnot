@@ -124,14 +124,16 @@ export const createEncryptedStateStorage = (
         const hasConsent = await fallbackStorage.getItem(consentKey);
 
         if (hasConsent !== 'true') {
-          await new Promise<void>((resolve, reject) => {
+          let consentGranted = false;
+          await new Promise<void>((resolve) => {
             Alert.alert(
               'Security Warning',
               'Secure hardware is unavailable on this device. Your data and API keys will be saved in plaintext. Do you wish to continue?',
               [
-                { text: 'Cancel', style: 'cancel', onPress: () => reject(new Error('User declined plaintext storage')) },
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
                 {
                   text: 'Continue', onPress: () => {
+                    consentGranted = true;
                     Promise.resolve(fallbackStorage.setItem(consentKey, 'true'))
                       .then(() => resolve())
                       .catch((_err: unknown) => resolve());
@@ -140,6 +142,19 @@ export const createEncryptedStateStorage = (
               ]
             );
           });
+
+          // If user declined, use volatile in-memory storage for this session only.
+          // The app works but nothing persists to disk.
+          if (!consentGranted) {
+            const memStore = new Map<string, string>();
+            return {
+              fallback: {
+                getItem: async (k: string) => memStore.get(k) ?? null,
+                setItem: async (k: string, v: string) => { memStore.set(k, v); },
+                removeItem: async (k: string) => { memStore.delete(k); },
+              },
+            };
+          }
         }
         return { fallback: fallbackStorage };
       }

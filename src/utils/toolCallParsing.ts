@@ -201,7 +201,7 @@ export const extractLegacyJsonToolCalls = (
       for (const entry of entries) {
         const normalized = normalizeToolCallFromLegacyJson(entry, toolNameMap);
         if (!normalized) continue;
-        const key = `${normalized.id}:${normalized.name}:${normalized.arguments}`;
+        const key = `${normalized.name}:${normalized.arguments}`;
         if (seen.has(key)) continue;
         seen.add(key);
         parsedCalls.push(normalized);

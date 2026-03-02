@@ -4,7 +4,7 @@ import { Paths, File } from 'expo-file-system';
 import { marked } from 'marked';
 import { Conversation, Message, ToolCall } from '../../types';
 import { formatLocalDateTime } from '../../utils/dateFormat';
-import sanitizeHtml from 'sanitize-html';
+
 
 // Configure marked for synchronous, safe HTML output
 marked.setOptions({ async: false, gfm: true, breaks: true });
@@ -207,8 +207,9 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     block += `<div class="message-header"><strong>${label}</strong><span class="time">${escapeHtml(time)}</span></div>`;
 
     if (msg.content?.trim()) {
-      const parsed = marked.parse(msg.content.trim()) as string;
-      const rendered = sanitizeHtml(parsed);
+      // Escape raw HTML tags created by the AI to prevent XSS in the PDF renderer
+      const safeContent = msg.content.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const rendered = marked.parse(safeContent) as string;
       block += `<div class="message-content">${rendered}</div>`;
     }
 

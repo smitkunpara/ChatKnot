@@ -1,4 +1,8 @@
-export const MAX_TOOL_ITERATIONS = 8;
+/** Hard safety cap — no single chat turn should ever exceed this many LLM rounds. */
+export const MAX_ABSOLUTE_ITERATIONS = 30;
+
+/** 3-strike rule: if any tool-call signature repeats this many times, we stop. */
+export const MAX_IDENTICAL_TOOL_CALLS = 3;
 
 export const FALLBACK_FINAL_TEXT =
   'I could not finish after multiple tool calls. Please check your MCP tools or try a more specific prompt.';
