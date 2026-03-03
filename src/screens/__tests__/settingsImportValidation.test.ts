@@ -129,4 +129,76 @@ describe('validateImportPayload', () => {
         const error = validateImportPayload(payload);
         expect(error).toMatch(/Bad.*missing a valid "baseUrl"/);
     });
+
+    describe('modes validation', () => {
+        it('returns null for payload with valid modes', () => {
+            const payload = {
+                providers: [],
+                modes: [
+                    { id: 'm1', name: 'Default', systemPrompt: 'Hi', providerId: null, model: null, mcpServers: [], isDefault: true },
+                ],
+                lastUsedModeId: 'm1',
+            };
+            expect(validateImportPayload(payload)).toBeNull();
+        });
+
+        it('returns error when modes is not an array', () => {
+            expect(validateImportPayload({ modes: 'not-array' })).toBe('"modes" must be an array.');
+        });
+
+        it('returns error for mode without id', () => {
+            const payload = {
+                modes: [{ name: 'Test', systemPrompt: 'Hi', mcpServers: [] }],
+            };
+            expect(validateImportPayload(payload)).toMatch(/missing a valid "id"/);
+        });
+
+        it('returns error for mode without name', () => {
+            const payload = {
+                modes: [{ id: 'm1', systemPrompt: 'Hi', mcpServers: [] }],
+            };
+            expect(validateImportPayload(payload)).toMatch(/missing a valid "name"/);
+        });
+
+        it('returns error for mode with name exceeding max length', () => {
+            const payload = {
+                modes: [{ id: 'm1', name: 'A'.repeat(25), systemPrompt: 'Hi', mcpServers: [] }],
+            };
+            expect(validateImportPayload(payload)).toMatch(/exceeds the maximum length/);
+        });
+
+        it('returns error for mode without systemPrompt', () => {
+            const payload = {
+                modes: [{ id: 'm1', name: 'Test', mcpServers: [] }],
+            };
+            expect(validateImportPayload(payload)).toMatch(/missing a valid "systemPrompt"/);
+        });
+
+        it('returns error for invalid mcpServer inside a mode', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1', name: 'Test', systemPrompt: 'Hi',
+                    mcpServers: [{ id: 's1', name: 'S', url: '' }],
+                }],
+            };
+            expect(validateImportPayload(payload)).toMatch(/missing a valid "url"/);
+        });
+
+        it('returns null for mode with valid mcpServers', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1', name: 'Test', systemPrompt: 'Hi',
+                    mcpServers: [{ id: 's1', name: 'S', url: 'https://s.test' }],
+                }],
+            };
+            expect(validateImportPayload(payload)).toBeNull();
+        });
+
+        it('returns null for mode without mcpServers (optional)', () => {
+            const payload = {
+                modes: [{ id: 'm1', name: 'Test', systemPrompt: 'Hi' }],
+            };
+            expect(validateImportPayload(payload)).toBeNull();
+        });
+    });
 });

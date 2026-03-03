@@ -1,5 +1,6 @@
 import { createEncryptedStateStorage } from './EncryptedStateStorage';
 import { defaultSecretVault } from './SecretVault';
+import uuid from 'react-native-uuid';
 
 const SECRET_REF_PREFIX = 'vault://';
 const DEFAULT_SETTINGS_STORAGE_KEY = 'settings-storage';
@@ -230,10 +231,39 @@ const migrateSettingsStateSecrets = async <TState extends UnknownRecord>(
     })
   );
 
+  // Handle modes: each mode now owns its own mcpServers
+  const modes = Array.isArray(state.modes) ? (state.modes as UnknownRecord[]) : [];
+  nextState.modes = await Promise.all(
+    modes.map(async (mode) => {
+      const modeServers = Array.isArray(mode.mcpServers)
+        ? (mode.mcpServers as LegacyMcpServerSecrets[])
+        : [];
+      const migratedServers = await migrateMcpServerSecrets(modeServers, vault, logger, errors);
+      return { ...mode, mcpServers: migratedServers };
+    })
+  );
+
+  // Legacy top-level mcpServers (for backward compat during migration)
   const mcpServers = Array.isArray(state.mcpServers)
     ? (state.mcpServers as LegacyMcpServerSecrets[])
     : [];
-  nextState.mcpServers = await Promise.all(
+  if (mcpServers.length > 0) {
+    nextState.mcpServers = await migrateMcpServerSecrets(mcpServers, vault, logger, errors);
+  }
+
+  return {
+    state: nextState as TState,
+    errors,
+  };
+};
+
+const migrateMcpServerSecrets = async (
+  mcpServers: LegacyMcpServerSecrets[],
+  vault: MigrationVault,
+  logger: Required<MigrationLogger>,
+  errors: string[]
+): Promise<LegacyMcpServerSecrets[]> => {
+  return Promise.all(
     mcpServers.map(async (server) => {
       const withRefs = ensureMcpServerSecretRefs(server);
       const nextServer: LegacyMcpServerSecrets = {
@@ -271,11 +301,6 @@ const migrateSettingsStateSecrets = async <TState extends UnknownRecord>(
       return nextServer;
     })
   );
-
-  return {
-    state: nextState as TState,
-    errors,
-  };
 };
 
 const hydrateSettingsStateSecrets = async <TState extends UnknownRecord>(
@@ -316,10 +341,39 @@ const hydrateSettingsStateSecrets = async <TState extends UnknownRecord>(
     })
   );
 
+  // Handle modes: each mode now owns its own mcpServers
+  const modes = Array.isArray(state.modes) ? (state.modes as UnknownRecord[]) : [];
+  nextState.modes = await Promise.all(
+    modes.map(async (mode) => {
+      const modeServers = Array.isArray(mode.mcpServers)
+        ? (mode.mcpServers as LegacyMcpServerSecrets[])
+        : [];
+      const hydratedServers = await hydrateMcpServerSecrets(modeServers, vault, logger, errors);
+      return { ...mode, mcpServers: hydratedServers };
+    })
+  );
+
+  // Legacy top-level mcpServers (for backward compat during hydration)
   const mcpServers = Array.isArray(state.mcpServers)
     ? (state.mcpServers as LegacyMcpServerSecrets[])
     : [];
-  nextState.mcpServers = await Promise.all(
+  if (mcpServers.length > 0) {
+    nextState.mcpServers = await hydrateMcpServerSecrets(mcpServers, vault, logger, errors);
+  }
+
+  return {
+    state: nextState as TState,
+    errors,
+  };
+};
+
+const hydrateMcpServerSecrets = async (
+  mcpServers: LegacyMcpServerSecrets[],
+  vault: MigrationVault,
+  logger: Required<MigrationLogger>,
+  errors: string[]
+): Promise<LegacyMcpServerSecrets[]> => {
+  return Promise.all(
     mcpServers.map(async (server) => {
       const nextServer: LegacyMcpServerSecrets = {
         ...server,
@@ -363,11 +417,6 @@ const hydrateSettingsStateSecrets = async <TState extends UnknownRecord>(
       return nextServer;
     })
   );
-
-  return {
-    state: nextState as TState,
-    errors,
-  };
 };
 
 export const buildSecretRef = (scope: string, id: string, field: string): string => {
@@ -450,6 +499,39 @@ export const migratePersistedSettingsPayloadDetailed = async (
   };
 };
 
+export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecord => {
+  // Already has modes — no migration needed
+  if (Array.isArray(state.modes) && state.modes.length > 0) {
+    return state;
+  }
+
+  const legacySystemPrompt =
+    typeof state.systemPrompt === 'string' && state.systemPrompt.trim().length > 0
+      ? state.systemPrompt
+      : 'You are a helpful assistant.';
+
+  const legacyMcpServers = Array.isArray(state.mcpServers) ? state.mcpServers : [];
+
+  const defaultModeId = String(uuid.v4());
+  const defaultMode = {
+    id: defaultModeId,
+    name: 'Default',
+    systemPrompt: legacySystemPrompt,
+    providerId: null,
+    model: null,
+    mcpServers: legacyMcpServers,
+    isDefault: true,
+  };
+
+  const nextState: UnknownRecord = { ...state };
+  nextState.modes = [defaultMode];
+  nextState.lastUsedModeId = defaultModeId;
+  delete nextState.systemPrompt;
+  delete nextState.mcpServers;
+
+  return nextState;
+};
+
 export const hydratePersistedSettingsPayload = async (
   rawValue: string,
   options: {
@@ -464,7 +546,10 @@ export const hydratePersistedSettingsPayload = async (
 
   const logger = toLogger(options.logger);
   const vault = options.vault ?? (defaultSecretVault as unknown as MigrationVault);
-  const hydrated = await hydrateSettingsStateSecrets(parsed.envelope.state, vault, logger);
+
+  // Migrate legacy systemPrompt + mcpServers → modes (if needed)
+  const migratedState = migrateLegacySettingsToModes(parsed.envelope.state);
+  const hydrated = await hydrateSettingsStateSecrets(migratedState, vault, logger);
 
   if (hydrated.errors.length > 0) {
     logger.warn('Settings secret hydration completed with recoverable errors.', hydrated.errors);

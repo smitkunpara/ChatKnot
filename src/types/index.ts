@@ -124,10 +124,20 @@ export interface McpServerConfig {
   autoApprovedTools?: string[];
 }
 
+export interface Mode {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  providerId: string | null;
+  model: string | null;
+  mcpServers: McpServerConfig[];
+  isDefault: boolean;
+}
+
 export interface AppSettings {
   providers: LlmProviderConfig[];
-  mcpServers: McpServerConfig[];
-  systemPrompt: string;
+  modes: Mode[];
+  lastUsedModeId: string | null;
   theme: 'light' | 'dark' | 'system';
   lastUsedModel: LastUsedModelPreference | null;
 }

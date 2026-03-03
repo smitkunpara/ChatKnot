@@ -222,13 +222,16 @@ describe('storage migrations foundation helpers', () => {
     const parsed = JSON.parse(hydrated) as {
       state: {
         providers: Array<{ apiKey: string }>;
-        mcpServers: Array<{ token?: string; headers?: Record<string, string> }>;
+        modes: Array<{
+          mcpServers: Array<{ token?: string; headers?: Record<string, string> }>;
+        }>;
       };
     };
 
     expect(parsed.state.providers[0].apiKey).toBe('provider-secret');
-    expect(parsed.state.mcpServers[0].token).toBe('server-token');
-    expect(parsed.state.mcpServers[0].headers).toEqual({
+    // After legacy-to-modes migration, mcpServers live inside the default mode
+    expect(parsed.state.modes[0].mcpServers[0].token).toBe('server-token');
+    expect(parsed.state.modes[0].mcpServers[0].headers).toEqual({
       Authorization: 'Bearer hydrated',
     });
   });
