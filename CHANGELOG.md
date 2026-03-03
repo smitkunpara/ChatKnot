@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Chat UI Rebuild** — Completely restructured the message composer to use a permanent "Stacked" layout (text on top, action buttons on bottom). This fixed structural focus losses and provides a stable foundation for future feature expansion.
+- **Screen-Level Fade Gradients** — Replaced expensive Blur/MaskedView components with high-performance `LinearGradient` overlays. Messages now gracefully fade into the background color at both the header and footer edges.
+- **Flicker-Free Composer** — Implemented height-based hysteresis and debouncing in the text area to prevent the "flicker loop" and associated app crashes when typing near line-wrapping boundaries.
+- **Keyboard Snap-to-Initial** — Optimized Android `KeyboardAvoidingView` transitions to ensure the floating input box snaps perfectly back to its initial position when the keyboard is dismissed.
 - **Themed Startup Warning Modal** — Converted health check warnings from banner to themed modal popup with OK button dismiss, matching the app's export/share modal styling. Supports both dark and light themes with proper color tokens.
-- Chat requests now send two explicit system messages:
-  - First: user prompt (global or conversation override)
-  - Second: application defaults (markdown/tool guidance)
+- Chat requests now send two explicit system messages (user prompt + application defaults).
 - MCP/OpenAPI runtime instruction text is now appended only when at least one MCP server is connected.
 
 ### Fixed

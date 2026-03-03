@@ -1,12 +1,11 @@
 # 🚀 [Unreleased] Hardening & Stability
 
-- **🎨 Themed Warning Modal**: Startup health check warnings now display in a beautiful themed modal popup (matching the export/share modal) with full dark/light mode support and an OK button to dismiss.
-- **🛡️ Silent Killer Fixes**: Eliminated critical memory leaks in SSE streams and fixed a `sanitize-html` crash that affected Android/iOS exports.
-- **💾 Optimized Storage**: Large image base64 strings are no longer persisted to disk, significantly reducing storage bloat and improving app responsiveness during streaming.
-- **🔄 Smart Loop Detection**: Replaced the rigid 8-turn tool limit with a dynamic 30-turn safety cap and a 3-strike rule to detect and stop infinite tool-calling loops.
-- **🌍 ES Compatibility**: Rewrote modern JavaScript features (like `replaceAll` and `Set` iteration) to ensure the app runs flawlessly on older devices and engines.
-- **🔐 Robust Failsafe**: Declining plaintext storage consent no longer crashes the app; instead, it falls back to a volatile in-memory session.
-- **📱 Safe Area Modal Padding**: Replaced hardcoded values with dynamic safe area insets for perfect layout across all modern mobile displays.
+- **🎨 Modern Floating Chat UI**: Rebuilt the message composer with a "Stacked" layout and permanent vertical positioning. This ensures the keyboard never covers the input area and prevents structural layout flickering.
+- **✨ Smooth Fade Gradients**: Replaced the previous blur components with lightweight, high-performance gradients. Messages now smoothly fade into the background as they scroll toward the header and footer, creating a premium "infinite" look.
+- **⌨️ Keyboard Snap-Back Fix**: Optimized the keyboard avoidance logic so the floating input box snaps perfectly back to its original position upon closing the keyboard on Android.
+- **🛡️ Flicker & Crash Guard**: Added smart hysteresis and debouncing to the input field, preventing the app from crashing when text hits the exact line-wrapping boundary.
+- **🎨 Themed Warning Modal**: Startup health check warnings now display in a beautiful themed modal popup (matching the export/share modal) with full dark/light mode support.
+- **🛡️ SSE & Memory Hardening**: Eliminated critical memory leaks in SSE streams and fixed image persistence issues to keep the app fast and stable during long sessions.
 
 ---
 
