@@ -127,6 +127,8 @@ export interface McpServerConfig {
 export interface ModeServerOverride {
   enabled: boolean;
   autoAllow: boolean;
+  allowedTools?: string[];
+  autoApprovedTools?: string[];
 }
 
 export interface Mode {

@@ -1183,6 +1183,34 @@ export const SettingsScreen = () => {
                 const override = overrides[server.id];
                 const isEnabled = override ? override.enabled : server.enabled;
                 const isAutoAllow = override ? override.autoAllow : server.autoAllow;
+                const allowedTools = override?.allowedTools ?? server.allowedTools ?? [];
+                const autoApprovedTools = override?.autoApprovedTools ?? server.autoApprovedTools ?? [];
+
+                const runtime = mcpRuntimeById[server.id];
+                const runtimeToolNames = Array.from(
+                  new Set([
+                    ...(runtime?.toolNames || []),
+                    ...((server.tools || []).map((t: any) => t.name)),
+                  ])
+                );
+
+                const updateOverride = (patch: Partial<import('../types').ModeServerOverride>) => {
+                  if (!editingModeId) return;
+                  updateMode(editingModeId, {
+                    mcpServerOverrides: {
+                      ...overrides,
+                      [server.id]: {
+                        enabled: isEnabled,
+                        autoAllow: isAutoAllow,
+                        allowedTools,
+                        autoApprovedTools,
+                        ...override,
+                        ...patch,
+                      },
+                    },
+                  });
+                };
+
                 return (
                   <View key={server.id} style={styles.sectionCard}>
                     <View style={styles.row}>
@@ -1195,36 +1223,64 @@ export const SettingsScreen = () => {
                       <Text style={styles.overrideLabel}>Enabled</Text>
                       <Switch
                         value={isEnabled}
-                        onValueChange={enabled => {
-                          if (!editingModeId) return;
-                          updateMode(editingModeId, {
-                            mcpServerOverrides: {
-                              ...overrides,
-                              [server.id]: { enabled, autoAllow: isAutoAllow },
-                            },
-                          });
-                        }}
+                        onValueChange={enabled => updateOverride({ enabled })}
                         trackColor={{ false: colors.border, true: colors.primarySoft }}
                         thumbColor={isEnabled ? colors.primary : colors.textTertiary}
                       />
                     </View>
                     <View style={[styles.row, { marginTop: 4 }]}>
-                      <Text style={styles.overrideLabel}>Auto-approve tools</Text>
+                      <Text style={styles.overrideLabel}>Auto-approve all tools</Text>
                       <Switch
                         value={isAutoAllow}
-                        onValueChange={autoAllow => {
-                          if (!editingModeId) return;
-                          updateMode(editingModeId, {
-                            mcpServerOverrides: {
-                              ...overrides,
-                              [server.id]: { enabled: isEnabled, autoAllow },
-                            },
-                          });
-                        }}
+                        onValueChange={autoAllow => updateOverride({ autoAllow })}
                         trackColor={{ false: colors.border, true: colors.primarySoft }}
                         thumbColor={isAutoAllow ? colors.primary : colors.textTertiary}
                       />
                     </View>
+
+                    {runtimeToolNames.length > 0 ? (
+                      <View style={styles.toolPermissionWrap}>
+                        <Text style={styles.permissionTitle}>Tool Controls</Text>
+                        <Text style={styles.permissionHint}>Enable and auto-approve tools individually per mode.</Text>
+                        {runtimeToolNames.map(toolName => {
+                          const isToolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
+                          const isToolAutoApproved = autoApprovedTools.includes(toolName);
+                          return (
+                            <View key={`mode-${server.id}-tool-${toolName}`} style={styles.toolPermissionRow}>
+                              <Text style={styles.toolPermissionName} numberOfLines={1}>{toolName}</Text>
+                              <View style={styles.toolPermissionActions}>
+                                <TouchableOpacity
+                                  style={[styles.checkboxPill, isToolEnabled ? styles.checkboxPillActive : undefined]}
+                                  onPress={() => {
+                                    const current = allowedTools.length === 0 ? [...runtimeToolNames] : [...allowedTools];
+                                    const next = isToolEnabled
+                                      ? current.filter(t => t !== toolName)
+                                      : [...current, toolName];
+                                    const allEnabled = runtimeToolNames.every(t => next.includes(t));
+                                    updateOverride({ allowedTools: allEnabled ? [] : next });
+                                  }}
+                                >
+                                  <Check size={12} color={isToolEnabled ? colors.onPrimary : colors.textTertiary} />
+                                  <Text style={[styles.checkboxPillText, isToolEnabled ? styles.checkboxPillTextActive : undefined]}>Enabled</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[styles.checkboxPill, isToolAutoApproved ? styles.checkboxPillActive : undefined]}
+                                  onPress={() => {
+                                    const next = isToolAutoApproved
+                                      ? autoApprovedTools.filter(t => t !== toolName)
+                                      : [...autoApprovedTools, toolName];
+                                    updateOverride({ autoApprovedTools: next });
+                                  }}
+                                >
+                                  <Check size={12} color={isToolAutoApproved ? colors.onPrimary : colors.textTertiary} />
+                                  <Text style={[styles.checkboxPillText, isToolAutoApproved ? styles.checkboxPillTextActive : undefined]}>Auto</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ) : null}
                   </View>
                 );
               })
@@ -1298,10 +1354,6 @@ export const SettingsScreen = () => {
                     ...server,
                     name: serverDraft.name,
                     url: serverDraft.url,
-                    enabled: serverDraft.enabled,
-                    autoAllow: serverDraft.autoAllow,
-                    allowedTools: serverDraft.allowedTools,
-                    autoApprovedTools: serverDraft.autoApprovedTools,
                     headers: (serverDraft.headers || []).reduce((acc, header) => {
                       const key = (header.key || '').trim();
                       if (!key) return acc;
@@ -1312,7 +1364,7 @@ export const SettingsScreen = () => {
                   : server;
 
               const runtime = mcpRuntimeById[server.id];
-              const status = runtime?.status || (effectiveServer.enabled ? 'connecting' : 'disabled');
+              const status = runtime?.status || (server.enabled ? 'connecting' : 'disabled');
               const statusLabel =
                 status === 'connected'
                   ? `${runtime?.protocol === 'openapi' ? 'OpenAPI' : 'MCP'} • ${runtime?.toolsCount || 0} tools`
@@ -1321,12 +1373,6 @@ export const SettingsScreen = () => {
                     : status === 'disabled'
                       ? 'Disabled'
                       : 'Connecting...';
-              const runtimeToolNames = Array.from(
-                new Set([
-                  ...(runtime?.toolNames || []),
-                  ...((effectiveServer.tools || []).map((t: any) => t.name)),
-                ])
-              );
 
               return (
                 <View key={server.id} style={styles.sectionCard}>
@@ -1346,20 +1392,6 @@ export const SettingsScreen = () => {
                       <Text style={styles.serverSub} numberOfLines={1}>{effectiveServer.url}</Text>
                     </View>
                     <View style={styles.rowRight}>
-                      <Switch
-                        value={effectiveServer.enabled}
-                        onValueChange={enabled => {
-                          if (isEditing) {
-                            clearServerValidationError(server.id);
-                            setServerDrafts(prev => updateServerDraft(prev, server.id, { enabled }));
-                            return;
-                          }
-                          clearServerValidationError(server.id);
-                          updateMcpServer({ ...server, enabled });
-                        }}
-                        trackColor={{ false: colors.border, true: colors.primarySoft }}
-                        thumbColor={effectiveServer.enabled ? colors.primary : colors.textTertiary}
-                      />
                       {isEditing ? (
                         <>
                           <TouchableOpacity
@@ -1416,45 +1448,6 @@ export const SettingsScreen = () => {
                         placeholder="Server URL"
                         placeholderTextColor={colors.placeholder}
                       />
-
-                      {runtimeToolNames.length > 0 ? (
-                        <View style={styles.toolPermissionWrap}>
-                          <Text style={styles.permissionTitle}>Tool Controls</Text>
-                          <Text style={styles.permissionHint}>Enable and auto-approve tools individually.</Text>
-                          {runtimeToolNames.map(toolName => {
-                            const allowedTools = serverDraft?.allowedTools || [];
-                            const isToolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
-                            const isAutoApproved = (serverDraft?.autoApprovedTools || []).includes(toolName);
-                            return (
-                              <View key={`${server.id}-tool-perm-${toolName}`} style={styles.toolPermissionRow}>
-                                <Text style={styles.toolPermissionName} numberOfLines={1}>{toolName}</Text>
-                                <View style={styles.toolPermissionActions}>
-                                  <TouchableOpacity
-                                    style={[styles.checkboxPill, isToolEnabled ? styles.checkboxPillActive : undefined]}
-                                    onPress={() => {
-                                      clearServerValidationError(server.id);
-                                      toggleServerDraftAllowedTool(server.id, toolName, runtimeToolNames);
-                                    }}
-                                  >
-                                    <Check size={12} color={isToolEnabled ? colors.onPrimary : colors.textTertiary} />
-                                    <Text style={[styles.checkboxPillText, isToolEnabled ? styles.checkboxPillTextActive : undefined]}>Enabled</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    style={[styles.checkboxPill, isAutoApproved ? styles.checkboxPillActive : undefined]}
-                                    onPress={() => {
-                                      clearServerValidationError(server.id);
-                                      toggleServerDraftAutoApprovedTool(server.id, toolName, runtimeToolNames);
-                                    }}
-                                  >
-                                    <Check size={12} color={isAutoApproved ? colors.onPrimary : colors.textTertiary} />
-                                    <Text style={[styles.checkboxPillText, isAutoApproved ? styles.checkboxPillTextActive : undefined]}>Auto</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      ) : null}
 
                       {(serverDraft?.headers || []).map((header, headerIndex) => (
                         <View key={`${server.id}-${header.id || headerIndex}`} style={styles.headerRow}>

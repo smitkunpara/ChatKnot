@@ -177,6 +177,24 @@ describe('useSettingsStore mode CRUD', () => {
     expect(store.getState().modes[0].mcpServerOverrides['s2'].enabled).toBe(true);
   });
 
+  it('updateMode with tool-level overrides in mcpServerOverrides', async () => {
+    const { store } = await loadStore();
+    store.getState().addMode(createMode({
+      id: 'mode-1',
+      mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
+    }));
+
+    store.getState().updateMode('mode-1', {
+      mcpServerOverrides: {
+        s1: { enabled: true, autoAllow: false, allowedTools: ['tool1', 'tool2'], autoApprovedTools: ['tool1'] },
+      },
+    });
+
+    const overrides = store.getState().modes[0].mcpServerOverrides['s1'];
+    expect(overrides.allowedTools).toEqual(['tool1', 'tool2']);
+    expect(overrides.autoApprovedTools).toEqual(['tool1']);
+  });
+
   it('updateMode with providerId and model overrides', async () => {
     const { store } = await loadStore();
     store.getState().addMode(createMode({ id: 'mode-1', providerId: null, model: null }));
