@@ -10,6 +10,7 @@ import {
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -380,6 +381,7 @@ export const ChatScreen = () => {
   };
 
   const handleSend = async (text: string) => {
+    Keyboard.dismiss();
     let conversationId = activeConversationId;
 
     if (!conversationId) {
