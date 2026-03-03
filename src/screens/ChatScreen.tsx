@@ -96,6 +96,8 @@ export const ChatScreen = () => {
   const [includeToolInput, setIncludeToolInput] = useState(false);
   const [includeToolOutput, setIncludeToolOutput] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
+  const userScrolledAwayRef = useRef(false);
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
     approvalResolversRef.current.forEach((resolve) => {
@@ -164,15 +166,20 @@ export const ChatScreen = () => {
     return null;
   }, [activeConversation?.messages]);
 
+  const messageCount = activeConversation?.messages.length ?? 0;
   useEffect(() => {
-    if (activeConversation?.messages.length) {
+    // Only auto-scroll if the user hasn't manually scrolled away.
+    if (messageCount && !userScrolledAwayRef.current) {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [activeConversation?.messages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageCount]);
 
   useEffect(() => {
     setEditingMessageId(null);
     setEditingContent(undefined);
+    // Reset scroll lock whenever the conversation changes.
+    userScrolledAwayRef.current = false;
   }, [activeConversationId]);
 
   useEffect(() => {
@@ -276,6 +283,7 @@ export const ChatScreen = () => {
         setChatError(null);
         stopRequestedRef.current = false;
         editMessage(activeConversationId, candidate.id, candidate.content);
+        userScrolledAwayRef.current = false;
         setLoading(true);
         void runChatLoop(activeConversationId);
         return;
@@ -435,6 +443,7 @@ export const ChatScreen = () => {
       });
     }
 
+    userScrolledAwayRef.current = false;
     setLoading(true);
     await runChatLoop(conversationId);
   };
@@ -840,6 +849,25 @@ export const ChatScreen = () => {
                 keyExtractor={item => item.id}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                scrollEventThrottle={16}
+                onScroll={(event) => {
+                  const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+                  // Total height of scrollable content minus the viewport height
+                  const contentHeight = contentSize.height;
+                  const viewportHeight = layoutMeasurement.height;
+                  const scrollY = contentOffset.y;
+
+                  const distanceFromBottom = contentHeight - viewportHeight - scrollY;
+
+                  // A buffer of 120px allows fast incoming chunks to bump the size
+                  // momentarily without tricking the logic into thinking the user scrolled away.
+                  if (distanceFromBottom <= 50) {
+                    userScrolledAwayRef.current = false;
+                  } else if (distanceFromBottom > 50) {
+                    // Start pausing auto-scroll when they are more than a chunk's height away
+                    userScrolledAwayRef.current = true;
+                  }
+                }}
                 renderItem={({ item }) => (
                   <MessageBubble
                     message={item}
@@ -859,8 +887,8 @@ export const ChatScreen = () => {
                 ListFooterComponent={<View style={{ height: 150 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
-                  if (isLoading) {
-                    flatListRef.current?.scrollToEnd({ animated: true });
+                  if (isLoading && !userScrolledAwayRef.current) {
+                    flatListRef.current?.scrollToEnd({ animated: false });
                   }
                 }}
               />
