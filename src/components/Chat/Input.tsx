@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ActionSheetIOS,
   Alert,
@@ -14,13 +14,25 @@ import {
   Modal,
 } from 'react-native';
 import uuid from 'react-native-uuid';
-import { FileText, ImageIcon, Paperclip, Send, StopCircle, X } from 'lucide-react-native';
+import { FileText, ImageIcon, Plus, Send, StopCircle, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
+
+// Slimmer, strictly calculated UI properties (The Formula)
+const BUTTON_SIZE = 30;
+const BUTTON_MARGIN = 3;
+const CONTAINER_PADDING = 3;
+const BUTTON_BR = 5; // Boxy rounded corner for buttons
+const CONTAINER_BR = BUTTON_BR + BUTTON_MARGIN + CONTAINER_PADDING; // 11
+
+const LINE_HEIGHT = 20;
+const STACKED_UP_THRESHOLD = 34;   // Go stacked when height exceeds this
+const STACKED_DOWN_THRESHOLD = 26; // Go inline when height drops below this (hysteresis gap)
+const MAX_INPUT_HEIGHT = 106;      // Roughly 5 lines, then scrolls
 
 interface InputProps {
   onSend: (text: string) => void;
@@ -35,8 +47,6 @@ interface InputProps {
   onRemoveAttachment: (id: string) => void;
   visionSupported?: boolean;
 }
-
-
 
 export const Input: React.FC<InputProps> = ({
   onSend,
@@ -54,10 +64,15 @@ export const Input: React.FC<InputProps> = ({
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.bottom), [colors, insets.bottom]);
+
   const [text, setText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [isStacked, setIsStacked] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const wasEditingRef = useRef(false);
+  const lastHeightRef = useRef(0);
+  // Debounce timer to prevent rapid stacked/inline toggling (crash fix)
+  const stackedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -71,10 +86,17 @@ export const Input: React.FC<InputProps> = ({
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
       setText('');
+      setIsStacked(false);
     }
-
     wasEditingRef.current = !!isEditing;
   }, [isEditing]);
+
+  // Cleanup debounce timer
+  useEffect(() => {
+    return () => {
+      if (stackedTimerRef.current) clearTimeout(stackedTimerRef.current);
+    };
+  }, []);
 
   const canSend = (!!text.trim() || attachments.length > 0) && !isLoading;
 
@@ -83,6 +105,12 @@ export const Input: React.FC<InputProps> = ({
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(text.trim());
     setText('');
+    lastHeightRef.current = 0;
+    setIsStacked(false);
+    if (stackedTimerRef.current) {
+      clearTimeout(stackedTimerRef.current);
+      stackedTimerRef.current = null;
+    }
   };
 
   const pickImage = async () => {
@@ -92,24 +120,16 @@ export const Input: React.FC<InputProps> = ({
         Alert.alert('Permission needed', 'Please grant access to your photo library to attach images.');
         return;
       }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.8,
         base64: true,
         allowsMultipleSelection: false,
       });
-
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-          Alert.alert('File too large', 'Please select an image smaller than 10MB.');
-          return;
-        }
-
         const mimeType = asset.mimeType || 'image/jpeg';
         const name = asset.fileName || `image_${Date.now()}.jpg`;
-
         onAddAttachment({
           id: `att_${uuid.v4()}`,
           type: 'image',
@@ -128,32 +148,11 @@ export const Input: React.FC<InputProps> = ({
   const pickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'text/*',
-          'application/json',
-          'application/xml',
-          'application/javascript',
-          'application/x-yaml',
-          'application/x-python-code',
-          'application/x-sh',
-          'application/sql',
-          'application/xhtml+xml',
-          'application/x-httpd-php',
-          'application/x-ruby',
-          'application/x-perl',
-          'application/toml',
-        ],
+        type: ['application/pdf', 'text/*', 'application/json'],
         copyToCacheDirectory: true,
       });
-
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        if (asset.size && asset.size > 10 * 1024 * 1024) {
-          Alert.alert('File too large', 'Please select a file smaller than 10MB.');
-          return;
-        }
-
         onAddAttachment({
           id: `att_${uuid.v4()}`,
           type: 'file',
@@ -173,99 +172,147 @@ export const Input: React.FC<InputProps> = ({
     setShowAttachmentMenu(true);
   };
 
-  return (
-    <View style={styles.wrap}>
-      {isEditing ? (
-        <View style={styles.editingBadge}>
-          <Text style={styles.editingText}>Editing message</Text>
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={() => {
-              setText('');
-              onCancelEdit?.();
-            }}
-          >
-            <X size={15} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-      ) : null}
+  const onContentSizeChange = useCallback((event: any) => {
+    const height = event.nativeEvent.contentSize.height;
+    const prevHeight = lastHeightRef.current;
+    lastHeightRef.current = height;
 
-      {attachments.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.attachmentList}
-          contentContainerStyle={styles.attachmentListContent}
-        >
-          {attachments.map((att) => (
-            <View key={att.id} style={styles.attachmentChip}>
-              {att.type === 'image' ? (
-                <Image source={{ uri: att.uri }} style={styles.attachmentThumb} />
-              ) : (
-                <View style={styles.fileIconWrap}>
-                  <FileText size={16} color={colors.primary} />
-                </View>
-              )}
-              <Text style={styles.attachmentName} numberOfLines={1}>
-                {att.name}
-              </Text>
-              <TouchableOpacity
-                style={styles.attachmentRemove}
-                onPress={() => onRemoveAttachment(att.id)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <X size={12} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
+    // Hysteresis: use different thresholds for going UP vs DOWN
+    // This prevents flickering at the exact boundary where text fits one line
+    if (!isStacked && height > STACKED_UP_THRESHOLD) {
+      // Clear any pending "go inline" timer
+      if (stackedTimerRef.current) {
+        clearTimeout(stackedTimerRef.current);
+        stackedTimerRef.current = null;
+      }
+      setIsStacked(true);
+    } else if (isStacked && height <= STACKED_DOWN_THRESHOLD) {
+      // Debounce the transition back to inline to prevent rapid toggling
+      if (!stackedTimerRef.current) {
+        stackedTimerRef.current = setTimeout(() => {
+          stackedTimerRef.current = null;
+          setIsStacked(false);
+        }, 80);
+      }
+    } else if (isStacked && height > STACKED_DOWN_THRESHOLD) {
+      // Cancel any pending "go inline" if height went back up
+      if (stackedTimerRef.current) {
+        clearTimeout(stackedTimerRef.current);
+        stackedTimerRef.current = null;
+      }
+    }
+  }, [isStacked]);
+
+  // Plus button
+  const plusBtn = (
+    <TouchableOpacity style={styles.actionButton} onPress={showAttachmentOptions} disabled={isLoading}>
+      <Plus size={20} color={isLoading ? colors.placeholder : colors.textSecondary} />
+    </TouchableOpacity>
+  );
+
+  // Send button
+  const sendBtn = (
+    <TouchableOpacity
+      style={[
+        styles.actionButton,
+        styles.sendButton,
+        { opacity: canSend ? 1 : 0.3 }
+      ]}
+      onPress={isLoading ? onStop : handleSend}
+      disabled={!canSend && !isLoading}
+    >
+      {isLoading ? (
+        <StopCircle color={colors.danger} size={18} />
+      ) : (
+        <Send color={colors.onPrimary} size={15} style={{ marginLeft: 1 }} />
       )}
+    </TouchableOpacity>
+  );
 
-      <View style={styles.container}>
-        <TouchableOpacity
-          style={styles.attachButton}
-          onPress={showAttachmentOptions}
-          disabled={isLoading}
-          accessibilityLabel="Attach file or image"
-          accessibilityRole="button"
-        >
-          <Paperclip
-            size={20}
-            color={isLoading ? colors.placeholder : colors.textSecondary}
-          />
-        </TouchableOpacity>
+  return (
+    <View style={styles.outerWrap}>
+      <View style={styles.innerWrap}>
+        {isEditing && (
+          <View style={styles.editingBadge}>
+            <Text style={styles.editingText}>Editing message</Text>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                setText('');
+                onCancelEdit?.();
+              }}
+            >
+              <X size={15} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        )}
 
-        <TextInput
-          ref={inputRef}
-          style={[styles.input, isEditing ? styles.editingInput : undefined]}
-          placeholder={isEditing ? 'Edit message...' : 'Type a message...'}
-          placeholderTextColor={colors.placeholder}
-          value={text}
-          onChangeText={setText}
-          multiline
-          textAlignVertical="top"
-          onFocus={onFocus}
-          accessibilityLabel={isEditing ? 'Edit message input' : 'Message input'}
-          accessibilityRole="none"
-        />
+        {attachments.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.attachmentList}
+            contentContainerStyle={styles.attachmentListContent}
+          >
+            {attachments.map((att) => (
+              <View key={att.id} style={styles.attachmentChip}>
+                {att.type === 'image' ? (
+                  <Image source={{ uri: att.uri }} style={styles.attachmentThumb} />
+                ) : (
+                  <View style={styles.fileIconWrap}>
+                    <FileText size={16} color={colors.primary} />
+                  </View>
+                )}
+                <Text style={styles.attachmentName} numberOfLines={1}>{att.name}</Text>
+                <TouchableOpacity onPress={() => onRemoveAttachment(att.id)} style={styles.attachmentRemove}>
+                  <X size={12} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        )}
 
-        <TouchableOpacity
-          style={[
-            styles.button,
-            isLoading ? styles.stopButton : isEditing ? styles.editButton : styles.sendButton,
-            !canSend && !isLoading ? styles.disabledButton : undefined,
-          ]}
-          onPress={isLoading ? onStop : handleSend}
-          disabled={!canSend && !isLoading}
-          accessibilityLabel={isLoading ? 'Stop generating' : 'Send message'}
-          accessibilityRole="button"
-        >
-          {isLoading ? (
-            <StopCircle color={colors.onDanger} size={19} />
+        {/* The Boxy Input Container - solid background, no blur */}
+        <View style={styles.inputContainer}>
+          {isStacked ? (
+            <>
+              <TextInput
+                ref={inputRef}
+                style={[styles.input, styles.inputStacked, isEditing && styles.editingInput]}
+                placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
+                placeholderTextColor={colors.placeholder}
+                value={text}
+                onChangeText={setText}
+                multiline
+                onFocus={onFocus}
+                onContentSizeChange={onContentSizeChange}
+                textAlignVertical="top"
+              />
+              <View style={styles.bottomRow}>
+                {plusBtn}
+                <View style={{ flex: 1 }} />
+                {sendBtn}
+              </View>
+            </>
           ) : (
-            <Send color={colors.onPrimary} size={18} />
+            <View style={styles.inlineRow}>
+              {plusBtn}
+              <TextInput
+                ref={inputRef}
+                style={[styles.input, styles.inputInline, isEditing && styles.editingInput]}
+                placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
+                placeholderTextColor={colors.placeholder}
+                value={text}
+                onChangeText={setText}
+                multiline
+                onFocus={onFocus}
+                onContentSizeChange={onContentSizeChange}
+                textAlignVertical="center"
+              />
+              {sendBtn}
+            </View>
           )}
-        </TouchableOpacity>
+        </View>
       </View>
 
       <Modal
@@ -274,50 +321,26 @@ export const Input: React.FC<InputProps> = ({
         animationType="fade"
         onRequestClose={() => setShowAttachmentMenu(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAttachmentMenu(false)}
-        >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAttachmentMenu(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Attach Media</Text>
-
             <TouchableOpacity
               style={[styles.modalOption, !visionSupported && styles.modalOptionDisabled]}
               disabled={!visionSupported}
-              onPress={() => {
-                setShowAttachmentMenu(false);
-                void pickImage();
-              }}
+              onPress={() => { setShowAttachmentMenu(false); void pickImage(); }}
             >
               <View style={styles.modalIconWrap}>
                 <ImageIcon size={20} color={visionSupported ? colors.primary : colors.textTertiary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.modalOptionText, !visionSupported && styles.modalOptionTextDisabled]}>Image</Text>
-                {!visionSupported && (
-                  <Text style={styles.modalOptionSubText}>Not supported by current model</Text>
-                )}
+                <Text style={styles.modalOptionText}>Image</Text>
               </View>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.modalOption}
-              onPress={() => {
-                setShowAttachmentMenu(false);
-                void pickFile();
-              }}
-            >
-              <View style={styles.modalIconWrap}>
-                <FileText size={20} color={colors.primary} />
-              </View>
+            <TouchableOpacity style={styles.modalOption} onPress={() => { setShowAttachmentMenu(false); void pickFile(); }}>
+              <View style={styles.modalIconWrap}><FileText size={20} color={colors.primary} /></View>
               <Text style={styles.modalOptionText}>Document or File</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.modalCancel}
-              onPress={() => setShowAttachmentMenu(false)}
-            >
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAttachmentMenu(false)}>
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -329,197 +352,91 @@ export const Input: React.FC<InputProps> = ({
 
 const createStyles = (colors: any, insetBottom: number) =>
   StyleSheet.create({
-    wrap: {
-      paddingHorizontal: 10,
+    outerWrap: {
+      backgroundColor: 'transparent',
+    },
+    innerWrap: {
+      paddingHorizontal: 12,
       paddingTop: 8,
-      paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-      backgroundColor: colors.header,
+      paddingBottom: Platform.OS === 'ios' ? Math.max(insetBottom, 12) : 10,
     },
     editingBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 8,
-      backgroundColor: colors.primarySoft,
-      borderWidth: 1,
-      borderColor: colors.primary,
-      borderRadius: 10,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      marginBottom: 8, backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: colors.primary,
+      borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
     },
-    editingText: {
-      color: colors.text,
-      fontSize: 12,
-      fontWeight: '600',
-    },
-    cancelBtn: {
-      width: 26,
-      height: 26,
-      borderRadius: 7,
-      backgroundColor: colors.surfaceAlt,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    attachmentList: {
-      marginBottom: 8,
-      maxHeight: 64,
-    },
-    attachmentListContent: {
-      gap: 8,
-    },
+    editingText: { color: colors.text, fontSize: 12, fontWeight: '600' },
+    cancelBtn: { width: 24, height: 24, borderRadius: 6, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+    attachmentList: { marginBottom: 8, maxHeight: 64 },
+    attachmentListContent: { gap: 8 },
     attachmentChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt,
+      borderRadius: 10, paddingRight: 8, paddingVertical: 4, paddingLeft: 4,
+      borderWidth: 1, borderColor: colors.subtleBorder, maxWidth: 180,
+    },
+    attachmentThumb: { width: 36, height: 36, borderRadius: 6 },
+    fileIconWrap: { width: 36, height: 36, borderRadius: 6, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+    attachmentName: { color: colors.text, fontSize: 11, fontWeight: '500', marginLeft: 6, maxWidth: 100 },
+    attachmentRemove: { marginLeft: 4, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+
+    /* Boxy Input Structure */
+    inputContainer: {
       backgroundColor: colors.surfaceAlt,
-      borderRadius: 10,
-      paddingRight: 8,
-      paddingVertical: 4,
-      paddingLeft: 4,
       borderWidth: 1,
       borderColor: colors.subtleBorder,
-      maxWidth: 180,
+      borderRadius: CONTAINER_BR, // 11
+      padding: CONTAINER_PADDING, // 3
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+      overflow: 'hidden',
     },
-    attachmentThumb: {
-      width: 36,
-      height: 36,
-      borderRadius: 6,
-    },
-    fileIconWrap: {
-      width: 36,
-      height: 36,
-      borderRadius: 6,
-      backgroundColor: colors.primarySoft,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    attachmentName: {
-      color: colors.text,
-      fontSize: 11,
-      fontWeight: '500',
-      marginLeft: 6,
-      maxWidth: 100,
-    },
-    attachmentRemove: {
-      marginLeft: 4,
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      backgroundColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    container: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-    },
-    attachButton: {
-      width: 38,
-      height: 42,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 4,
-    },
-    input: {
-      flex: 1,
-      minHeight: 42,
-      maxHeight: 130,
-      backgroundColor: colors.inputBackground,
-      borderRadius: 22,
-      paddingHorizontal: 14,
-      paddingTop: 10,
-      paddingBottom: 10,
-      color: colors.text,
-      fontSize: 15,
-      marginRight: 8,
-      borderWidth: 1,
-      borderColor: colors.inputBorder,
-    },
-    editingInput: {
-      borderColor: colors.primary,
-    },
-    button: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
+
+    inlineRow: { flexDirection: 'row', alignItems: 'center' },
+    bottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: -2 },
+
+    actionButton: {
+      width: BUTTON_SIZE, // 30
+      height: BUTTON_SIZE, // 30
+      borderRadius: BUTTON_BR, // 5
+      margin: BUTTON_MARGIN, // 3
       justifyContent: 'center',
       alignItems: 'center',
     },
     sendButton: {
       backgroundColor: colors.primary,
     },
-    editButton: {
-      backgroundColor: colors.primary,
-    },
-    stopButton: {
-      backgroundColor: colors.danger,
-    },
-    disabledButton: {
-      opacity: 0.45,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'flex-end',
-    },
-    modalContent: {
-      backgroundColor: colors.surface,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      padding: 20,
-      paddingBottom: Math.max(insetBottom, 20),
-    },
-    modalTitle: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      fontWeight: '600',
-      textTransform: 'uppercase',
-      marginBottom: 16,
-      marginLeft: 4,
-    },
-    modalOption: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: 14,
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      backgroundColor: colors.surfaceAlt,
-      marginBottom: 8,
-    },
-    modalOptionDisabled: {
-      opacity: 0.5,
-    },
-    modalIconWrap: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.background,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
-    },
-    modalOptionText: {
+
+    input: {
       color: colors.text,
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: 15,
+      lineHeight: LINE_HEIGHT, // 20 
+      paddingTop: 5,
+      paddingBottom: 5,
+      maxHeight: MAX_INPUT_HEIGHT,
     },
-    modalOptionTextDisabled: {
-      color: colors.textTertiary,
+    inputInline: {
+      flex: 1,
+      paddingHorizontal: 4,
+      flexShrink: 1,
     },
-    modalOptionSubText: {
-      color: colors.danger,
-      fontSize: 11,
-      marginTop: 2,
+    inputStacked: {
+      width: '100%',
+      paddingHorizontal: 6,
+      marginBottom: 0,
+      flexShrink: 1,
     },
-    modalCancel: {
-      marginTop: 10,
-      paddingVertical: 14,
-      alignItems: 'center',
-    },
-    modalCancelText: {
-      color: colors.primary,
-      fontSize: 16,
-      fontWeight: '600',
-    },
+    editingInput: {},
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: Math.max(insetBottom, 20) },
+    modalTitle: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', marginBottom: 16, marginLeft: 4 },
+    modalOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12, backgroundColor: colors.surfaceAlt, marginBottom: 8 },
+    modalOptionDisabled: { opacity: 0.5 },
+    modalIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    modalOptionText: { color: colors.text, fontSize: 16, fontWeight: '600' },
+    modalCancel: { marginTop: 10, paddingVertical: 14, alignItems: 'center' },
+    modalCancelText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
   });

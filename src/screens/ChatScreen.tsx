@@ -11,11 +11,12 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
 import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { ProviderFactory } from '../services/llm/ProviderFactory';
@@ -61,7 +62,8 @@ export const ChatScreen = () => {
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
   const { colors } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
 
   const activeConversationId = useChatStore(state => state.activeConversationId);
   const conversations = useChatStore(state => state.conversations);
@@ -803,8 +805,96 @@ export const ChatScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
+    <View style={styles.container}>
+      {/* Main content area with keyboard handling */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+        style={[styles.content, { justifyContent: 'flex-end' }]}
+      >
+        <View style={StyleSheet.absoluteFill}>
+          {!activeConversation ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Start a new chat</Text>
+              <Text style={styles.emptyText}>Select a model above and type your message below.</Text>
+            </View>
+          ) : (
+            <>
+              {bannerMessage ? (
+                <View style={styles.errorBanner}>
+                  <AlertTriangle size={16} color={colors.danger} />
+                  <Text style={styles.errorText} numberOfLines={2}>
+                    {bannerMessage}
+                  </Text>
+                </View>
+              ) : null}
+
+              <FlatList
+                ref={flatListRef}
+                data={activeConversation.messages}
+                keyExtractor={item => item.id}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                renderItem={({ item }) => (
+                  <MessageBubble
+                    message={item}
+                    onEdit={handleEdit}
+                    isStreaming={isLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
+                    pendingToolApprovalIds={pendingToolApprovalIds}
+                    onToolApprovalDecision={(toolCallId, approved) => {
+                      resolveToolApproval(toolCallId, approved);
+                    }}
+                    onRetryAssistant={
+                      item.role === 'assistant' && item.id === lastAssistantMessageId
+                        ? handleRetryAssistant
+                        : undefined
+                    }
+                  />
+                )}
+                contentContainerStyle={styles.listContent}
+              />
+            </>
+          )}
+        </View>
+
+        {/* BOTTOM FADE: Screen-level gradient using background color to fade the list perfectly behind the input */}
+        <LinearGradient
+          colors={['transparent', colors.background]}
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 160, zIndex: 0 }}
+          pointerEvents="none"
+        />
+
+        <View style={{ zIndex: 1 }}>
+          <Input
+            onSend={handleSend}
+            isLoading={isLoading}
+            onStop={handleStop}
+            initialValue={editingContent}
+            isEditing={!!editingMessageId}
+            onCancelEdit={() => {
+              setEditingMessageId(null);
+              setEditingContent(undefined);
+            }}
+            onFocus={handleInputFocus}
+            attachments={attachments}
+            onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
+            onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
+            visionSupported={currentModelVisionSupported}
+          />
+        </View>
+      </KeyboardAvoidingView>
+
+      {/* TOP FADE: Screen-level gradient using background color, from solid at top to transparent.
+          This covers the status bar area AND fades below the header buttons. */}
+      <LinearGradient
+        colors={[colors.background, colors.background, 'transparent']}
+        locations={[0, 0.55, 1]}
+        style={styles.topFade}
+        pointerEvents="none"
+      />
+
+      {/* Header buttons floating on top of the fade */}
+      <View style={styles.headerContainer} pointerEvents="box-none">
         <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton} accessibilityLabel="Open navigation menu" accessibilityRole="button">
           <Menu size={20} color={colors.text} />
         </TouchableOpacity>
@@ -836,73 +926,6 @@ export const ChatScreen = () => {
           <Share2 size={18} color={chatHasMessages ? colors.text : colors.placeholder} />
         </TouchableOpacity>
       </View>
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
-        style={styles.content}
-      >
-        {!activeConversation ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Start a new chat</Text>
-            <Text style={styles.emptyText}>Select a model above and type your message below.</Text>
-          </View>
-        ) : (
-          <>
-            {bannerMessage ? (
-              <View style={styles.errorBanner}>
-                <AlertTriangle size={16} color={colors.danger} />
-                <Text style={styles.errorText} numberOfLines={2}>
-                  {bannerMessage}
-                </Text>
-              </View>
-            ) : null}
-
-            <FlatList
-              ref={flatListRef}
-              data={activeConversation.messages}
-              keyExtractor={item => item.id}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              renderItem={({ item }) => (
-                <MessageBubble
-                  message={item}
-                  onEdit={handleEdit}
-                  isStreaming={isLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
-                  pendingToolApprovalIds={pendingToolApprovalIds}
-                  onToolApprovalDecision={(toolCallId, approved) => {
-                    resolveToolApproval(toolCallId, approved);
-                  }}
-                  onRetryAssistant={
-                    item.role === 'assistant' && item.id === lastAssistantMessageId
-                      ? handleRetryAssistant
-                      : undefined
-                  }
-                />
-              )}
-              contentContainerStyle={styles.listContent}
-            />
-
-          </>
-        )}
-
-        <Input
-          onSend={handleSend}
-          isLoading={isLoading}
-          onStop={handleStop}
-          initialValue={editingContent}
-          isEditing={!!editingMessageId}
-          onCancelEdit={() => {
-            setEditingMessageId(null);
-            setEditingContent(undefined);
-          }}
-          onFocus={handleInputFocus}
-          attachments={attachments}
-          onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
-          onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
-          visionSupported={currentModelVisionSupported}
-        />
-      </KeyboardAvoidingView>
 
       <Modal
         visible={exportModalVisible}
@@ -1048,24 +1071,33 @@ export const ChatScreen = () => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: any, insetsTop: number) =>
   StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: colors.background,
     },
-    header: {
+    topFade: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: insetsTop + 56 + 30, // status bar + header + fade zone
+      zIndex: 99,
+    },
+    headerContainer: {
+      position: 'absolute',
+      top: insetsTop,
+      left: 0,
+      right: 0,
+      height: 56,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.header,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
       paddingHorizontal: 10,
-      height: 56,
       zIndex: 100,
     },
     menuButton: {
@@ -1088,8 +1120,8 @@ const createStyles = (colors: any) =>
       flex: 1,
     },
     listContent: {
-      paddingVertical: 12,
-      paddingBottom: 24,
+      paddingTop: insetsTop + 56 + 10,
+      paddingBottom: 10,
     },
     emptyState: {
       flex: 1,
