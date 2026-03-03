@@ -1,6 +1,7 @@
 import {
   LlmProviderConfig,
   McpServerConfig,
+  Mode,
   OpenApiValidationError,
   OpenApiValidationResult,
 } from '../types';
@@ -288,4 +289,73 @@ export const clearAllDrafts = <TDraft extends Record<string, unknown>>(drafts: T
   }
 
   return {} as TDraft;
+};
+
+export interface ModeDraft {
+  name: string;
+  systemPrompt: string;
+  providerId: string | null;
+  model: string | null;
+}
+
+export type ModeDraftMap = Record<string, ModeDraft>;
+
+export const beginModeDraft = (
+  drafts: ModeDraftMap,
+  mode: Mode
+): ModeDraftMap => {
+  return {
+    ...drafts,
+    [mode.id]: {
+      name: mode.name,
+      systemPrompt: mode.systemPrompt,
+      providerId: mode.providerId,
+      model: mode.model,
+    },
+  };
+};
+
+export const updateModeDraft = (
+  drafts: ModeDraftMap,
+  modeId: string,
+  patch: Partial<ModeDraft>
+): ModeDraftMap => {
+  const currentDraft = drafts[modeId];
+  if (!currentDraft) {
+    return drafts;
+  }
+
+  return {
+    ...drafts,
+    [modeId]: {
+      ...currentDraft,
+      ...patch,
+    },
+  };
+};
+
+export const discardModeDraft = (drafts: ModeDraftMap, modeId: string): ModeDraftMap => {
+  const nextDrafts = { ...drafts };
+  delete nextDrafts[modeId];
+  return nextDrafts;
+};
+
+export const saveModeDraft = (
+  drafts: ModeDraftMap,
+  mode: Mode,
+  commit: (id: string, partial: Partial<Omit<Mode, 'id'>>) => void
+): ModeDraftMap => {
+  const draft = drafts[mode.id];
+  if (!draft) {
+    return drafts;
+  }
+
+  commit(mode.id, {
+    name: draft.name,
+    systemPrompt: draft.systemPrompt,
+    providerId: draft.providerId,
+    model: draft.model,
+  });
+
+  return discardModeDraft(drafts, mode.id);
 };

@@ -8,8 +8,12 @@ import {
   saveServerDraft,
   updateProviderDraft,
   updateServerDraft,
+  beginModeDraft,
+  updateModeDraft,
+  discardModeDraft,
+  saveModeDraft,
 } from '../settingsDraftState.ts';
-import { LlmProviderConfig, McpServerConfig } from '../../types';
+import { LlmProviderConfig, McpServerConfig, Mode } from '../../types';
 
 const createProvider = (): LlmProviderConfig => ({
   id: 'provider-1',
@@ -165,5 +169,85 @@ describe('settingsDraftState', () => {
       headers: { Authorization: 'Bearer persisted-token' },
     });
     expect(nextDrafts[server.id]).toBeUndefined();
+  });
+});
+
+const createMode = (overrides: Partial<Mode> = {}): Mode => ({
+  id: 'mode-1',
+  name: 'Default',
+  systemPrompt: 'You are helpful.',
+  providerId: 'provider-1',
+  model: 'gpt-4o-mini',
+  mcpServers: [],
+  isDefault: true,
+  ...overrides,
+});
+
+describe('settingsDraftState — ModeDraft', () => {
+  it('begins mode draft without mutating original', () => {
+    const mode = createMode();
+    const drafts = beginModeDraft({}, mode);
+
+    expect(drafts[mode.id]).toEqual({
+      name: 'Default',
+      systemPrompt: 'You are helpful.',
+      providerId: 'provider-1',
+      model: 'gpt-4o-mini',
+    });
+    expect(mode.name).toBe('Default');
+  });
+
+  it('updates mode draft fields', () => {
+    const mode = createMode();
+    let drafts = beginModeDraft({}, mode);
+    drafts = updateModeDraft(drafts, mode.id, { name: 'Renamed', model: 'gpt-4.1-mini' });
+
+    expect(drafts[mode.id]?.name).toBe('Renamed');
+    expect(drafts[mode.id]?.model).toBe('gpt-4.1-mini');
+    expect(drafts[mode.id]?.systemPrompt).toBe('You are helpful.');
+  });
+
+  it('returns same drafts when updating non-existent mode', () => {
+    const drafts = updateModeDraft({}, 'nonexistent', { name: 'X' });
+    expect(drafts).toEqual({});
+  });
+
+  it('discards mode draft', () => {
+    const mode = createMode();
+    let drafts = beginModeDraft({}, mode);
+    drafts = discardModeDraft(drafts, mode.id);
+    expect(drafts[mode.id]).toBeUndefined();
+  });
+
+  it('saves mode draft with commit and discards', () => {
+    const mode = createMode();
+    const commit = jest.fn();
+
+    let drafts = beginModeDraft({}, mode);
+    drafts = updateModeDraft(drafts, mode.id, {
+      name: 'Coding',
+      systemPrompt: 'Write code.',
+      providerId: 'provider-2',
+      model: 'claude-4',
+    });
+
+    const nextDrafts = saveModeDraft(drafts, mode, commit);
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith(mode.id, {
+      name: 'Coding',
+      systemPrompt: 'Write code.',
+      providerId: 'provider-2',
+      model: 'claude-4',
+    });
+    expect(nextDrafts[mode.id]).toBeUndefined();
+  });
+
+  it('returns drafts unchanged when saving non-existent mode draft', () => {
+    const mode = createMode();
+    const commit = jest.fn();
+    const result = saveModeDraft({}, mode, commit);
+    expect(commit).not.toHaveBeenCalled();
+    expect(result).toEqual({});
   });
 });

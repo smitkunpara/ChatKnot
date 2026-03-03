@@ -281,6 +281,10 @@ class McpManagerService {
   getRuntimeState(serverId: string): McpServerRuntimeState | undefined {
     return this.runtimeStates.get(serverId);
   }
+
+  async reinitialize(configs: McpServerConfig[]) {
+    await this.initialize(configs);
+  }
 }
 
 export const McpManager = new McpManagerService();
