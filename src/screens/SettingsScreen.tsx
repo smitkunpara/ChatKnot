@@ -1523,8 +1523,7 @@ export const SettingsScreen = () => {
           </>
         ) : null}
 
-        <View style={{ height: 96 }} />
-      </KeyboardAwareContainer>
+        {activeView === 'providers' ? (
           <>
             <Text style={styles.sectionHeader}>AI Providers</Text>
             <View style={styles.sectionCard}>
