@@ -30,8 +30,6 @@ const BUTTON_BR = 5; // Boxy rounded corner for buttons
 const CONTAINER_BR = BUTTON_BR + BUTTON_MARGIN + CONTAINER_PADDING; // 11
 
 const LINE_HEIGHT = 20;
-const STACKED_UP_THRESHOLD = 34;   // Go stacked when height exceeds this
-const STACKED_DOWN_THRESHOLD = 26; // Go inline when height drops below this (hysteresis gap)
 const MAX_INPUT_HEIGHT = 106;      // Roughly 5 lines, then scrolls
 
 interface InputProps {
@@ -67,12 +65,8 @@ export const Input: React.FC<InputProps> = ({
 
   const [text, setText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
-  const [isStacked, setIsStacked] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const wasEditingRef = useRef(false);
-  const lastHeightRef = useRef(0);
-  // Debounce timer to prevent rapid stacked/inline toggling (crash fix)
-  const stackedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -86,17 +80,9 @@ export const Input: React.FC<InputProps> = ({
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
       setText('');
-      setIsStacked(false);
     }
     wasEditingRef.current = !!isEditing;
   }, [isEditing]);
-
-  // Cleanup debounce timer
-  useEffect(() => {
-    return () => {
-      if (stackedTimerRef.current) clearTimeout(stackedTimerRef.current);
-    };
-  }, []);
 
   const canSend = (!!text.trim() || attachments.length > 0) && !isLoading;
 
@@ -105,12 +91,6 @@ export const Input: React.FC<InputProps> = ({
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(text.trim());
     setText('');
-    lastHeightRef.current = 0;
-    setIsStacked(false);
-    if (stackedTimerRef.current) {
-      clearTimeout(stackedTimerRef.current);
-      stackedTimerRef.current = null;
-    }
   };
 
   const pickImage = async () => {
@@ -172,36 +152,7 @@ export const Input: React.FC<InputProps> = ({
     setShowAttachmentMenu(true);
   };
 
-  const onContentSizeChange = useCallback((event: any) => {
-    const height = event.nativeEvent.contentSize.height;
-    const prevHeight = lastHeightRef.current;
-    lastHeightRef.current = height;
-
-    // Hysteresis: use different thresholds for going UP vs DOWN
-    // This prevents flickering at the exact boundary where text fits one line
-    if (!isStacked && height > STACKED_UP_THRESHOLD) {
-      // Clear any pending "go inline" timer
-      if (stackedTimerRef.current) {
-        clearTimeout(stackedTimerRef.current);
-        stackedTimerRef.current = null;
-      }
-      setIsStacked(true);
-    } else if (isStacked && height <= STACKED_DOWN_THRESHOLD) {
-      // Debounce the transition back to inline to prevent rapid toggling
-      if (!stackedTimerRef.current) {
-        stackedTimerRef.current = setTimeout(() => {
-          stackedTimerRef.current = null;
-          setIsStacked(false);
-        }, 80);
-      }
-    } else if (isStacked && height > STACKED_DOWN_THRESHOLD) {
-      // Cancel any pending "go inline" if height went back up
-      if (stackedTimerRef.current) {
-        clearTimeout(stackedTimerRef.current);
-        stackedTimerRef.current = null;
-      }
-    }
-  }, [isStacked]);
+  const onContentSizeChange = useCallback(() => { }, []);
 
   // Plus button
   const plusBtn = (
@@ -272,46 +223,25 @@ export const Input: React.FC<InputProps> = ({
           </ScrollView>
         )}
 
-        {/* The Boxy Input Container - solid background, no blur */}
+        {/* The Boxy Input Container - solid background, no blur. Permanent Stacked Layout. */}
         <View style={styles.inputContainer}>
-          {isStacked ? (
-            <>
-              <TextInput
-                ref={inputRef}
-                style={[styles.input, styles.inputStacked, isEditing && styles.editingInput]}
-                placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
-                placeholderTextColor={colors.placeholder}
-                value={text}
-                onChangeText={setText}
-                multiline
-                onFocus={onFocus}
-                onContentSizeChange={onContentSizeChange}
-                textAlignVertical="top"
-              />
-              <View style={styles.bottomRow}>
-                {plusBtn}
-                <View style={{ flex: 1 }} />
-                {sendBtn}
-              </View>
-            </>
-          ) : (
-            <View style={styles.inlineRow}>
-              {plusBtn}
-              <TextInput
-                ref={inputRef}
-                style={[styles.input, styles.inputInline, isEditing && styles.editingInput]}
-                placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
-                placeholderTextColor={colors.placeholder}
-                value={text}
-                onChangeText={setText}
-                multiline
-                onFocus={onFocus}
-                onContentSizeChange={onContentSizeChange}
-                textAlignVertical="center"
-              />
-              {sendBtn}
-            </View>
-          )}
+          <TextInput
+            ref={inputRef}
+            style={[styles.input, styles.inputStacked, isEditing && styles.editingInput]}
+            placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
+            placeholderTextColor={colors.placeholder}
+            value={text}
+            onChangeText={setText}
+            multiline
+            onFocus={onFocus}
+            onContentSizeChange={onContentSizeChange}
+            textAlignVertical="top"
+          />
+          <View style={styles.bottomRow}>
+            {plusBtn}
+            <View style={{ flex: 1 }} />
+            {sendBtn}
+          </View>
         </View>
       </View>
 
@@ -386,11 +316,6 @@ const createStyles = (colors: any, insetBottom: number) =>
       borderColor: colors.subtleBorder,
       borderRadius: CONTAINER_BR, // 11
       padding: CONTAINER_PADDING, // 3
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.15,
-      shadowRadius: 6,
-      elevation: 4,
       overflow: 'hidden',
     },
 

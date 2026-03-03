@@ -808,7 +808,7 @@ export const ChatScreen = () => {
     <View style={styles.container}>
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
       >
@@ -888,7 +888,7 @@ export const ChatScreen = () => {
           This covers the status bar area AND fades below the header buttons. */}
       <LinearGradient
         colors={[colors.background, colors.background, 'transparent']}
-        locations={[0, 0.55, 1]}
+        locations={[0, 0.2, 1]}
         style={styles.topFade}
         pointerEvents="none"
       />
@@ -1121,7 +1121,7 @@ const createStyles = (colors: any, insetsTop: number) =>
     },
     listContent: {
       paddingTop: insetsTop + 56 + 10,
-      paddingBottom: 10,
+      paddingBottom: 80, // Accounts for bottom float input height
     },
     emptyState: {
       flex: 1,
