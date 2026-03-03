@@ -1,5 +1,6 @@
 # 🚀 [Unreleased] Hardening & Stability
 
+- **🎨 Themed Warning Modal**: Startup health check warnings now display in a beautiful themed modal popup (matching the export/share modal) with full dark/light mode support and an OK button to dismiss.
 - **🛡️ Silent Killer Fixes**: Eliminated critical memory leaks in SSE streams and fixed a `sanitize-html` crash that affected Android/iOS exports.
 - **💾 Optimized Storage**: Large image base64 strings are no longer persisted to disk, significantly reducing storage bloat and improving app responsiveness during streaming.
 - **🔄 Smart Loop Detection**: Replaced the rigid 8-turn tool limit with a dynamic 30-turn safety cap and a 3-strike rule to detect and stop infinite tool-calling loops.

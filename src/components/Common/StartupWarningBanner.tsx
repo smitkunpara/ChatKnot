@@ -1,98 +1,147 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
-  FlatList,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  ScrollView,
 } from 'react-native';
 import { AlertTriangle, X } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/useAppTheme';
 
 interface Props {
   warnings: string[];
+  visible: boolean;
   onDismiss: () => void;
-  autoDismissMs?: number;
 }
 
-export const StartupWarningBanner: React.FC<Props> = ({
+export const StartupWarningModal: React.FC<Props> = ({
   warnings,
+  visible,
   onDismiss,
-  autoDismissMs = 10000,
 }) => {
   const { colors } = useAppTheme();
-  const [visible, setVisible] = useState(warnings.length > 0);
-
-  useEffect(() => {
-    if (warnings.length === 0) return;
-    const timer = setTimeout(() => {
-      setVisible(false);
-      onDismiss();
-    }, autoDismissMs);
-    return () => clearTimeout(timer);
-  }, [warnings, autoDismissMs]);
 
   if (!visible || warnings.length === 0) return null;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.warningBackground, borderColor: colors.warning }]}>
-      <View style={styles.header}>
-        <AlertTriangle size={16} color={colors.warning} />
-        <Text style={[styles.title, { color: colors.warning }]}>
-          Startup Checks
-        </Text>
-        <TouchableOpacity onPress={() => { setVisible(false); onDismiss(); }} hitSlop={12}>
-          <X size={16} color={colors.warning} />
-        </TouchableOpacity>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onDismiss}
+    >
+      <View style={styles.overlay}>
+        <View style={[styles.content, { backgroundColor: colors.surface }]}>
+          <View style={styles.header}>
+            <View style={styles.titleRow}>
+              <AlertTriangle size={20} color={colors.warning} />
+              <Text style={[styles.title, { color: colors.text }]}>
+                Startup Checks
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onDismiss} style={styles.closeBtn}>
+              <X size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView 
+            style={styles.messageContainer}
+            showsVerticalScrollIndicator={warnings.length > 4}
+          >
+            {warnings.map((warning, index) => (
+              <View key={index} style={styles.warningRow}>
+                <Text style={[styles.bullet, { color: colors.warning }]}>•</Text>
+                <Text style={[styles.warningText, { color: colors.textSecondary }]}>
+                  {warning}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <TouchableOpacity 
+              style={[styles.okButton, { backgroundColor: colors.primary }]} 
+              onPress={onDismiss}
+            >
+              <Text style={[styles.okButtonText, { color: colors.onPrimary }]}>
+                OK
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
-      <FlatList
-        data={warnings}
-        keyExtractor={(_, i) => String(i)}
-        scrollEnabled={warnings.length > 3}
-        style={warnings.length > 3 ? { maxHeight: 80 } : undefined}
-        renderItem={({ item }) => (
-          <Text style={[styles.warningText, { color: colors.warning }]}>
-            • {item}
-          </Text>
-        )}
-      />
-    </View>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: '20%',
-    left: 20,
-    right: 20,
-    zIndex: 9999,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 6,
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    width: '85%',
+    maxWidth: 360,
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: '70%',
   },
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    marginBottom: 16,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   title: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  messageContainer: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  warningRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    gap: 8,
+  },
+  bullet: {
     fontSize: 14,
     fontWeight: '700',
-    flex: 1,
+    lineHeight: 20,
   },
   warningText: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginLeft: 4,
-    marginBottom: 2,
-    fontWeight: '500',
+    fontSize: 14,
+    lineHeight: 20,
+    flex: 1,
+  },
+  actions: {
+    alignItems: 'center',
+  },
+  okButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 10,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  okButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
+
+// Backwards compatibility - alias export
+export const StartupWarningBanner = StartupWarningModal;

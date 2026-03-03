@@ -42,9 +42,11 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           <Drawer.Screen name="Chat" component={ChatScreen} />
           <Drawer.Screen name="Settings" component={SettingsScreen} />
         </Drawer.Navigator>
-        {startupWarnings.length > 0 && (
-          <StartupWarningBanner warnings={startupWarnings} onDismiss={onDismissWarnings} />
-        )}
+        <StartupWarningBanner 
+          warnings={startupWarnings} 
+          visible={startupWarnings.length > 0}
+          onDismiss={onDismissWarnings} 
+        />
       </View>
     </NavigationContainer>
   );

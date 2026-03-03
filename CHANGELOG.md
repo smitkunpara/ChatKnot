@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Themed Startup Warning Modal** — Converted health check warnings from banner to themed modal popup with OK button dismiss, matching the app's export/share modal styling. Supports both dark and light themes with proper color tokens.
 - Chat requests now send two explicit system messages:
   - First: user prompt (global or conversation override)
   - Second: application defaults (markdown/tool guidance)
