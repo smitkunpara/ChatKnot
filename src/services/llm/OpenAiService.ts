@@ -201,7 +201,8 @@ export class OpenAiService {
   }
 
   private static hasAnyToken(tokens: Set<string>, matches: string[]): boolean {
-    for (const token of tokens) {
+    const tokenArray = Array.from(tokens);
+    for (const token of tokenArray) {
       for (const match of matches) {
         if (token === match || token.includes(match)) {
           return true;
@@ -253,7 +254,9 @@ export class OpenAiService {
       ['model_capabilities', 'features'],
     ]);
 
-    const toolTokens = new Set<string>([...parameterTokens, ...featureTokens]);
+    const toolTokens = new Set<string>();
+    Array.from(parameterTokens).forEach(t => toolTokens.add(t));
+    Array.from(featureTokens).forEach(t => toolTokens.add(t));
 
     const explicitVision = OpenAiService.getBooleanAtPaths(model, [
       ['supports_vision'],

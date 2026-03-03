@@ -90,7 +90,8 @@ const generateKey = (): string => {
   getRandomValues(bytes);
 
   let key = '';
-  for (const byte of bytes) {
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
     key += byte.toString(16).padStart(2, '0');
   }
 

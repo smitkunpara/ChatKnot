@@ -233,8 +233,9 @@ export class McpClient {
 
     // Replace path parameters
     Object.entries(args).forEach(([key, val]) => {
-      if (url.includes(`{${key}}`)) {
-        url = url.replaceAll(`{${key}}`, encodeURIComponent(String(val)));
+      const placeholder = `{${key}}`;
+      if (url.indexOf(placeholder) !== -1) {
+        url = url.split(placeholder).join(encodeURIComponent(String(val)));
       }
     });
 

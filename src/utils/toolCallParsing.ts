@@ -193,7 +193,8 @@ export const extractLegacyJsonToolCalls = (
   const parsedCalls: Array<{ id: string; name: string; arguments: string }> = [];
   const seen = new Set<string>();
 
-  for (const candidate of candidates) {
+  const candidateArray = Array.from(candidates);
+  for (const candidate of candidateArray) {
     if (!candidate || !candidate.trim()) continue;
     try {
       const parsed = tryParseJsonWithRepair(candidate);

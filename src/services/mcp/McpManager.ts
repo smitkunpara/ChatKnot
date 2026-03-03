@@ -134,7 +134,8 @@ class McpManagerService {
   async initialize(configs: McpServerConfig[]) {
     // Clear existing (or handle updates more gracefully)
     // For MVP, we'll disconnect all and reconnect
-    for (const client of this.clients.values()) {
+    const clients = Array.from(this.clients.values());
+    for (const client of clients) {
       client.disconnect();
     }
     this.clients.clear();
@@ -162,12 +163,12 @@ class McpManagerService {
 
     for (const config of configs) {
       if (!config.enabled) continue;
-      
+
       try {
         const client = new McpClient(config);
         await client.connect();
         this.clients.set(config.id, client);
-        
+
         const tools = client.getTools();
         this.connectedToolsByServer.set(config.id, tools);
 
@@ -213,12 +214,13 @@ class McpManagerService {
   }
 
   getOpenApiContexts(): string {
-     let context = '';
-     for (const client of this.clients.values()) {
-        const ctx = client.getOpenApiContext();
-        if (ctx) context += `\n---\n${ctx}\n---\n`;
-     }
-     return context;
+    let context = '';
+    const clients = Array.from(this.clients.values());
+    for (const client of clients) {
+      const ctx = client.getOpenApiContext();
+      if (ctx) context += `\n---\n${ctx}\n---\n`;
+    }
+    return context;
   }
 
   async executeTool(name: string, args: any): Promise<any> {

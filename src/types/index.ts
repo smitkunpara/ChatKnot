@@ -53,7 +53,7 @@ export interface LastUsedModelPreference {
 export interface LlmProviderConfig {
   id: string;
   name: string;
-  type: 'custom-openai';
+  type: 'openai' | 'custom-openai' | 'openrouter';
   baseUrl: string;
   apiKey: string;
   apiKeyRef?: string;

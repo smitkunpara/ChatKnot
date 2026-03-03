@@ -22,7 +22,7 @@ export const getErrorMessage = (error: any): string => {
 
 function formatApiError(raw: string): string {
   // Match pattern: "API Error: <status> - <json or text>"
-  const apiMatch = raw.match(/^API Error:\s*(\d+)\s*-\s*(.*)$/s);
+  const apiMatch = raw.match(/^API Error:\s*(\d+)\s*-\s*([\s\S]*)$/);
   if (apiMatch) {
     const status = parseInt(apiMatch[1], 10);
     const body = apiMatch[2].trim();
