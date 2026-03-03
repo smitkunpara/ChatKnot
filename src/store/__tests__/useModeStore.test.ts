@@ -6,7 +6,7 @@ const createMode = (overrides: Partial<import('../../types').Mode> = {}): import
   systemPrompt: overrides.systemPrompt ?? 'You are a test assistant.',
   providerId: overrides.providerId ?? null,
   model: overrides.model ?? null,
-  mcpServers: overrides.mcpServers ?? [],
+  mcpServerOverrides: overrides.mcpServerOverrides ?? {},
   isDefault: overrides.isDefault ?? false,
 });
 
@@ -162,19 +162,19 @@ describe('useSettingsStore mode CRUD', () => {
     expect(store.getState().lastUsedModeId).toBeNull();
   });
 
-  it('updateMode with mcpServers replaces the mode servers', async () => {
+  it('updateMode with mcpServerOverrides replaces the mode overrides', async () => {
     const { store } = await loadStore();
     store.getState().addMode(createMode({
       id: 'mode-1',
-      mcpServers: [createMcpServer('s1')],
+      mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
     }));
 
     store.getState().updateMode('mode-1', {
-      mcpServers: [createMcpServer('s2'), createMcpServer('s3')],
+      mcpServerOverrides: { s2: { enabled: true, autoAllow: true }, s3: { enabled: false, autoAllow: false } },
     });
 
-    expect(store.getState().modes[0].mcpServers).toHaveLength(2);
-    expect(store.getState().modes[0].mcpServers[0].id).toBe('s2');
+    expect(Object.keys(store.getState().modes[0].mcpServerOverrides)).toHaveLength(2);
+    expect(store.getState().modes[0].mcpServerOverrides['s2'].enabled).toBe(true);
   });
 
   it('updateMode with providerId and model overrides', async () => {

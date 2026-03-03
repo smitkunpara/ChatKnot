@@ -200,5 +200,25 @@ describe('validateImportPayload', () => {
             };
             expect(validateImportPayload(payload)).toBeNull();
         });
+
+        it('returns null for mode with valid mcpServerOverrides', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1', name: 'Test', systemPrompt: 'Hi',
+                    mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
+                }],
+            };
+            expect(validateImportPayload(payload)).toBeNull();
+        });
+
+        it('returns error for mode with invalid mcpServerOverrides (array)', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1', name: 'Test', systemPrompt: 'Hi',
+                    mcpServerOverrides: [{ enabled: true }],
+                }],
+            };
+            expect(validateImportPayload(payload)).toMatch(/invalid "mcpServerOverrides"/);
+        });
     });
 });

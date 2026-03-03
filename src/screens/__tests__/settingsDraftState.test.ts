@@ -178,7 +178,7 @@ const createMode = (overrides: Partial<Mode> = {}): Mode => ({
   systemPrompt: 'You are helpful.',
   providerId: 'provider-1',
   model: 'gpt-4o-mini',
-  mcpServers: [],
+  mcpServerOverrides: {},
   isDefault: true,
   ...overrides,
 });

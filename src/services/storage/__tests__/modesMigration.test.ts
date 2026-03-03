@@ -36,7 +36,7 @@ const createVault = (): MemoryVault => {
 const toPersistedState = (state: unknown): string => JSON.stringify({ state, version: 0 });
 
 describe('migrateLegacySettingsToModes', () => {
-  it('creates a default mode from legacy systemPrompt and mcpServers', () => {
+  it('creates a default mode from legacy systemPrompt with mcpServerOverrides', () => {
     const legacyState = {
       providers: [],
       systemPrompt: 'Act as a code reviewer.',
@@ -54,17 +54,18 @@ describe('migrateLegacySettingsToModes', () => {
     expect(defaultMode.name).toBe('Default');
     expect(defaultMode.isDefault).toBe(true);
     expect(defaultMode.systemPrompt).toBe('Act as a code reviewer.');
-    expect(defaultMode.mcpServers).toHaveLength(1);
-    expect(defaultMode.mcpServers[0].id).toBe('s1');
+    // New architecture: mode has overrides, global mcpServers preserved
+    expect(defaultMode.mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
+    expect(defaultMode.mcpServers).toBeUndefined();
     expect(defaultMode.providerId).toBeNull();
     expect(defaultMode.model).toBeNull();
     expect(typeof defaultMode.id).toBe('string');
     expect(defaultMode.id.length).toBeGreaterThan(0);
 
     expect(result.lastUsedModeId).toBe(defaultMode.id);
-    // Legacy fields removed
+    // Legacy systemPrompt removed, mcpServers kept at global level
     expect(result.systemPrompt).toBeUndefined();
-    expect(result.mcpServers).toBeUndefined();
+    expect(result.mcpServers).toHaveLength(1);
     // Other fields preserved
     expect(result.theme).toBe('dark');
     expect(result.providers).toEqual([]);
@@ -99,7 +100,7 @@ describe('migrateLegacySettingsToModes', () => {
     expect(defaultMode.systemPrompt).toBe('You are a helpful assistant.');
   });
 
-  it('creates default mode with empty mcpServers when none exist', () => {
+  it('creates default mode with empty mcpServerOverrides when no servers exist', () => {
     const legacyState = {
       providers: [],
       systemPrompt: 'Hello',
@@ -110,26 +111,46 @@ describe('migrateLegacySettingsToModes', () => {
     const result = migrateLegacySettingsToModes(legacyState);
     const defaultMode = (result.modes as any[])[0];
 
-    expect(defaultMode.mcpServers).toEqual([]);
+    expect(defaultMode.mcpServerOverrides).toEqual({});
   });
 
-  it('does NOT migrate if modes already exist', () => {
+  it('migrates modes with mcpServers arrays to mcpServerOverrides', () => {
     const stateWithModes = {
       providers: [],
       modes: [
-        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServers: [], isDefault: true },
+        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServers: [{ id: 's1', name: 'S1', url: 'https://s1.test', enabled: true, autoAllow: false }], isDefault: true },
       ],
       lastUsedModeId: 'mode-existing',
       theme: 'system',
     };
 
     const result = migrateLegacySettingsToModes(stateWithModes);
+    const mode = (result.modes as any[])[0];
 
-    expect(result.modes).toEqual(stateWithModes.modes);
-    expect(result).toBe(stateWithModes); // Same object reference — no mutation
+    // Mode should now have overrides instead of mcpServers
+    expect(mode.mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
+    expect(mode.mcpServers).toBeUndefined();
+    // Servers lifted to global
+    expect((result.mcpServers as any[]).length).toBe(1);
   });
 
-  it('preserves mcpServer vault refs during migration', () => {
+  it('does NOT re-migrate if modes already have mcpServerOverrides', () => {
+    const stateWithOverrides = {
+      providers: [],
+      modes: [
+        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServerOverrides: {}, isDefault: true },
+      ],
+      lastUsedModeId: 'mode-existing',
+      theme: 'system',
+    };
+
+    const result = migrateLegacySettingsToModes(stateWithOverrides);
+
+    expect(result.modes).toEqual(stateWithOverrides.modes);
+    expect(result).toBe(stateWithOverrides); // Same object reference — no mutation
+  });
+
+  it('preserves mcpServer vault refs at global level during migration', () => {
     const legacyState = {
       providers: [],
       systemPrompt: 'Test',
@@ -150,8 +171,8 @@ describe('migrateLegacySettingsToModes', () => {
     };
 
     const result = migrateLegacySettingsToModes(legacyState);
-    const defaultMode = (result.modes as any[])[0];
-    const server = defaultMode.mcpServers[0];
+    // Servers stay at global level now
+    const server = (result.mcpServers as any[])[0];
 
     expect(server.tokenRef).toBe('vault://mcp-server/s1/token');
     expect(server.headerRefs.Authorization).toBe('vault://mcp-server/s1/header/Authorization');
@@ -177,18 +198,18 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
     expect(parsed.state.modes).toHaveLength(1);
     expect(parsed.state.modes[0].name).toBe('Default');
     expect(parsed.state.modes[0].systemPrompt).toBe('Custom prompt');
-    expect(parsed.state.modes[0].mcpServers).toHaveLength(1);
+    expect(parsed.state.modes[0].mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
     expect(parsed.state.lastUsedModeId).toBe(parsed.state.modes[0].id);
-    // Legacy fields removed
+    // Legacy systemPrompt removed, mcpServers kept at global level
     expect(parsed.state.systemPrompt).toBeUndefined();
-    expect(parsed.state.mcpServers).toBeUndefined();
+    expect(parsed.state.mcpServers).toHaveLength(1);
   });
 
-  it('does not re-migrate if modes already present', async () => {
+  it('does not re-migrate if modes already have mcpServerOverrides', async () => {
     const modeState = toPersistedState({
       providers: [],
       modes: [
-        { id: 'mode-1', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServers: [], isDefault: true },
+        { id: 'mode-1', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServerOverrides: {}, isDefault: true },
       ],
       lastUsedModeId: 'mode-1',
       theme: 'system',
@@ -203,10 +224,11 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
     expect(parsed.state.modes[0].name).toBe('Existing');
   });
 
-  it('hydrates vault secrets within mode mcpServers', async () => {
+  it('hydrates vault secrets in global mcpServers (migrated from modes)', async () => {
     const vault = createVault();
     await vault.setSecret('mcp-server/s1/token', 'hydrated-token');
 
+    // State with modes having old mcpServers arrays — will be migrated
     const modeState = toPersistedState({
       providers: [],
       modes: [
@@ -238,14 +260,18 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
     const result = await hydratePersistedSettingsPayload(modeState, { vault });
     const parsed = JSON.parse(result);
 
-    expect(parsed.state.modes[0].mcpServers[0].token).toBe('hydrated-token');
+    // After migration, servers are at global level and hydrated there
+    expect(parsed.state.mcpServers[0].token).toBe('hydrated-token');
+    // Mode now has overrides, not mcpServers
+    expect(parsed.state.modes[0].mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
   });
 });
 
-describe('migratePersistedSettingsPayloadDetailed with mode mcpServers', () => {
-  it('migrates secrets within mode mcpServers to vault', async () => {
+describe('migratePersistedSettingsPayloadDetailed with global mcpServers', () => {
+  it('migrates secrets within global mcpServers to vault', async () => {
     const vault = createVault();
 
+    // Use global mcpServers (new architecture)
     const modeState = toPersistedState({
       providers: [],
       modes: [
@@ -255,22 +281,23 @@ describe('migratePersistedSettingsPayloadDetailed with mode mcpServers', () => {
           systemPrompt: 'Hi',
           providerId: null,
           model: null,
-          mcpServers: [
-            {
-              id: 's1',
-              name: 'S1',
-              url: 'https://s1.test',
-              token: 'plaintext-token',
-              tokenRef: 'vault://mcp-server/s1/token',
-              headers: { Authorization: 'Bearer xyz' },
-              headerRefs: { Authorization: 'vault://mcp-server/s1/header/Authorization' },
-              enabled: true,
-              tools: [],
-              autoAllow: false,
-              allowedTools: [],
-            },
-          ],
+          mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
           isDefault: true,
+        },
+      ],
+      mcpServers: [
+        {
+          id: 's1',
+          name: 'S1',
+          url: 'https://s1.test',
+          token: 'plaintext-token',
+          tokenRef: 'vault://mcp-server/s1/token',
+          headers: { Authorization: 'Bearer xyz' },
+          headerRefs: { Authorization: 'vault://mcp-server/s1/header/Authorization' },
+          enabled: true,
+          tools: [],
+          autoAllow: false,
+          allowedTools: [],
         },
       ],
       lastUsedModeId: 'mode-1',
@@ -281,8 +308,8 @@ describe('migratePersistedSettingsPayloadDetailed with mode mcpServers', () => {
     const parsed = JSON.parse(result.rawValue);
 
     // Secrets moved to vault, plaintext cleared
-    expect(parsed.state.modes[0].mcpServers[0].token).toBeUndefined();
-    expect(parsed.state.modes[0].mcpServers[0].headers).toEqual({});
+    expect(parsed.state.mcpServers[0].token).toBeUndefined();
+    expect(parsed.state.mcpServers[0].headers).toEqual({});
     expect(vault.setSecret).toHaveBeenCalledWith('mcp-server/s1/token', 'plaintext-token');
     expect(vault.setSecret).toHaveBeenCalledWith('mcp-server/s1/header/Authorization', 'Bearer xyz');
   });

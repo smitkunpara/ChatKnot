@@ -10,7 +10,8 @@ import {
   buildEffectiveSystemPrompt,
 } from '../../utils/chatHelpers.ts';
 import { resolveModelSelection } from '../../services/llm/modelSelection.ts';
-import { Mode, LlmProviderConfig } from '../../types/index.ts';
+import { mergeServersWithOverrides } from '../../utils/mcpMerge.ts';
+import { Mode, LlmProviderConfig, McpServerConfig } from '../../types/index.ts';
 
 // ----- Helpers ----------------------------------------------------------------
 
@@ -20,7 +21,7 @@ const makeMode = (overrides: Partial<Mode> = {}): Mode => ({
   systemPrompt: '',
   providerId: null,
   model: null,
-  mcpServers: [],
+  mcpServerOverrides: {},
   isDefault: true,
   ...overrides,
 });
@@ -144,26 +145,28 @@ describe('mode model resolution in chat context', () => {
   });
 });
 
-// ----- Mode MCP servers derivation --------------------------------------------
+// ----- Mode MCP servers derivation (global + overrides) -----------------------
 
-describe('mode MCP server derivation', () => {
-  it('active mode servers are used for MCP tool count', () => {
+const makeServer = (overrides: Partial<McpServerConfig> = {}): McpServerConfig => ({
+  id: 's1',
+  name: 'Server',
+  url: 'https://mcp.example.com',
+  enabled: true,
+  tools: [{ name: 'tool1', description: 'T1', inputSchema: {} }],
+  autoAllow: false,
+  headers: {},
+  allowedTools: [],
+  autoApprovedTools: [],
+  ...overrides,
+});
+
+describe('mode MCP server derivation via mergeServersWithOverrides', () => {
+  it('merges global servers with mode overrides for tool count', () => {
+    const globalServers = [makeServer({ id: 's1', enabled: true })];
     const mode = makeMode({
-      mcpServers: [
-        {
-          id: 's1',
-          name: 'Server',
-          url: 'https://mcp.example.com',
-          enabled: true,
-          tools: [{ name: 'tool1', description: 'T1', inputSchema: {} }],
-          autoAllow: false,
-          headers: {},
-          allowedTools: [],
-          autoApprovedTools: [],
-        },
-      ],
+      mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
     });
-    const servers = mode.mcpServers;
+    const servers = mergeServersWithOverrides(globalServers, mode.mcpServerOverrides);
     const count = servers.reduce((acc, s) => {
       if (!s.enabled) return acc;
       const allowed = Array.isArray(s.allowedTools) ? s.allowedTools : [];
@@ -173,23 +176,12 @@ describe('mode MCP server derivation', () => {
     expect(count).toBe(1);
   });
 
-  it('disabled servers are excluded from tool count', () => {
+  it('mode override can disable a globally enabled server', () => {
+    const globalServers = [makeServer({ id: 's1', enabled: true })];
     const mode = makeMode({
-      mcpServers: [
-        {
-          id: 's1',
-          name: 'Disabled',
-          url: 'https://mcp.example.com',
-          enabled: false,
-          tools: [{ name: 'tool1', description: 'T1', inputSchema: {} }],
-          autoAllow: false,
-          headers: {},
-          allowedTools: [],
-          autoApprovedTools: [],
-        },
-      ],
+      mcpServerOverrides: { s1: { enabled: false, autoAllow: false } },
     });
-    const servers = mode.mcpServers;
+    const servers = mergeServersWithOverrides(globalServers, mode.mcpServerOverrides);
     const count = servers.reduce((acc, s) => {
       if (!s.enabled) return acc;
       return acc + (s.tools?.length ?? 0);
@@ -197,9 +189,27 @@ describe('mode MCP server derivation', () => {
     expect(count).toBe(0);
   });
 
-  it('returns empty servers array when mode has no MCP servers', () => {
-    const mode = makeMode({ mcpServers: [] });
-    expect(mode.mcpServers).toEqual([]);
+  it('returns empty array when no global servers exist', () => {
+    const mode = makeMode({ mcpServerOverrides: {} });
+    const servers = mergeServersWithOverrides([], mode.mcpServerOverrides);
+    expect(servers).toEqual([]);
+  });
+
+  it('uses global server defaults when no mode override exists', () => {
+    const globalServers = [makeServer({ id: 's1', enabled: true, autoAllow: false })];
+    const mode = makeMode({ mcpServerOverrides: {} });
+    const servers = mergeServersWithOverrides(globalServers, mode.mcpServerOverrides);
+    expect(servers[0].enabled).toBe(true);
+    expect(servers[0].autoAllow).toBe(false);
+  });
+
+  it('mode override can set autoAllow to true', () => {
+    const globalServers = [makeServer({ id: 's1', autoAllow: false })];
+    const mode = makeMode({
+      mcpServerOverrides: { s1: { enabled: true, autoAllow: true } },
+    });
+    const servers = mergeServersWithOverrides(globalServers, mode.mcpServerOverrides);
+    expect(servers[0].autoAllow).toBe(true);
   });
 });
 
@@ -260,24 +270,21 @@ describe('mode switching behavior', () => {
     expect(active?.systemPrompt).toBe('Beta prompt');
   });
 
-  it('switching mode changes derived MCP servers', () => {
+  it('switching mode changes derived MCP servers via merge', () => {
+    const globalServers = [makeServer({
+      id: 's1', name: 'S', url: 'https://mcp.test.com',
+      enabled: true, tools: [], autoAllow: false,
+    })];
     const modes: Mode[] = [
-      makeMode({ id: 'a', mcpServers: [] }),
-      makeMode({
-        id: 'b',
-        mcpServers: [{
-          id: 's1', name: 'S', url: 'https://mcp.test.com',
-          enabled: true, tools: [], autoAllow: false, headers: {},
-          allowedTools: [], autoApprovedTools: [],
-        }],
-      }),
+      makeMode({ id: 'a', mcpServerOverrides: { s1: { enabled: false, autoAllow: false } } }),
+      makeMode({ id: 'b', mcpServerOverrides: { s1: { enabled: true, autoAllow: false } } }),
     ];
 
-    const activeModeA = modes.find(m => m.id === 'a')!;
-    expect(activeModeA.mcpServers.length).toBe(0);
+    const serversA = mergeServersWithOverrides(globalServers, modes[0].mcpServerOverrides);
+    expect(serversA[0].enabled).toBe(false);
 
-    const activeModeB = modes.find(m => m.id === 'b')!;
-    expect(activeModeB.mcpServers.length).toBe(1);
+    const serversB = mergeServersWithOverrides(globalServers, modes[1].mcpServerOverrides);
+    expect(serversB[0].enabled).toBe(true);
   });
 
   it('switching mode changes model resolution override', () => {

@@ -60,6 +60,10 @@ interface SettingsState extends AppSettings {
   setLastUsedModel: (providerId: string, model: string) => void;
   clearLastUsedModel: () => void;
 
+  addMcpServer: (server: McpServerConfig) => void;
+  updateMcpServer: (server: McpServerConfig) => void;
+  removeMcpServer: (id: string) => void;
+
   addMode: (mode: Mode) => void;
   updateMode: (id: string, partial: Partial<Omit<Mode, 'id'>>) => void;
   removeMode: (id: string) => void;
@@ -164,6 +168,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       providers: [],
+      mcpServers: [],
       modes: [],
       lastUsedModeId: null,
       theme: 'system',
@@ -234,13 +239,37 @@ export const useSettingsStore = create<SettingsState>()(
 
       clearLastUsedModel: () => set({ lastUsedModel: null }),
 
+      addMcpServer: (server) =>
+        set((state) => ({
+          mcpServers: [...state.mcpServers, ensureMcpServerSecretRefs(server)],
+        })),
+
+      updateMcpServer: (server) =>
+        set((state) => ({
+          mcpServers: state.mcpServers.map((s) =>
+            s.id === server.id ? ensureMcpServerSecretRefs(server) : s
+          ),
+        })),
+
+      removeMcpServer: (id) =>
+        set((state) => ({
+          mcpServers: state.mcpServers.filter((s) => s.id !== id),
+          // Cascading delete: remove overrides referencing this server from all modes
+          modes: state.modes.map((m) => {
+            if (!m.mcpServerOverrides[id]) return m;
+            const { [id]: _, ...rest } = m.mcpServerOverrides;
+            return { ...m, mcpServerOverrides: rest };
+          }),
+        })),
+
       addMode: (mode) =>
         set((state) => {
           const safeName = mode.name.slice(0, MAX_MODE_NAME_LENGTH);
-          const normalizedServers = Array.isArray(mode.mcpServers)
-            ? mode.mcpServers.map(ensureMcpServerSecretRefs)
-            : [];
-          const newMode: Mode = { ...mode, name: safeName, mcpServers: normalizedServers };
+          const newMode: Mode = {
+            ...mode,
+            name: safeName,
+            mcpServerOverrides: mode.mcpServerOverrides ?? {},
+          };
           const nextModes = [...state.modes, newMode];
           return {
             modes: nextModes,
@@ -255,11 +284,6 @@ export const useSettingsStore = create<SettingsState>()(
             const updated = { ...m, ...partial };
             if (partial.name !== undefined) {
               updated.name = partial.name.slice(0, MAX_MODE_NAME_LENGTH);
-            }
-            if (partial.mcpServers !== undefined) {
-              updated.mcpServers = Array.isArray(partial.mcpServers)
-                ? partial.mcpServers.map(ensureMcpServerSecretRefs)
-                : [];
             }
             return updated;
           }),
@@ -302,10 +326,12 @@ export const useSettingsStore = create<SettingsState>()(
             ? settings.modes.map((m: Mode) => ({
                 ...m,
                 name: m.name.slice(0, MAX_MODE_NAME_LENGTH),
-                mcpServers: Array.isArray(m.mcpServers)
-                  ? m.mcpServers.map(ensureMcpServerSecretRefs)
-                  : [],
+                mcpServerOverrides: m.mcpServerOverrides ?? {},
               }))
+            : [];
+
+          const nextMcpServers = Array.isArray(settings.mcpServers)
+            ? settings.mcpServers.map(ensureMcpServerSecretRefs)
             : [];
 
           const nextLastUsedModeId =
@@ -315,6 +341,7 @@ export const useSettingsStore = create<SettingsState>()(
 
           return {
             providers: nextProviders,
+            mcpServers: nextMcpServers,
             modes: nextModes,
             lastUsedModeId: nextLastUsedModeId,
             theme: nextTheme,

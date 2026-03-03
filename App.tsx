@@ -13,12 +13,14 @@ import {
   applyHealthCheckReport,
   HealthCheckPhase,
 } from './src/services/startup/StartupHealthCheck';
+import { mergeServersWithOverrides } from './src/utils/mcpMerge';
 
 export default function App() {
   const modes = useSettingsStore(state => state.modes);
   const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
+  const globalMcpServers = useSettingsStore(state => state.mcpServers);
   const activeMode = modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
-  const activeMcpServers = activeMode?.mcpServers ?? [];
+  const activeMcpServers = mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {});
   const { isDark, colors } = useAppTheme();
   const [isReady, setReady] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
@@ -61,10 +63,10 @@ export default function App() {
       setLoadingProgress(15);
 
       // Step 2: Run startup health checks
-      const { providers, modes: bootModes, lastUsedModeId: bootModeId, updateMode, updateProvider, setModelVisibility } =
+      const { providers, mcpServers: bootGlobalServers, modes: bootModes, lastUsedModeId: bootModeId, updateMcpServer, updateProvider, setModelVisibility } =
         useSettingsStore.getState();
       const bootMode = bootModes.find(m => m.id === bootModeId) ?? bootModes[0] ?? null;
-      const servers = bootMode?.mcpServers ?? [];
+      const servers = mergeServersWithOverrides(bootGlobalServers, bootMode?.mcpServerOverrides ?? {});
 
       try {
         const report = await runStartupHealthCheck(servers, providers, (phase, msg, pct) => {
@@ -76,23 +78,12 @@ export default function App() {
 
         if (isMounted) {
           // Step 3: Reconcile — only update settings that changed
-          // Apply MCP results back into the active mode
-          if (bootMode) {
-            const mcpResultMap = new Map(report.mcpResults.filter(r => r.server).map(r => [r.server!.id, r.server!]));
-            const disabledSet = new Set(report.disabledMcpServers);
-            const updatedServers = servers.map(s => {
-              const patched = mcpResultMap.get(s.id) ?? s;
-              return disabledSet.has(s.id) ? { ...patched, enabled: false } : patched;
-            });
-            if (updatedServers.some((s, i) => s !== servers[i])) {
-              updateMode(bootMode.id, { mcpServers: updatedServers });
-            }
-          }
+          // Apply MCP results back to global servers
           applyHealthCheckReport(
             report,
             servers,
             providers,
-            () => {}, // MCP handled per-mode above
+            updateMcpServer,
             updateProvider,
             setModelVisibility
           );

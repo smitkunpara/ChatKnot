@@ -14,7 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
-import { AlertTriangle, ChevronDown, Menu, Share2, X, Check } from 'lucide-react-native';
+import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
@@ -52,6 +52,7 @@ import {
   buildAppSystemPrompt,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
+import { mergeServersWithOverrides } from '../utils/mcpMerge';
 import * as FileSystem from 'expo-file-system';
 import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
 
@@ -77,6 +78,7 @@ export const ChatScreen = () => {
   const updateModelInConversation = useChatStore(state => state.updateModelInConversation);
   const setLoading = useChatStore(state => state.setLoading);
   const providers = useSettingsStore(state => state.providers);
+  const globalMcpServers = useSettingsStore(state => state.mcpServers);
   const modes = useSettingsStore(state => state.modes);
   const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
   const setLastUsedMode = useSettingsStore(state => state.setLastUsedMode);
@@ -87,7 +89,10 @@ export const ChatScreen = () => {
     () => modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null,
     [modes, lastUsedModeId]
   );
-  const activeMcpServers = activeMode?.mcpServers ?? [];
+  const activeMcpServers = useMemo(
+    () => mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {}),
+    [globalMcpServers, activeMode?.mcpServerOverrides]
+  );
   const [modeSelectorVisible, setModeSelectorVisible] = useState(false);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -919,6 +924,9 @@ export const ChatScreen = () => {
             onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
             onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
             visionSupported={currentModelVisionSupported}
+            modeName={activeMode?.name}
+            showModeSelector={modes.length > 1}
+            onModePress={() => setModeSelectorVisible(true)}
           />
         </View>
       </KeyboardAvoidingView>
@@ -937,19 +945,6 @@ export const ChatScreen = () => {
         <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton} accessibilityLabel="Open navigation menu" accessibilityRole="button">
           <Menu size={20} color={colors.text} />
         </TouchableOpacity>
-        {modes.length > 1 && (
-          <TouchableOpacity
-            style={styles.modePill}
-            onPress={() => setModeSelectorVisible(true)}
-            accessibilityLabel="Switch mode"
-            accessibilityRole="button"
-          >
-            <Text style={styles.modePillText} numberOfLines={1}>
-              {activeMode?.name ?? 'Default'}
-            </Text>
-            <ChevronDown size={14} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
         <View style={styles.selectorWrapper}>
           <ModelSelector
             ref={modelSelectorRef}
@@ -1238,25 +1233,6 @@ const createStyles = (colors: any, insetsTop: number) =>
       backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
       borderColor: colors.subtleBorder,
-    },
-    modePill: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      gap: 4,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 12,
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.subtleBorder,
-      marginLeft: 8,
-      maxWidth: 120,
-    },
-    modePillText: {
-      fontSize: 13,
-      fontWeight: '500' as const,
-      color: colors.text,
-      flexShrink: 1,
     },
     selectorWrapper: {
       flex: 1,

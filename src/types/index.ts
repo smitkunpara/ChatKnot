@@ -124,18 +124,24 @@ export interface McpServerConfig {
   autoApprovedTools?: string[];
 }
 
+export interface ModeServerOverride {
+  enabled: boolean;
+  autoAllow: boolean;
+}
+
 export interface Mode {
   id: string;
   name: string;
   systemPrompt: string;
   providerId: string | null;
   model: string | null;
-  mcpServers: McpServerConfig[];
+  mcpServerOverrides: Record<string, ModeServerOverride>;
   isDefault: boolean;
 }
 
 export interface AppSettings {
   providers: LlmProviderConfig[];
+  mcpServers: McpServerConfig[];
   modes: Mode[];
   lastUsedModeId: string | null;
   theme: 'light' | 'dark' | 'system';

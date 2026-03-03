@@ -502,6 +502,30 @@ export const migratePersistedSettingsPayloadDetailed = async (
 export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecord => {
   // Already has modes — no migration needed
   if (Array.isArray(state.modes) && state.modes.length > 0) {
+    // Ensure modes use mcpServerOverrides (not legacy mcpServers array)
+    const modes = state.modes as UnknownRecord[];
+    const needsOverrideMigration = modes.some(
+      (m) => Array.isArray(m.mcpServers) && m.mcpServerOverrides === undefined
+    );
+    if (needsOverrideMigration) {
+      // Lift per-mode mcpServers back to global, keeping overrides
+      let globalServers = Array.isArray(state.mcpServers) ? [...(state.mcpServers as any[])] : [];
+      const globalIds = new Set(globalServers.map((s: any) => s.id));
+      const migratedModes = modes.map((m) => {
+        const modeServers = Array.isArray(m.mcpServers) ? (m.mcpServers as any[]) : [];
+        const overrides: Record<string, { enabled: boolean; autoAllow: boolean }> = {};
+        for (const s of modeServers) {
+          overrides[s.id] = { enabled: !!s.enabled, autoAllow: !!s.autoAllow };
+          if (!globalIds.has(s.id)) {
+            globalServers.push(s);
+            globalIds.add(s.id);
+          }
+        }
+        const { mcpServers: _removed, ...rest } = m;
+        return { ...rest, mcpServerOverrides: overrides };
+      });
+      return { ...state, modes: migratedModes, mcpServers: globalServers };
+    }
     return state;
   }
 
@@ -519,15 +543,24 @@ export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecor
     systemPrompt: legacySystemPrompt,
     providerId: null,
     model: null,
-    mcpServers: legacyMcpServers,
+    mcpServerOverrides: {} as Record<string, { enabled: boolean; autoAllow: boolean }>,
     isDefault: true,
   };
+
+  // Build overrides from legacy servers' enabled/autoAllow
+  for (const server of legacyMcpServers as any[]) {
+    defaultMode.mcpServerOverrides[server.id] = {
+      enabled: !!server.enabled,
+      autoAllow: !!server.autoAllow,
+    };
+  }
 
   const nextState: UnknownRecord = { ...state };
   nextState.modes = [defaultMode];
   nextState.lastUsedModeId = defaultModeId;
+  // Keep mcpServers at global level (don't delete)
+  nextState.mcpServers = legacyMcpServers;
   delete nextState.systemPrompt;
-  delete nextState.mcpServers;
 
   return nextState;
 };

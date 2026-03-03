@@ -75,6 +75,9 @@ export const validateImportPayload = (settings: any): string | null => {
                 const serverError = validateMcpServerArray(m.mcpServers, `Mode "${m.name}"`);
                 if (serverError) return serverError;
             }
+            if (m.mcpServerOverrides !== undefined && (typeof m.mcpServerOverrides !== 'object' || Array.isArray(m.mcpServerOverrides))) {
+                return `Mode "${m.name}" has an invalid "mcpServerOverrides" (expected object).`;
+            }
         }
     }
 

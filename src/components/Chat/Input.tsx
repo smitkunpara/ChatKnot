@@ -14,7 +14,7 @@ import {
   Modal,
 } from 'react-native';
 import uuid from 'react-native-uuid';
-import { FileText, ImageIcon, Plus, Send, StopCircle, X } from 'lucide-react-native';
+import { ChevronDown, FileText, ImageIcon, Plus, Send, StopCircle, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -44,6 +44,9 @@ interface InputProps {
   onAddAttachment: (attachment: Attachment) => void;
   onRemoveAttachment: (id: string) => void;
   visionSupported?: boolean;
+  modeName?: string;
+  showModeSelector?: boolean;
+  onModePress?: () => void;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -58,6 +61,9 @@ export const Input: React.FC<InputProps> = ({
   onAddAttachment,
   onRemoveAttachment,
   visionSupported = true,
+  modeName,
+  showModeSelector = false,
+  onModePress,
 }) => {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -239,7 +245,20 @@ export const Input: React.FC<InputProps> = ({
           />
           <View style={styles.bottomRow}>
             {plusBtn}
-            <View style={{ flex: 1 }} />
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+              {showModeSelector && onModePress && (
+                <TouchableOpacity
+                  style={styles.modeToggle}
+                  onPress={onModePress}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <Text style={styles.modeToggleText} numberOfLines={1}>
+                    {modeName ?? 'Default'}
+                  </Text>
+                  <ChevronDown size={12} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
             {sendBtn}
           </View>
         </View>
@@ -321,6 +340,18 @@ const createStyles = (colors: any, insetBottom: number) =>
 
     inlineRow: { flexDirection: 'row', alignItems: 'center' },
     bottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: -2 },
+
+    modeToggle: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: 3,
+      paddingHorizontal: 6,
+    },
+    modeToggleText: {
+      fontSize: 12,
+      color: colors.textTertiary,
+      maxWidth: 100,
+    },
 
     actionButton: {
       width: BUTTON_SIZE, // 30
