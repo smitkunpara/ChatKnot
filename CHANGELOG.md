@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-03
+
 ### Added
 - **Chat UI Rebuild** — Completely restructured the message composer to use a permanent "Stacked" layout (text on top, action buttons on bottom). This fixed structural focus losses and provides a stable foundation for future feature expansion.
 - **Screen-Level Fade Gradients** — Replaced expensive Blur/MaskedView components with high-performance `LinearGradient` overlays. Messages now gracefully fade into the background color at both the header and footer edges.

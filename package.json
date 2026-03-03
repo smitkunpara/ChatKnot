@@ -1,6 +1,6 @@
 {
   "name": "chatknot",
-  "version": "0.2.0-beta",
+  "version": "0.2.1",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -46,6 +46,7 @@
     "react-native-url-polyfill": "^3.0.0",
     "react-native-uuid": "^2.0.3",
     "react-native-web": "^0.21.0",
+    "react-native-worklets": "0.5.1",
     "text-encoding-polyfill": "^0.6.7",
     "zustand": "^5.0.11"
   },

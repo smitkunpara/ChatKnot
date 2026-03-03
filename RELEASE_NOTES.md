@@ -1,11 +1,18 @@
-# 🚀 [Unreleased] Hardening & Stability
+# 🚀 ChatKnot v0.2.1 (Stable)
 
-- **🎨 Modern Floating Chat UI**: Rebuilt the message composer with a "Stacked" layout and permanent vertical positioning. This ensures the keyboard never covers the input area and prevents structural layout flickering.
-- **✨ Smooth Fade Gradients**: Replaced the previous blur components with lightweight, high-performance gradients. Messages now smoothly fade into the background as they scroll toward the header and footer, creating a premium "infinite" look.
-- **⌨️ Keyboard Snap-Back Fix**: Optimized the keyboard avoidance logic so the floating input box snaps perfectly back to its original position upon closing the keyboard on Android.
-- **🛡️ Flicker & Crash Guard**: Added smart hysteresis and debouncing to the input field, preventing the app from crashing when text hits the exact line-wrapping boundary.
-- **🎨 Themed Warning Modal**: Startup health check warnings now display in a beautiful themed modal popup (matching the export/share modal) with full dark/light mode support.
-- **🛡️ SSE & Memory Hardening**: Eliminated critical memory leaks in SSE streams and fixed image persistence issues to keep the app fast and stable during long sessions.
+> **Release Date:** 2026-03-03
+
+This release marks the first stable iteration of the 0.2.x series, featuring a complete UI overhaul and major reliability hardening.
+
+- **📤 Rich Chat Export**: Export any conversation as **PDF**, **Markdown**, or **JSON** with configurable tool input/output inclusion.
+- **🖼️ Multimodal Chat Input**: Attach **images and files** directly in chat, with model-capability-aware filtering to prevent unsupported payloads.
+- **🧠 Smarter Model & Prompt Runtime**: Requests now use **two system instructions** (user prompt + app default instruction), improving clarity and maintainability of agent behavior.
+- **🧩 Capability-Aware Tooling**: Model capability tags (`vision`, `tools`, `file`) are shown in selectors, and MCP/tool payloads are automatically gated by model support.
+- **🛡️ Startup Safety Hardening**: Health checks now proactively validate AI providers and MCP servers, auto-disable unreachable endpoints on network issues, and surface clear warning reasons.
+- **🔐 Modern Floating Chat UI**: Rebuilt composer with permanent "Stacked" layout for perfect keyboard compatibility and zero-flicker stability.
+- **✨ Smooth Fade Gradients**: High-performance gradients replace blurry overlays for a premium, integrated aesthetic.
+
+Full technical details are available in [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
