@@ -14,7 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
-import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
+import { AlertTriangle, ChevronDown, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
@@ -76,11 +76,19 @@ export const ChatScreen = () => {
   const updateToolCallStatus = useChatStore(state => state.updateToolCallStatus);
   const updateModelInConversation = useChatStore(state => state.updateModelInConversation);
   const setLoading = useChatStore(state => state.setLoading);
-  const systemPrompt = useSettingsStore(state => state.systemPrompt);
   const providers = useSettingsStore(state => state.providers);
-  const mcpServers = useSettingsStore(state => state.mcpServers);
+  const modes = useSettingsStore(state => state.modes);
+  const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
+  const setLastUsedMode = useSettingsStore(state => state.setLastUsedMode);
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
+
+  const activeMode = useMemo(
+    () => modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null,
+    [modes, lastUsedModeId]
+  );
+  const activeMcpServers = activeMode?.mcpServers ?? [];
+  const [modeSelectorVisible, setModeSelectorVisible] = useState(false);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string | undefined>(undefined);
@@ -146,8 +154,10 @@ export const ChatScreen = () => {
         selectedProviderId: activeConversation?.providerId || '',
         selectedModel: activeConversation?.modelOverride || '',
         lastUsedModel,
+        modeProviderId: activeMode?.providerId,
+        modeModel: activeMode?.model,
       }),
-    [providers, activeConversation?.providerId, activeConversation?.modelOverride, lastUsedModel]
+    [providers, activeConversation?.providerId, activeConversation?.modelOverride, lastUsedModel, activeMode?.providerId, activeMode?.model]
   );
 
   const noModelAvailableMessage = modelResolution.selection
@@ -237,6 +247,11 @@ export const ChatScreen = () => {
     return unsubscribe;
   }, []);
 
+  // Re-initialize MCP tools when active mode changes
+  useEffect(() => {
+    McpManager.reinitialize(activeMcpServers).catch(console.error);
+  }, [activeMcpServers]);
+
   const handleEdit = (messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
@@ -294,7 +309,7 @@ export const ChatScreen = () => {
   const currentModelVisionSupported = currentModelCapabilities.vision;
   const currentModelToolsSupported = currentModelCapabilities.tools;
   const configuredEnabledMcpToolsCount = useMemo(() => {
-    return mcpServers.reduce((count, server) => {
+    return activeMcpServers.reduce((count, server) => {
       if (!server.enabled) {
         return count;
       }
@@ -307,10 +322,10 @@ export const ChatScreen = () => {
 
       return count + knownTools.length;
     }, 0);
-  }, [mcpServers]);
+  }, [activeMcpServers]);
   const hasEnabledMcpServer = useMemo(
-    () => mcpServers.some((server) => server.enabled),
-    [mcpServers]
+    () => activeMcpServers.some((server) => server.enabled),
+    [activeMcpServers]
   );
   const hasEnabledMcpTools =
     hasEnabledMcpServer &&
@@ -377,7 +392,7 @@ export const ChatScreen = () => {
 
       createConversation(
         modelResolution.selection.providerId,
-        systemPrompt || 'You are a helpful AI assistant.',
+        activeMode?.systemPrompt || 'You are a helpful AI assistant.',
         modelResolution.selection.model
       );
 
@@ -455,11 +470,14 @@ export const ChatScreen = () => {
         if (!currentConv) break;
 
         const settingsState = useSettingsStore.getState();
+        const loopMode = settingsState.modes.find(m => m.id === settingsState.lastUsedModeId) ?? settingsState.modes[0] ?? null;
         const modelSelection = resolveModelSelection({
           providers: settingsState.providers,
           selectedProviderId: currentConv.providerId,
           selectedModel: currentConv.modelOverride || '',
           lastUsedModel: settingsState.lastUsedModel,
+          modeProviderId: loopMode?.providerId,
+          modeModel: loopMode?.model,
         });
 
         if (!modelSelection.selection) {
@@ -539,7 +557,7 @@ export const ChatScreen = () => {
 
         const finalSystemPrompt = buildEffectiveSystemPrompt({
           conversationPrompt: currentConv.systemPrompt,
-          globalPrompt: systemPrompt,
+          modePrompt: loopMode?.systemPrompt,
         });
         const hasConnectedMcpServer = McpManager
           .getRuntimeStates()
@@ -784,6 +802,11 @@ export const ChatScreen = () => {
 
   const bannerMessage = noModelAvailableMessage || chatError;
 
+  const hasAnyProvider = useMemo(
+    () => providers.some(p => p.enabled && (p.apiKey || '').trim().length > 0 && (p.baseUrl || '').trim().length > 0),
+    [providers]
+  );
+
   const chatHasMessages = !!activeConversation?.messages.some(m => m.role === 'user' || m.role === 'assistant');
 
   const handleExport = async () => {
@@ -806,6 +829,22 @@ export const ChatScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Full-screen warning when no AI provider is configured */}
+      {!hasAnyProvider && (
+        <View style={styles.noProviderOverlay}>
+          <AlertTriangle size={48} color={colors.warning ?? colors.danger} />
+          <Text style={styles.noProviderTitle}>No AI Provider Configured</Text>
+          <Text style={styles.noProviderMessage}>
+            Add and configure at least one AI provider with an API key in Settings to start chatting.
+          </Text>
+          <TouchableOpacity
+            style={styles.noProviderButton}
+            onPress={() => navigation.navigate('Settings' as any)}
+          >
+            <Text style={styles.noProviderButtonText}>Open Settings</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
         behavior="padding"
@@ -898,6 +937,19 @@ export const ChatScreen = () => {
         <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton} accessibilityLabel="Open navigation menu" accessibilityRole="button">
           <Menu size={20} color={colors.text} />
         </TouchableOpacity>
+        {modes.length > 1 && (
+          <TouchableOpacity
+            style={styles.modePill}
+            onPress={() => setModeSelectorVisible(true)}
+            accessibilityLabel="Switch mode"
+            accessibilityRole="button"
+          >
+            <Text style={styles.modePillText} numberOfLines={1}>
+              {activeMode?.name ?? 'Default'}
+            </Text>
+            <ChevronDown size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
         <View style={styles.selectorWrapper}>
           <ModelSelector
             ref={modelSelectorRef}
@@ -1071,6 +1123,50 @@ export const ChatScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Mode Selector Modal */}
+      <Modal
+        visible={modeSelectorVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModeSelectorVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setModeSelectorVisible(false)}>
+          <View style={styles.exportOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modeModalContent}>
+                <Text style={styles.modeModalTitle}>Switch Mode</Text>
+                {modes.map(mode => (
+                  <TouchableOpacity
+                    key={mode.id}
+                    style={[
+                      styles.modeItem,
+                      mode.id === activeMode?.id && styles.modeItemActive,
+                    ]}
+                    onPress={() => {
+                      setLastUsedMode(mode.id);
+                      setModeSelectorVisible(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.modeItemText,
+                        mode.id === activeMode?.id && styles.modeItemTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {mode.name}
+                    </Text>
+                    {mode.id === activeMode?.id && (
+                      <Check size={16} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 };
@@ -1080,6 +1176,39 @@ const createStyles = (colors: any, insetsTop: number) =>
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    noProviderOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 200,
+      backgroundColor: colors.background,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      paddingHorizontal: 32,
+    },
+    noProviderTitle: {
+      fontSize: 20,
+      fontWeight: '700' as const,
+      color: colors.text,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    noProviderMessage: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.textSecondary,
+      textAlign: 'center' as const,
+      marginBottom: 24,
+    },
+    noProviderButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 28,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+    },
+    noProviderButtonText: {
+      fontSize: 15,
+      fontWeight: '600' as const,
+      color: colors.onPrimary,
     },
     topFade: {
       position: 'absolute',
@@ -1109,6 +1238,25 @@ const createStyles = (colors: any, insetsTop: number) =>
       backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
       borderColor: colors.subtleBorder,
+    },
+    modePill: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 12,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      marginLeft: 8,
+      maxWidth: 120,
+    },
+    modePillText: {
+      fontSize: 13,
+      fontWeight: '500' as const,
+      color: colors.text,
+      flexShrink: 1,
     },
     selectorWrapper: {
       flex: 1,
@@ -1335,5 +1483,38 @@ const createStyles = (colors: any, insetsTop: number) =>
     visionContinueText: {
       fontSize: 15,
       color: colors.textSecondary,
+    },
+    modeModalContent: {
+      width: '80%',
+      maxWidth: 320,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 16,
+    },
+    modeModalTitle: {
+      fontSize: 16,
+      fontWeight: '600' as const,
+      color: colors.text,
+      marginBottom: 12,
+    },
+    modeItem: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'space-between' as const,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+    },
+    modeItemActive: {
+      backgroundColor: colors.primarySoft,
+    },
+    modeItemText: {
+      fontSize: 15,
+      color: colors.text,
+      flex: 1,
+    },
+    modeItemTextActive: {
+      fontWeight: '600' as const,
+      color: colors.primary,
     },
   });

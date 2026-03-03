@@ -15,7 +15,10 @@ import {
 } from './src/services/startup/StartupHealthCheck';
 
 export default function App() {
-  const mcpServers = useSettingsStore(state => state.mcpServers);
+  const modes = useSettingsStore(state => state.modes);
+  const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
+  const activeMode = modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
+  const activeMcpServers = activeMode?.mcpServers ?? [];
   const { isDark, colors } = useAppTheme();
   const [isReady, setReady] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
@@ -58,8 +61,10 @@ export default function App() {
       setLoadingProgress(15);
 
       // Step 2: Run startup health checks
-      const { providers, mcpServers: servers, updateMcpServer, updateProvider, setModelVisibility } =
+      const { providers, modes: bootModes, lastUsedModeId: bootModeId, updateMode, updateProvider, setModelVisibility } =
         useSettingsStore.getState();
+      const bootMode = bootModes.find(m => m.id === bootModeId) ?? bootModes[0] ?? null;
+      const servers = bootMode?.mcpServers ?? [];
 
       try {
         const report = await runStartupHealthCheck(servers, providers, (phase, msg, pct) => {
@@ -71,11 +76,23 @@ export default function App() {
 
         if (isMounted) {
           // Step 3: Reconcile — only update settings that changed
+          // Apply MCP results back into the active mode
+          if (bootMode) {
+            const mcpResultMap = new Map(report.mcpResults.filter(r => r.server).map(r => [r.server!.id, r.server!]));
+            const disabledSet = new Set(report.disabledMcpServers);
+            const updatedServers = servers.map(s => {
+              const patched = mcpResultMap.get(s.id) ?? s;
+              return disabledSet.has(s.id) ? { ...patched, enabled: false } : patched;
+            });
+            if (updatedServers.some((s, i) => s !== servers[i])) {
+              updateMode(bootMode.id, { mcpServers: updatedServers });
+            }
+          }
           applyHealthCheckReport(
             report,
             servers,
             providers,
-            updateMcpServer,
+            () => {}, // MCP handled per-mode above
             updateProvider,
             setModelVisibility
           );
@@ -114,11 +131,11 @@ export default function App() {
     };
   }, []);
 
-  // Re-initialize MCP manager when servers config changes (after boot)
+  // Re-initialize MCP manager when active mode's servers change (after boot)
   useEffect(() => {
     if (!healthCheckDone) return;
-    McpManager.initialize(mcpServers).catch(console.error);
-  }, [mcpServers, healthCheckDone]);
+    McpManager.reinitialize(activeMcpServers).catch(console.error);
+  }, [activeMcpServers, healthCheckDone]);
 
   if (!isReady) {
     return (
