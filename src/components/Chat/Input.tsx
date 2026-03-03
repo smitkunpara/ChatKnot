@@ -161,19 +161,19 @@ export const Input: React.FC<InputProps> = ({
     </TouchableOpacity>
   );
 
-  // Send button
+  // Send/Stop button
   const sendBtn = (
     <TouchableOpacity
       style={[
         styles.actionButton,
-        styles.sendButton,
-        { opacity: canSend ? 1 : 0.3 }
+        isLoading ? styles.stopButton : styles.sendButton,
+        { opacity: isLoading || canSend ? 1 : 0.3 }
       ]}
       onPress={isLoading ? onStop : handleSend}
       disabled={!canSend && !isLoading}
     >
       {isLoading ? (
-        <StopCircle color={colors.danger} size={18} />
+        <StopCircle color={colors.onPrimary} size={18} />
       ) : (
         <Send color={colors.onPrimary} size={15} style={{ marginLeft: 1 }} />
       )}
@@ -332,6 +332,9 @@ const createStyles = (colors: any, insetBottom: number) =>
     },
     sendButton: {
       backgroundColor: colors.primary,
+    },
+    stopButton: {
+      backgroundColor: colors.danger,
     },
 
     input: {

@@ -166,9 +166,9 @@ export const ChatScreen = () => {
 
   useEffect(() => {
     if (activeConversation?.messages.length) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 90);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [activeConversation?.messages.length, activeConversationId]);
+  }, [activeConversation?.messages]);
 
   useEffect(() => {
     setEditingMessageId(null);
@@ -252,7 +252,12 @@ export const ChatScreen = () => {
   };
 
   const handleInputFocus = () => {
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 220);
+    setTimeout(() => {
+      if (flatListRef.current && activeConversation?.messages.length) {
+        // Scroll to show last message above the input area
+        flatListRef.current.scrollToEnd({ animated: true });
+      }
+    }, 220);
   };
 
   const handleRetryAssistant = (assistantMessageId: string) => {
@@ -851,7 +856,13 @@ export const ChatScreen = () => {
                     }
                   />
                 )}
+                ListFooterComponent={<View style={{ height: 150 }} />}
                 contentContainerStyle={styles.listContent}
+                onContentSizeChange={() => {
+                  if (isLoading) {
+                    flatListRef.current?.scrollToEnd({ animated: true });
+                  }
+                }}
               />
             </>
           )}
@@ -1121,7 +1132,7 @@ const createStyles = (colors: any, insetsTop: number) =>
     },
     listContent: {
       paddingTop: insetsTop + 56 + 10,
-      paddingBottom: 80, // Accounts for bottom float input height
+      // Note: paddingBottom removed - using ListFooterComponent for buffer instead
     },
     emptyState: {
       flex: 1,
