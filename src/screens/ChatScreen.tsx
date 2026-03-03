@@ -66,6 +66,25 @@ export const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
 
+  // Force re-render on Android when keyboard closes to fix KeyboardAvoidingView padding issue
+  const [keyboardResetKey, setKeyboardResetKey] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const showListener = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+      // Force re-render to reset KeyboardAvoidingView padding
+      setKeyboardResetKey(prev => prev + 1);
+    });
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
+
   const activeConversationId = useChatStore(state => state.activeConversationId);
   const conversations = useChatStore(state => state.conversations);
   const isLoading = useChatStore(state => state.isLoading);
@@ -824,7 +843,8 @@ export const ChatScreen = () => {
     <View style={styles.container}>
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
-        behavior="padding"
+        key={keyboardResetKey}  // Force re-render on Android when keyboard closes
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
       >
@@ -921,6 +941,7 @@ export const ChatScreen = () => {
             onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
             onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
             visionSupported={currentModelVisionSupported}
+            isKeyboardVisible={isKeyboardVisible}
           />
         </View>
       </KeyboardAvoidingView>

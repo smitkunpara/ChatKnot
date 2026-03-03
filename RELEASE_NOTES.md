@@ -1,3 +1,15 @@
+# 🚀 ChatKnot v0.2.2 (Unreleased)
+
+> **Release Date:** TBD
+
+## ✨ Improvements
+- **🛑 Stop Button**: Red danger-styled stop button for better visibility during streaming.
+
+## 🐛 Bug Fixes
+- **📜 Scroll Fix**: Messages no longer hide behind the input area when receiving streaming responses.
+
+---
+
 # 🚀 ChatKnot v0.2.1 (Stable)
 
 > **Release Date:** 2026-03-03
