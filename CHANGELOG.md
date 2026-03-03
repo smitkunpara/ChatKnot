@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed Zustand/MMKV storage bloat** — base64 image data no longer persisted to Zustand. Read lazily from file URI only when sending to the LLM API.
 - **Replaced `MAX_TOOL_ITERATIONS = 8`** with unlimited `while` loop + 3-strike repetitive tool call detection (hard safety cap at 30 iterations).
 - **Fixed `extractLegacyJsonToolCalls` dedup** — dedup key now uses `name:arguments` instead of `id:name:arguments` to prevent duplicate results from overlapping parse candidates.
+- **Broadened ES Compatibility** — Replaced `REPLACEALL` (ES2021) with `split/join` and resolved `SET`/`MAP` iteration errors by using `Array.from()` and index-based loops for broader environment stability.
 - Replaced hardcoded `Platform.OS` modal padding with `useSafeAreaInsets().bottom` for correct rendering on all device types.
 - Expanded the robust test suite across 151 unit tests validating all edge cases.
 
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Re-architected `callOpenApiTool` to safely filter and log API body errors internally while preventing external UI state bleeding.
 - Stopped silent background listener zombie states by handling `EventSource` failover correctly across connection statuses.
 - **Fixed plaintext consent crash** — declining the security warning now falls back to volatile in-memory storage instead of crashing the app with an unhandled promise rejection.
+- **Resolved Type Mismatches** — Expanded `LlmProviderConfig` to include `openai` and `openrouter` types, fixing compiler errors in `ProviderFactory`.
 
 ## [0.2.0-beta] - 2026-03-01
 

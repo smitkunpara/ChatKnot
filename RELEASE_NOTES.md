@@ -1,3 +1,14 @@
+# 🚀 [Unreleased] Hardening & Stability
+
+- **🛡️ Silent Killer Fixes**: Eliminated critical memory leaks in SSE streams and fixed a `sanitize-html` crash that affected Android/iOS exports.
+- **💾 Optimized Storage**: Large image base64 strings are no longer persisted to disk, significantly reducing storage bloat and improving app responsiveness during streaming.
+- **🔄 Smart Loop Detection**: Replaced the rigid 8-turn tool limit with a dynamic 30-turn safety cap and a 3-strike rule to detect and stop infinite tool-calling loops.
+- **🌍 ES Compatibility**: Rewrote modern JavaScript features (like `replaceAll` and `Set` iteration) to ensure the app runs flawlessly on older devices and engines.
+- **🔐 Robust Failsafe**: Declining plaintext storage consent no longer crashes the app; instead, it falls back to a volatile in-memory session.
+- **📱 Safe Area Modal Padding**: Replaced hardcoded values with dynamic safe area insets for perfect layout across all modern mobile displays.
+
+---
+
 # 🚀 ChatKnot v0.2.0-beta
 
 > **Release Date:** 2026-03-01
