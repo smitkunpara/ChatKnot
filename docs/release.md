@@ -1,6 +1,6 @@
 # Release Build Commands
 
-This project is aligned to release version `0.2.1` with build number/code `3`.
+This project is aligned to release version `0.2.2` with build number/code `4`.
 
 ## Pre-release checks
 

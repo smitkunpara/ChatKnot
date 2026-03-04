@@ -44,6 +44,7 @@ interface InputProps {
   onAddAttachment: (attachment: Attachment) => void;
   onRemoveAttachment: (id: string) => void;
   visionSupported?: boolean;
+  isKeyboardVisible?: boolean;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -58,10 +59,11 @@ export const Input: React.FC<InputProps> = ({
   onAddAttachment,
   onRemoveAttachment,
   visionSupported = true,
+  isKeyboardVisible = false,
 }) => {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => createStyles(colors, insets.bottom), [colors, insets.bottom]);
+  const styles = useMemo(() => createStyles(colors, insets.bottom, isKeyboardVisible), [colors, insets.bottom, isKeyboardVisible]);
 
   const [text, setText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
@@ -161,19 +163,19 @@ export const Input: React.FC<InputProps> = ({
     </TouchableOpacity>
   );
 
-  // Send button
+  // Send/Stop button
   const sendBtn = (
     <TouchableOpacity
       style={[
         styles.actionButton,
-        styles.sendButton,
-        { opacity: canSend ? 1 : 0.3 }
+        isLoading ? styles.stopButton : styles.sendButton,
+        { opacity: isLoading || canSend ? 1 : 0.3 }
       ]}
       onPress={isLoading ? onStop : handleSend}
       disabled={!canSend && !isLoading}
     >
       {isLoading ? (
-        <StopCircle color={colors.danger} size={18} />
+        <StopCircle color={colors.onPrimary} size={18} />
       ) : (
         <Send color={colors.onPrimary} size={15} style={{ marginLeft: 1 }} />
       )}
@@ -280,7 +282,7 @@ export const Input: React.FC<InputProps> = ({
   );
 };
 
-const createStyles = (colors: any, insetBottom: number) =>
+const createStyles = (colors: any, insetBottom: number, isKeyboardVisible: boolean) =>
   StyleSheet.create({
     outerWrap: {
       backgroundColor: 'transparent',
@@ -288,7 +290,10 @@ const createStyles = (colors: any, insetBottom: number) =>
     innerWrap: {
       paddingHorizontal: 12,
       paddingTop: 8,
-      paddingBottom: Platform.OS === 'ios' ? Math.max(insetBottom, 12) : 10,
+      // Keyboard open: 10 (close to keyboard), Keyboard closed: 25 (lifted up)
+      paddingBottom: Platform.OS === 'ios'
+        ? Math.max(insetBottom, isKeyboardVisible ? 12 : 25)
+        : (isKeyboardVisible ? 10 : 20),
     },
     editingBadge: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -332,6 +337,9 @@ const createStyles = (colors: any, insetBottom: number) =>
     },
     sendButton: {
       backgroundColor: colors.primary,
+    },
+    stopButton: {
+      backgroundColor: colors.danger,
     },
 
     input: {
