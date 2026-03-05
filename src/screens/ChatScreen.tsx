@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -61,6 +61,14 @@ export const ChatScreen = () => {
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
+
+  // ---- Auto-scroll tracking ----
+  // Track whether the user is near the bottom so we can auto-scroll on content growth.
+  const isNearBottomRef = useRef(true);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const layoutHeightRef = useRef(0);
+  const AUTO_SCROLL_THRESHOLD = 50; // Don't change this value
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
@@ -167,9 +175,26 @@ export const ChatScreen = () => {
 
   useEffect(() => {
     if (activeConversation?.messages.length) {
+      isNearBottomRef.current = true;
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 90);
     }
   }, [activeConversation?.messages.length, activeConversationId]);
+
+  const handleScroll = useCallback((event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    scrollOffsetRef.current = contentOffset.y;
+    contentHeightRef.current = contentSize.height;
+    layoutHeightRef.current = layoutMeasurement.height;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    isNearBottomRef.current = distanceFromBottom <= AUTO_SCROLL_THRESHOLD;
+  }, []);
+
+  const handleContentSizeChange = useCallback((_w: number, h: number) => {
+    contentHeightRef.current = h;
+    if (isNearBottomRef.current) {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, []);
 
   useEffect(() => {
     setEditingMessageId(null);
@@ -841,6 +866,9 @@ export const ChatScreen = () => {
                 keyExtractor={item => item.id}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                onContentSizeChange={handleContentSizeChange}
                 renderItem={({ item }) => (
                   <MessageBubble
                     message={item}
