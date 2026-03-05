@@ -100,9 +100,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const hasReasoning = !!message.reasoning?.trim();
   const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
 
-  // Tool outputs are kept in history for LLM context, but hidden from the UI.
-  if (isSystem || isTool) return null;
-  if (!shouldRenderBubble) return null;
+  // Condition to hide the bubble - used below to conditionally render content
+  const shouldHideBubble = isSystem || isTool || !shouldRenderBubble;
 
   const copyToClipboard = async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -149,6 +148,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   // Derive whether there's any visible text content (non-think) to display
   const hasVisibleText = contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0);
+
+  // Always return a consistent component structure to avoid React hook count issues
+  // when FlatList recycles component instances. Render empty view when hidden.
+  if (shouldHideBubble) {
+    return <View style={{ height: 0 }} />;
+  }
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>

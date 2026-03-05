@@ -595,6 +595,19 @@ export class OpenAiService {
           let value: any;
           try {
             ({ done, value } = await Promise.race([reader.read(), timeoutPromise]));
+          } catch (readError: any) {
+            // Explicitly cancel the reader to properly terminate the stream
+            // before handling the abort error. This prevents unhandled promise
+            // rejections that can crash the app when aborting mid-stream.
+            try {
+              await reader.cancel();
+            } catch {
+              // Ignore cancel errors - the reader may already be cancelled
+            }
+            if (readError?.name === 'AbortError' || abortSignal?.aborted) {
+              throw new Error('Request cancelled by user');
+            }
+            throw readError;
           } finally {
             clearTimeout(timeoutId!);
           }

@@ -62,6 +62,7 @@ export const ChatScreen = () => {
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   // ---- Auto-scroll tracking ----
   // Track whether the user is near the bottom so we can auto-scroll on content growth.
@@ -259,6 +260,7 @@ export const ChatScreen = () => {
   useEffect(() => {
     return () => {
       clearPendingToolApprovals(false);
+      isMountedRef.current = false;
     };
   }, [clearPendingToolApprovals]);
 
@@ -816,19 +818,25 @@ export const ChatScreen = () => {
 
       }
     } catch (error: any) {
+      // Skip state updates if component is unmounted
+      const mounted = isMountedRef.current;
+      
       const message = getErrorMessage(error);
       if (!stopRequestedRef.current) {
-        if (conversationId) {
+        if (conversationId && mounted) {
           addMessage(conversationId, {
             role: 'assistant',
             content: message,
             isError: true,
           });
-        } else {
+        } else if (mounted) {
           setChatError(message);
         }
       }
     } finally {
+      // Skip state updates if component is unmounted
+      if (!isMountedRef.current) return;
+      
       activeRequestControllerRef.current = null;
       clearPendingToolApprovals(false);
       setLoading(false);
