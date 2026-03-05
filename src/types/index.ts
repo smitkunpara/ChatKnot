@@ -32,6 +32,8 @@ export interface Message {
   timestamp: number;
   attachments?: Attachment[];
   isError?: boolean;
+  /** Reasoning / thinking content from models that stream it separately (e.g. reasoning_content delta). */
+  reasoning?: string;
 }
 
 export interface Conversation {

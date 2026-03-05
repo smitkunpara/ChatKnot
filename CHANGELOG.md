@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Thinking UI Support** — Introduced a dedicated `ThinkingBlock` component for models that output internal thought processes.
+- **Progressive Thinking Timer** — Added a real-time counter ("Thinking for 5s") while the model is reasoning.
+- **Thinking Shimmer Animation** — Added a subtle animated shine/pulse effect on the thinking state to provide visual feedback.
+- **Markdown Support in Thoughts** — Thinking content is now rendered using the full Markdown system, supporting code blocks, lists, and rich formatting.
+- **OpenAI-Compatible Reasoning Support** — Added support for `reasoning_content` and `reasoning` deltas in the OpenAI-compatible streaming API.
+
+### Fixed
+- **Markdown `---` (HR) Visibility** — Fixed horizontal rules being invisible in dark mode by adding explicit color and height tokens.
+- **Thinking Block Detection** — Resolved a bug where empty initial content caused the UI to skip rendering the thinking state.
+- **OpenAPI Error Forwarding** — The AI now receives detailed error text from failed OpenAPI tool calls (e.g., 400 Bad Request details), allowing it to self-correct and retry.
+
+
 ## [0.2.1] - 2026-03-03
 
 ### Added

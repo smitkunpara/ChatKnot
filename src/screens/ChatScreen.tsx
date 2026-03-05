@@ -71,6 +71,7 @@ export const ChatScreen = () => {
   const createConversation = useChatStore(state => state.createConversation);
   const addMessage = useChatStore(state => state.addMessage);
   const updateMessage = useChatStore(state => state.updateMessage);
+  const updateMessageReasoning = useChatStore(state => state.updateMessageReasoning);
   const editMessage = useChatStore(state => state.editMessage);
   const addToolCall = useChatStore(state => state.addToolCall);
   const updateToolCallStatus = useChatStore(state => state.updateToolCallStatus);
@@ -551,6 +552,7 @@ export const ChatScreen = () => {
         });
 
         let streamedContent = '';
+        let streamedReasoning = '';
         const requestController = new AbortController();
         activeRequestControllerRef.current = requestController;
 
@@ -569,7 +571,11 @@ export const ChatScreen = () => {
               (fullContent, fullToolCalls) =>
                 resolve({ fullContent: fullContent ?? streamedContent, toolCalls: fullToolCalls }),
               (error) => reject(error),
-              requestController.signal
+              requestController.signal,
+              (reasoningChunk) => {
+                streamedReasoning += reasoningChunk;
+                updateMessageReasoning(conversationId, assistantMsgId, streamedReasoning);
+              }
             )
             .catch(reject);
         });

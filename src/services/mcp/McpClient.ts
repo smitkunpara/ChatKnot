@@ -265,7 +265,7 @@ export class McpClient {
     if (!response.ok) {
       const text = await response.text();
       console.error(`OpenAPI tool error ${response.status}:`, text);
-      throw new Error(`API Error ${response.status}`);
+      throw new Error(`API Error ${response.status}: ${text}`);
     }
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {

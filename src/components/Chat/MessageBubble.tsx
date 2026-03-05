@@ -7,6 +7,7 @@ import { Copy, Edit2, FileText, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
+import { ThinkingBlock } from './ThinkingBlock';
 
 interface MessageBubbleProps {
   message: Message;
@@ -16,6 +17,49 @@ interface MessageBubbleProps {
   onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
   onRetryAssistant?: (messageId: string) => void;
 }
+
+// ---------------------------------------------------------------------------
+// Helpers: parse <think>…</think> blocks out of assistant content
+// ---------------------------------------------------------------------------
+
+interface ContentBlock {
+  type: 'text' | 'think';
+  content: string;
+}
+
+/**
+ * Split raw assistant content into an ordered list of text and think blocks.
+ * Handles both complete `<think>…</think>` pairs and an un-closed trailing
+ * `<think>…` (which happens while the model is still streaming its thinking).
+ */
+const parseThinkingBlocks = (raw: string): ContentBlock[] => {
+  const blocks: ContentBlock[] = [];
+  // Regex matches <think>…</think> (greedy-lazy) as well as a trailing <think>… with no close
+  const regex = /<think>([\s\S]*?)(<\/think>|$)/gi;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(raw)) !== null) {
+    // Any text before this <think> block
+    if (match.index > lastIndex) {
+      blocks.push({ type: 'text', content: raw.slice(lastIndex, match.index) });
+    }
+    blocks.push({ type: 'think', content: match[1] });
+    lastIndex = regex.lastIndex;
+  }
+
+  // Remaining text after the last match
+  if (lastIndex < raw.length) {
+    blocks.push({ type: 'text', content: raw.slice(lastIndex) });
+  }
+
+  return blocks;
+};
+
+// ---------------------------------------------------------------------------
+// StreamingCursor
+// ---------------------------------------------------------------------------
 
 const StreamingCursor = ({ color }: { color: string }) => {
   const opacity = useRef(new Animated.Value(1)).current;
@@ -31,6 +75,10 @@ const StreamingCursor = ({ color }: { color: string }) => {
 
   return <Animated.View style={[baseStyles.cursor, { opacity, backgroundColor: color }]} />;
 };
+
+// ---------------------------------------------------------------------------
+// MessageBubble
+// ---------------------------------------------------------------------------
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
@@ -49,7 +97,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const hasToolCalls = !!message.toolCalls?.length;
   const hasText = !!message.content?.trim();
   const hasAttachments = !!message.attachments?.length;
-  const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || !!isStreaming;
+  const hasReasoning = !!message.reasoning?.trim();
+  const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
 
   // Tool outputs are kept in history for LLM context, but hidden from the UI.
   if (isSystem || isTool) return null;
@@ -59,6 +108,47 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await Clipboard.setStringAsync(message.content || '');
   };
+
+  // ---------------------------------------------------------------------------
+  // Resolve thinking content from TWO sources:
+  // 1. message.reasoning — streamed separately via delta.reasoning_content (OpenAI-compat)
+  // 2. Inline <think>…</think> tags in message.content (DeepSeek-style)
+  // If message.reasoning exists, prefer it and strip any <think> tags from content.
+  // ---------------------------------------------------------------------------
+  const hasStreamedReasoning = !!message.reasoning;
+
+  const contentBlocks: ContentBlock[] = useMemo(() => {
+    if (isUser) return [{ type: 'text' as const, content: message.content || '' }];
+
+    // When reasoning arrived via delta.reasoning_content, build blocks from it
+    if (hasStreamedReasoning) {
+      const rawContent = message.content || '';
+      const strippedContent = rawContent.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+      const blocks: ContentBlock[] = [{ type: 'think', content: message.reasoning! }];
+      if (strippedContent) {
+        blocks.push({ type: 'text', content: strippedContent });
+      }
+      return blocks;
+    }
+
+    // Parse inline <think> tags from the content itself
+    if (message.content) {
+      return parseThinkingBlocks(message.content);
+    }
+
+    return [{ type: 'text' as const, content: '' }];
+  }, [message.content, message.reasoning, isUser, hasStreamedReasoning]);
+
+  // Check if the model is currently streaming thinking
+  // - For streamed reasoning: streaming + reasoning exists but no visible text content yet
+  // - For <think> tags: last block is think type & still streaming
+  const isStreamingThinking = !!isStreaming && (
+    (hasStreamedReasoning && !contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0)) ||
+    (contentBlocks.length > 0 && contentBlocks[contentBlocks.length - 1].type === 'think')
+  );
+
+  // Derive whether there's any visible text content (non-think) to display
+  const hasVisibleText = contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0);
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
@@ -101,19 +191,43 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 message.isError ? styles.errorContent : undefined,
               ]}
             >
-              <View style={styles.textRow}>
-                {message.content ? (
-                  message.isError ? (
-                    <Text style={styles.errorText}>{message.content}</Text>
-                  ) : (
-                    <Markdown
-                      style={markdownStyles}
-                      rules={createTableRenderRules(colors)}
-                    >{message.content}</Markdown>
-                  )
-                ) : null}
-                {isStreaming && <StreamingCursor color={colors.primary} />}
-              </View>
+              {message.isError ? (
+                <View style={styles.textRow}>
+                  <Text style={styles.errorText}>{message.content}</Text>
+                </View>
+              ) : (
+                <>
+                  {contentBlocks.map((block, idx) => {
+                    if (block.type === 'think') {
+                      const isThisBlockStreaming = isStreaming === true && idx === contentBlocks.length - 1 && isStreamingThinking;
+                      return (
+                        <ThinkingBlock
+                          key={`think-${idx}`}
+                          content={block.content}
+                          isStreaming={isThisBlockStreaming}
+                        />
+                      );
+                    }
+                    // text block
+                    if (!block.content.trim()) return null;
+                    return (
+                      <View key={`text-${idx}`} style={styles.textRow}>
+                        <Markdown
+                          style={markdownStyles}
+                          rules={createTableRenderRules(colors)}
+                        >{block.content}</Markdown>
+                      </View>
+                    );
+                  })}
+
+                  {/* Show streaming cursor only when we're streaming non-think content or there's no content yet */}
+                  {isStreaming && !isStreamingThinking && (
+                    <View style={styles.textRow}>
+                      <StreamingCursor color={colors.primary} />
+                    </View>
+                  )}
+                </>
+              )}
 
               {hasToolCalls ? (
                 <View style={styles.toolCallsContainer}>
@@ -277,7 +391,7 @@ const baseStyles = StyleSheet.create({
   },
 });
 
-const createMarkdownStyles = (colors: any) => ({
+export const createMarkdownStyles = (colors: any) => ({
   body: {
     color: colors.text,
     fontSize: 15,
@@ -288,6 +402,22 @@ const createMarkdownStyles = (colors: any) => ({
   },
   heading2: {
     color: colors.text,
+  },
+  heading3: {
+    color: colors.text,
+  },
+  heading4: {
+    color: colors.text,
+  },
+  heading5: {
+    color: colors.text,
+  },
+  heading6: {
+    color: colors.text,
+  },
+  hr: {
+    backgroundColor: colors.border,
+    height: 1,
   },
   code_inline: {
     backgroundColor: colors.codeBackground,
@@ -309,6 +439,23 @@ const createMarkdownStyles = (colors: any) => ({
   },
   link: {
     color: colors.link,
+  },
+  blockquote: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.primary,
+    borderLeftWidth: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginVertical: 6,
+  },
+  list_item: {
+    color: colors.text,
+  },
+  bullet_list: {
+    color: colors.text,
+  },
+  ordered_list: {
+    color: colors.text,
   },
   table: {
     borderWidth: 0,
@@ -334,7 +481,7 @@ const createMarkdownStyles = (colors: any) => ({
   },
 });
 
-const createTableRenderRules = (colors: any) => ({
+export const createTableRenderRules = (colors: any) => ({
   table: (node: any, children: any) => (
     <ScrollView
       key={node.key}

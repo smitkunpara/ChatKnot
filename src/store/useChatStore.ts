@@ -22,6 +22,7 @@ interface ChatState {
   updateModelInConversation: (conversationId: string, providerId: string, model: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'timestamp' | 'id'> & { id?: string }) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
+  updateMessageReasoning: (conversationId: string, messageId: string, reasoning: string) => void;
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
   setLoading: (loading: boolean) => void;
   addToolCall: (conversationId: string, messageId: string, toolCall: ToolCall) => void;
@@ -118,6 +119,20 @@ export const useChatStore = create<ChatState>()(
               ...c,
               messages: c.messages.map((m) =>
                 m.id === messageId ? { ...m, content } : m
+              ),
+            };
+          }
+          return c;
+        }),
+      })),
+
+      updateMessageReasoning: (conversationId, messageId, reasoning) => set((state) => ({
+        conversations: state.conversations.map((c) => {
+          if (c.id === conversationId) {
+            return {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === messageId ? { ...m, reasoning } : m
               ),
             };
           }

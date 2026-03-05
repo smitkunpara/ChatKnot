@@ -381,7 +381,8 @@ export class OpenAiService {
     onChunk: (content: string, toolCalls?: any[]) => void,
     onComplete: (fullContent: string, fullToolCalls?: any[]) => void,
     onError: (error: any) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    onReasoning?: (reasoningChunk: string) => void
   ) {
     try {
       const systemMessages = [userSystemPrompt, appSystemPrompt]
@@ -516,6 +517,7 @@ export class OpenAiService {
       };
 
       let fullContent = '';
+      let fullReasoning = '';
       let toolCallsBuffer: any[] = [];
       const reader = (response as any).body?.getReader();
 
@@ -530,6 +532,13 @@ export class OpenAiService {
 
       const processDelta = (delta: any) => {
         if (!delta) return;
+        // Capture reasoning/thinking content streamed separately by providers
+        // (e.g. DeepSeek sends delta.reasoning_content, others may use delta.reasoning)
+        const reasoningChunk = delta.reasoning_content || delta.reasoning || '';
+        if (reasoningChunk && onReasoning) {
+          fullReasoning += reasoningChunk;
+          onReasoning(reasoningChunk);
+        }
         if (delta.content) {
           emitContentChunk(delta.content);
         }
