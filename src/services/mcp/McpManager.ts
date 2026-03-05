@@ -213,16 +213,6 @@ class McpManagerService {
       .map(([, value]) => value.tool);
   }
 
-  getOpenApiContexts(): string {
-    let context = '';
-    const clients = Array.from(this.clients.values());
-    for (const client of clients) {
-      const ctx = client.getOpenApiContext();
-      if (ctx) context += `\n---\n${ctx}\n---\n`;
-    }
-    return context;
-  }
-
   async executeTool(name: string, args: any): Promise<any> {
     const policy = this.getToolExecutionPolicy(name);
     if (!policy.found) {

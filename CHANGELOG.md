@@ -15,9 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenAI-Compatible Reasoning Support** — Added support for `reasoning_content` and `reasoning` deltas in the OpenAI-compatible streaming API.
 
 ### Fixed
+- **Reduced Prompt Latency** — Eliminated significant response delays (especially on the first message) by removing redundant text-based MCP tool summaries from the system prompt.
 - **Markdown `---` (HR) Visibility** — Fixed horizontal rules being invisible in dark mode by adding explicit color and height tokens.
 - **Thinking Block Detection** — Resolved a bug where empty initial content caused the UI to skip rendering the thinking state.
 - **OpenAPI Error Forwarding** — The AI now receives detailed error text from failed OpenAPI tool calls (e.g., 400 Bad Request details), allowing it to self-correct and retry.
+
+### Changed
+- **Lean System Prompt** — Optimized the application system prompt to be significantly smaller, ensuring the AI focuses on native tool definitions instead of redundant text descriptions.
 
 
 ## [0.2.1] - 2026-03-03

@@ -573,7 +573,6 @@ export const ChatScreen = () => {
         const appSystemPrompt = buildAppSystemPrompt({
           toolsEnabledForRequest,
           hasConnectedMcpServer,
-          mcpInstruction: hasConnectedMcpServer ? McpManager.getOpenApiContexts() : '',
         });
 
         let streamedContent = '';
