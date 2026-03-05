@@ -10,6 +10,7 @@ import {
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -73,6 +74,25 @@ export const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
 
+  // Force re-render on Android when keyboard closes to fix KeyboardAvoidingView padding issue
+  const [keyboardResetKey, setKeyboardResetKey] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const showListener = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+      // Force re-render to reset KeyboardAvoidingView padding
+      setKeyboardResetKey(prev => prev + 1);
+    });
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
+
   const activeConversationId = useChatStore(state => state.activeConversationId);
   const conversations = useChatStore(state => state.conversations);
   const isLoading = useChatStore(state => state.isLoading);
@@ -105,6 +125,8 @@ export const ChatScreen = () => {
   const [includeToolInput, setIncludeToolInput] = useState(false);
   const [includeToolOutput, setIncludeToolOutput] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
+  const userScrolledAwayRef = useRef(false);
 
   const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
     approvalResolversRef.current.forEach((resolve) => {
@@ -173,12 +195,14 @@ export const ChatScreen = () => {
     return null;
   }, [activeConversation?.messages]);
 
+  const messageCount = activeConversation?.messages.length ?? 0;
   useEffect(() => {
-    if (activeConversation?.messages.length) {
-      isNearBottomRef.current = true;
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 90);
+    // Only auto-scroll if the user hasn't manually scrolled away.
+    if (messageCount && !userScrolledAwayRef.current) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [activeConversation?.messages.length, activeConversationId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageCount]);
 
   const handleScroll = useCallback((event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -199,6 +223,8 @@ export const ChatScreen = () => {
   useEffect(() => {
     setEditingMessageId(null);
     setEditingContent(undefined);
+    // Reset scroll lock whenever the conversation changes.
+    userScrolledAwayRef.current = false;
   }, [activeConversationId]);
 
   useEffect(() => {
@@ -278,7 +304,12 @@ export const ChatScreen = () => {
   };
 
   const handleInputFocus = () => {
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 220);
+    setTimeout(() => {
+      if (flatListRef.current && activeConversation?.messages.length) {
+        // Scroll to show last message above the input area
+        flatListRef.current.scrollToEnd({ animated: true });
+      }
+    }, 220);
   };
 
   const handleRetryAssistant = (assistantMessageId: string) => {
@@ -297,6 +328,7 @@ export const ChatScreen = () => {
         setChatError(null);
         stopRequestedRef.current = false;
         editMessage(activeConversationId, candidate.id, candidate.content);
+        userScrolledAwayRef.current = false;
         setLoading(true);
         void runChatLoop(activeConversationId);
         return;
@@ -393,6 +425,7 @@ export const ChatScreen = () => {
   };
 
   const handleSend = async (text: string) => {
+    Keyboard.dismiss();
     let conversationId = activeConversationId;
 
     if (!conversationId) {
@@ -456,6 +489,7 @@ export const ChatScreen = () => {
       });
     }
 
+    userScrolledAwayRef.current = false;
     setLoading(true);
     await runChatLoop(conversationId);
   };
@@ -838,7 +872,8 @@ export const ChatScreen = () => {
     <View style={styles.container}>
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
-        behavior="padding"
+        key={keyboardResetKey}  // Force re-render on Android when keyboard closes
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
       >
@@ -865,9 +900,25 @@ export const ChatScreen = () => {
                 keyExtractor={item => item.id}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-                onScroll={handleScroll}
                 scrollEventThrottle={16}
-                onContentSizeChange={handleContentSizeChange}
+                onScroll={(event) => {
+                  const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+                  // Total height of scrollable content minus the viewport height
+                  const contentHeight = contentSize.height;
+                  const viewportHeight = layoutMeasurement.height;
+                  const scrollY = contentOffset.y;
+
+                  const distanceFromBottom = contentHeight - viewportHeight - scrollY;
+
+                  // A buffer of 120px allows fast incoming chunks to bump the size
+                  // momentarily without tricking the logic into thinking the user scrolled away.
+                  if (distanceFromBottom <= 50) {
+                    userScrolledAwayRef.current = false;
+                  } else if (distanceFromBottom > 50) {
+                    // Start pausing auto-scroll when they are more than a chunk's height away
+                    userScrolledAwayRef.current = true;
+                  }
+                }}
                 renderItem={({ item }) => (
                   <MessageBubble
                     message={item}
@@ -884,7 +935,13 @@ export const ChatScreen = () => {
                     }
                   />
                 )}
+                ListFooterComponent={<View style={{ height: 150 }} />}
                 contentContainerStyle={styles.listContent}
+                onContentSizeChange={() => {
+                  if (isLoading && !userScrolledAwayRef.current) {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                  }
+                }}
               />
             </>
           )}
@@ -913,6 +970,7 @@ export const ChatScreen = () => {
             onAddAttachment={(att) => setAttachments(prev => [...prev, att])}
             onRemoveAttachment={(id) => setAttachments(prev => prev.filter(a => a.id !== id))}
             visionSupported={currentModelVisionSupported}
+            isKeyboardVisible={isKeyboardVisible}
           />
         </View>
       </KeyboardAvoidingView>
@@ -1154,7 +1212,7 @@ const createStyles = (colors: any, insetsTop: number) =>
     },
     listContent: {
       paddingTop: insetsTop + 56 + 10,
-      paddingBottom: 80, // Accounts for bottom float input height
+      // Note: paddingBottom removed - using ListFooterComponent for buffer instead
     },
     emptyState: {
       flex: 1,

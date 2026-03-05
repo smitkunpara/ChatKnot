@@ -43,7 +43,7 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
     outputRange: ['0%', '100%'],
   });
 
-  const version = pkg.version || '0.2.1';
+  const version = pkg.version || '0.2.2';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
