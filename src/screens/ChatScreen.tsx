@@ -898,6 +898,7 @@ export const ChatScreen = () => {
                 ref={flatListRef}
                 data={activeConversation.messages}
                 keyExtractor={item => item.id}
+                extraData={lastAssistantMessageId}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 scrollEventThrottle={16}
@@ -935,11 +936,11 @@ export const ChatScreen = () => {
                     }
                   />
                 )}
-                ListFooterComponent={<View style={{ height: 150 }} />}
+                ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
                   if (isLoading && !userScrolledAwayRef.current) {
-                    flatListRef.current?.scrollToEnd({ animated: false });
+                    flatListRef.current?.scrollToEnd({ animated: true });
                   }
                 }}
               />
@@ -950,7 +951,7 @@ export const ChatScreen = () => {
         {/* BOTTOM FADE: Screen-level gradient using background color to fade the list perfectly behind the input */}
         <LinearGradient
           colors={['transparent', colors.background]}
-          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 160, zIndex: 0 }}
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 260, zIndex: 0 }}
           pointerEvents="none"
         />
 

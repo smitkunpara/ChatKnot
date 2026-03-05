@@ -1,16 +1,23 @@
-# 🚀 ChatKnot v0.2.2 (Stable)
+# 🚀 ChatKnot v0.2.3 (Stable)
 
-This release focuses on polishing the chat experience with critical UI/UX fixes for scrolling, keyboard handling, and visual feedback.
+This release introduces the **Thinking UI** for models with reasoning capabilities, along with critical fixes for chat scrolling and visual feedback.
 
 ## ✨ Key Highlights
 
-### 💬 Chat Experience Polishing
-- **Auto-Scroll Buffer Fix**: Resolved streaming responses scrolling messages behind the floating input. Replaced `paddingBottom` with `ListFooterComponent` (150px) so `scrollToEnd()` properly accounts for buffer space.
-- **Android Keyboard Precision**: Fixed input box not returning to initial position when keyboard is dismissed on Android. Added keyboard state tracking to force re-render and reset `KeyboardAvoidingView` padding.
-- **Dynamic Input Padding**: Input box now uses conditional bottom padding: 10px when keyboard is open (close to keyboard), 25px when keyboard is closed (lifted up from bottom).
+### 🧠 Thinking UI Support
+- **Thinking Block Component**: New dedicated UI for models that output internal thought processes (`<think>` tags).
+- **Live Thinking Timer**: Real-time counter showing elapsed thinking time ("Thinking for 5s").
+- **Shimmer Animation**: Subtle animated pulse effect during reasoning for visual feedback.
+- **Markdown in Thoughts**: Full Markdown support in thinking content - code blocks, lists, and rich formatting.
+- **OpenAI-Compatible Reasoning**: Supports `reasoning_content` and `reasoning` deltas in streaming API.
+
+### 💬 Chat Experience Fixes
+- **Improved Auto-Scroll**: Fixed messages hiding behind input during streaming. Increased buffer to 250px to handle expandable thinking blocks.
+- **Android Keyboard Precision**: Fixed input box not returning to initial position when keyboard is dismissed. Added keyboard state tracking for `KeyboardAvoidingView`.
 
 ### 🎨 Visual Refinements
-- **Stop Button Styling**: Updated stop button to use danger/red background color with white icon for better visibility and consistency with warning/error styling.
+- **Stop Button**: Updated to danger/red background with white icon for better visibility.
+- **Horizontal Rule Fix**: Fixed `---` being invisible in dark mode.
 
 ---
 

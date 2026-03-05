@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased]
+## [0.2.3] - 2026-03-05
 
 ### Added
 - **Thinking UI Support** — Introduced a dedicated `ThinkingBlock` component for models that output internal thought processes.
@@ -21,9 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Markdown `---` (HR) Visibility** — Fixed horizontal rules being invisible in dark mode by adding explicit color and height tokens.
 - **Thinking Block Detection** — Resolved a bug where empty initial content caused the UI to skip rendering the thinking state.
 - **OpenAPI Error Forwarding** — The AI now receives detailed error text from failed OpenAPI tool calls (e.g., 400 Bad Request details), allowing it to self-correct and retry.
+- **Chat Auto-Scroll Buffer** — Fixed streaming responses scrolling messages behind the floating input. Increased buffer to handle expandable thinking blocks.
 
 ### Changed
 - **Lean System Prompt** — Optimized the application system prompt to be significantly smaller, ensuring the AI focuses on native tool definitions instead of redundant text descriptions.
+- **Stop Button Styling** — Updated stop button to use danger/red background color with white icon for better visibility.
 
 ## [0.2.2] - 2026-03-04
 
