@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.3] - 2026-03-05
+## [0.2.3] - 2026-03-06
 
 ### Added
 - **Thinking UI Support** — Introduced a dedicated `ThinkingBlock` component for models that output internal thought processes.
@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenAI-Compatible Reasoning Support** — Added support for `reasoning_content` and `reasoning` deltas in the OpenAI-compatible streaming API.
 
 ### Fixed
+- **Retry Button Visibility** — Fixed the retry button not appearing when AI generation was stopped before any content was produced or during tool-calling loops.
+- **Stop AI Stability** — Resolved multiple crashes when stopping AI mid-stream, including "AbortError" unhandled rejections and state updates on unmounted components.
+- **FlatList Rendering Consistency** — Fixed "Rendered fewer hooks than expected" error in `MessageBubble` when stopping AI by ensuring a consistent component structure (avoiding early null returns).
+- **Intelligent Retry Placement** — The retry button now correctly appears on the last meaningful assistant message, automatically hiding empty interrupted messages that occur when stopping mid-loop.
 - **Reduced Prompt Latency** — Eliminated significant response delays (especially on the first message) by removing redundant text-based MCP tool summaries from the system prompt.
 - **Markdown `---` (HR) Visibility** — Fixed horizontal rules being invisible in dark mode by adding explicit color and height tokens.
 - **Thinking Block Detection** — Resolved a bug where empty initial content caused the UI to skip rendering the thinking state.

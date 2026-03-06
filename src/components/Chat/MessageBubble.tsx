@@ -100,8 +100,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const hasReasoning = !!message.reasoning?.trim();
   const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
 
+  // Show assistant message if it has content OR if retry is available (for empty messages that were stopped)
+  const shouldShowAssistant = !isUser && onRetryAssistant;
   // Condition to hide the bubble - used below to conditionally render content
-  const shouldHideBubble = isSystem || isTool || !shouldRenderBubble;
+  const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
 
   const copyToClipboard = async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -251,12 +253,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           )}
 
           <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
-            {!isStreaming && message.content ? (
-              <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
-                <Copy size={13} color={colors.textTertiary} />
-              </TouchableOpacity>
-            ) : null}
-            {!isUser && !isStreaming && onRetryAssistant ? (
+            {!isStreaming && (message.content || hasToolCalls) ? (
+              <>
+                <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
+                  <Copy size={13} color={colors.textTertiary} />
+                </TouchableOpacity>
+                {!isUser && onRetryAssistant ? (
+                  <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
+                    <RotateCcw size={13} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                ) : null}
+              </>
+            ) : !isUser && !isStreaming && onRetryAssistant ? (
               <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
                 <RotateCcw size={13} color={colors.textTertiary} />
               </TouchableOpacity>
@@ -361,6 +369,8 @@ const createStyles = (colors: any) =>
     },
     actions: {
       flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'nowrap',
       gap: 10,
       marginTop: 4,
       paddingHorizontal: 4,

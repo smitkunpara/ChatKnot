@@ -186,15 +186,47 @@ export const ChatScreen = () => {
     ? null
     : modelResolution.message || CHAT_NO_MODEL_AVAILABLE_MESSAGE;
 
+  // Determine which assistant message should host the 'retry' button.
+  // Usually it's the absolute last assistant message, but if that message is empty 
+  // (e.g. because generation was interrupted before any content was received), 
+  // we move the retry button to the PREVIOUS assistant message and hide the empty one.
   const lastAssistantMessageId = useMemo(() => {
     if (!activeConversation?.messages) return null;
-    for (let i = activeConversation.messages.length - 1; i >= 0; i--) {
-      if (activeConversation.messages[i].role === 'assistant') {
-        return activeConversation.messages[i].id;
+    const messages = activeConversation.messages;
+
+    // Find the absolute last assistant message
+    let lastIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        lastIdx = i;
+        break;
       }
     }
-    return null;
-  }, [activeConversation?.messages]);
+
+    if (lastIdx === -1) return null;
+
+    const lastMessage = messages[lastIdx];
+    // A message is "meaningful" if it has content, reasoning, or tool calls.
+    const isMeaningful = !!(
+      lastMessage.content?.trim() || 
+      lastMessage.reasoning?.trim() || 
+      lastMessage.toolCalls?.length ||
+      lastMessage.isError
+    );
+
+    // If the last assistant message is empty AND not currently loading,
+    // we prefer to attach the retry button to the PREVIOUS assistant message (if any).
+    // This hides the empty last message and attaches the retry button to a meaningful one.
+    if (!isMeaningful && !isLoading) {
+      for (let i = lastIdx - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant') {
+          return messages[i].id;
+        }
+      }
+    }
+
+    return lastMessage.id;
+  }, [activeConversation?.messages, isLoading]);
 
   const messageCount = activeConversation?.messages.length ?? 0;
   useEffect(() => {
@@ -302,7 +334,6 @@ export const ChatScreen = () => {
     clearPendingToolApprovals(false);
     activeRequestControllerRef.current?.abort();
     setLoading(false);
-    setChatError('Stopped.');
   };
 
   const handleInputFocus = () => {
@@ -906,7 +937,7 @@ export const ChatScreen = () => {
                 ref={flatListRef}
                 data={activeConversation.messages}
                 keyExtractor={item => item.id}
-                extraData={lastAssistantMessageId}
+                extraData={{ lastAssistantMessageId, isLoading }}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 scrollEventThrottle={16}
