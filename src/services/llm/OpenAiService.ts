@@ -453,14 +453,9 @@ export class OpenAiService {
       if (tools && tools.length > 0) {
         body.tools = tools;
         body.tool_choice = 'auto';
+        // Only include parallel_tool_calls if it's likely an OpenAI or compatible provider
+        // some older or smaller providers might not support this field.
         body.parallel_tool_calls = true;
-
-        // Compatibility fallback for OpenAI-like providers that still use legacy function_call.
-        const isLikelyOpenAi = /api\.openai\.com/i.test(this.getBaseUrl());
-        if (!isLikelyOpenAi) {
-          body.functions = tools.map((tool: any) => tool.function);
-          body.function_call = 'auto';
-        }
       }
 
       const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {

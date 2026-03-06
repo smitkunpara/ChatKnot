@@ -79,9 +79,19 @@ const buildProbeUrls = (normalizedInputUrl: string): string[] => {
 const resolveSchema = (schema: any, components: any): any => {
   if (schema?.$ref) {
     const refName = schema.$ref.split('/').pop();
-    return components?.[refName] || { type: 'object' };
+    const resolved = components?.[refName];
+    if (resolved) return resolved;
   }
   return schema;
+};
+
+const sanitizeToolName = (name: string): string => {
+  // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
+  const sanitized = name
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return sanitized || 'tool';
 };
 
 export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
@@ -102,23 +112,45 @@ export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
         return;
       }
 
-      const name = operation.operationId || `${method}_${path.replace(/\//g, '_')}`;
+      const rawName = operation.operationId || `${method}_${path.replace(/\//g, '_')}`;
+      const name = sanitizeToolName(rawName);
+
       let inputSchema: any = { type: 'object', properties: {}, required: [] };
 
       if (operation.requestBody?.content?.['application/json']?.schema) {
-        inputSchema = resolveSchema(operation.requestBody.content['application/json'].schema, schemas);
-        if (!inputSchema.required) inputSchema.required = [];
-        if (!inputSchema.properties) inputSchema.properties = {};
+        const bodySchema = resolveSchema(operation.requestBody.content['application/json'].schema, schemas);
+        if (bodySchema && typeof bodySchema === 'object') {
+          // If the schema is already an object type, merge its properties
+          if (bodySchema.type === 'object' || bodySchema.properties) {
+            inputSchema.properties = { ...inputSchema.properties, ...(bodySchema.properties || {}) };
+            if (Array.isArray(bodySchema.required)) {
+              inputSchema.required = Array.from(new Set([...inputSchema.required, ...bodySchema.required]));
+            }
+          } else {
+            // Fallback: put the entire schema under a 'body' property if it's not a top-level object
+            inputSchema.properties.body = bodySchema;
+          }
+        }
       }
 
       if (Array.isArray(operation.parameters)) {
         operation.parameters.forEach((param: any) => {
-          if (!param?.schema) return;
-          inputSchema.properties[param.name] = param.schema;
+          if (!param?.name) return;
+          const paramSchema = resolveSchema(param.schema, schemas) || { type: 'string' };
+          inputSchema.properties[param.name] = paramSchema;
           if (param.required && !inputSchema.required.includes(param.name)) {
             inputSchema.required.push(param.name);
           }
         });
+      }
+
+      // Ensure properties and required are valid for OpenAI
+      if (Object.keys(inputSchema.properties).length === 0) {
+        // Many providers reject tools with empty properties unless it's null or omitted,
+        // but OpenAI standard usually expects an object. We'll leave it as empty object for now.
+      }
+      if (inputSchema.required.length === 0) {
+        delete inputSchema.required;
       }
 
       const operationSecurity = extractSecuritySchemeNames(operation?.security);

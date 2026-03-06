@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenAI-Compatible Reasoning Support** — Added support for `reasoning_content` and `reasoning` deltas in the OpenAI-compatible streaming API.
 
 ### Fixed
+- **Tool Calling Compatibility** — Fixed an issue where AI models failed to trigger tool calls due to non-standard tool names (dots/braces) or invalid JSON schemas.
+- **Sanitized Tool Names** — All tool names now strictly adhere to the OpenAI regex `^[a-zA-Z0-9_-]{1,64}$`.
+- **Improved Schema Extraction** — Ensured `inputSchema` always includes `type: 'object'` at the top level, preventing rejection by stricter OpenAI-compatible providers.
 - **Retry Button Visibility** — Fixed the retry button not appearing when AI generation was stopped before any content was produced or during tool-calling loops.
 - **Stop AI Stability** — Resolved multiple crashes when stopping AI mid-stream, including "AbortError" unhandled rejections and state updates on unmounted components.
 - **FlatList Rendering Consistency** — Fixed "Rendered fewer hooks than expected" error in `MessageBubble` when stopping AI by ensuring a consistent component structure (avoiding early null returns).

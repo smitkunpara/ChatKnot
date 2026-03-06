@@ -60,6 +60,15 @@ class McpManagerService {
     return next;
   }
 
+  private sanitizeToolName(name: string): string {
+    // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
+    const sanitized = name
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return sanitized || 'tool';
+  }
+
   private rebuildToolRegistry() {
     this.tools.clear();
 
@@ -81,8 +90,10 @@ class McpManagerService {
 
       serverTools.forEach(tool => {
         const hasCollision = (rawNameCounts.get(tool.name) || 0) > 1;
-        const candidateName = hasCollision ? `${namespace}.${tool.name}` : tool.name;
-        const exposedName = this.buildUniqueToolName(candidateName, usedNames);
+        // Use double underscore '__' instead of '.' for OpenAI compatibility
+        const candidateName = hasCollision ? `${namespace}__${tool.name}` : tool.name;
+        const sanitizedCandidate = this.sanitizeToolName(candidateName);
+        const exposedName = this.buildUniqueToolName(sanitizedCandidate, usedNames);
         usedNames.add(exposedName);
 
         const exposedTool: McpToolSchema = {
