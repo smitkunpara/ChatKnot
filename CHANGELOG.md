@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.3] - 2026-03-06
 
 ### Added
+- **Export with Thinking** — Added an option to include model internal reasoning in chat exports (PDF, Markdown, and JSON). Thinking blocks are exported as collapsible `<details>` blocks in Markdown.
+- **Stability Regression Tests** — Added comprehensive unit tests for AbortController stream cancellation, tool name sanitization, and OpenAPI schema extraction to prevent future regressions.
 - **Thinking UI Support** — Introduced a dedicated `ThinkingBlock` component for models that output internal thought processes.
 - **Progressive Thinking Timer** — Added a real-time counter ("Thinking for 5s") while the model is reasoning.
 - **Thinking Shimmer Animation** — Added a subtle animated shine/pulse effect on the thinking state to provide visual feedback.

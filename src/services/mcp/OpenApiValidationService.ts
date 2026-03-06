@@ -87,8 +87,9 @@ const resolveSchema = (schema: any, components: any): any => {
 
 const sanitizeToolName = (name: string): string => {
   // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
+  // We prefer underscores over hyphens for broader compatibility across all providers
   const sanitized = name
-    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/[^a-zA-Z0-9_]+/g, '_')
     .replace(/^_+|_+$/g, '');
 
   return sanitized || 'tool';

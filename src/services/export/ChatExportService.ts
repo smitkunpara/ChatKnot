@@ -15,6 +15,7 @@ export interface ExportOptions {
   format: ExportFormat;
   includeToolInput: boolean;
   includeToolOutput: boolean;
+  includeThinking?: boolean;
 }
 
 // ─── Markdown Export ─────────────────────────────────────────────────────────
@@ -89,6 +90,16 @@ function toMarkdown(conversation: Conversation, opts: ExportOptions): string {
     lines.push(`### ${label} — ${time}`);
     lines.push('');
 
+    if (opts.includeThinking && msg.reasoning?.trim()) {
+      lines.push('<details>');
+      lines.push('<summary><strong>Thought</strong> (expand to view)</summary>');
+      lines.push('');
+      lines.push(msg.reasoning.trim());
+      lines.push('');
+      lines.push('</details>');
+      lines.push('');
+    }
+
     if (msg.content?.trim()) {
       lines.push(msg.content.trim());
       lines.push('');
@@ -118,6 +129,10 @@ function toJson(conversation: Conversation): string {
         role: msg.role,
         content: msg.content || '',
       };
+
+      if (msg.reasoning?.trim()) {
+        base.reasoning = msg.reasoning.trim();
+      }
 
       if (msg.toolCallId) {
         base.tool_call_id = msg.toolCallId;
@@ -206,6 +221,12 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     let block = `<div class="message ${roleClass}">`;
     block += `<div class="message-header"><strong>${label}</strong><span class="time">${escapeHtml(time)}</span></div>`;
 
+    if (opts.includeThinking && msg.reasoning?.trim()) {
+      const safeReasoning = msg.reasoning.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const renderedReasoning = marked.parse(safeReasoning) as string;
+      block += `<div class="thinking"><strong>Thought:</strong><div class="thinking-content">${renderedReasoning}</div></div>`;
+    }
+
     if (msg.content?.trim()) {
       // Escape raw HTML tags created by the AI to prevent XSS in the PDF renderer
       const safeContent = msg.content.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -248,6 +269,9 @@ function toHtml(conversation: Conversation, opts: ExportOptions): string {
     .message-content table { border-collapse: collapse; margin: 8px 0; width: 100%; }
     .message-content th, .message-content td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
     .message-content th { background: #f0f0f0; font-weight: 600; }
+    .thinking { margin-top: 8px; margin-bottom: 12px; padding: 10px 14px; background: #fafafa; border-left: 3px solid #666; border-radius: 4px; color: #555; font-size: 13px; }
+    .thinking-content { margin-top: 4px; }
+    .thinking-content p { margin: 4px 0; }
     .tool { margin-top: 8px; padding: 8px; background: #fff3e0; border-radius: 6px; font-size: 13px; }
     .tool-detail { margin-top: 4px; }
     .tool-error { margin-top: 4px; color: #c62828; }

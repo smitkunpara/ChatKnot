@@ -125,6 +125,7 @@ export const ChatScreen = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
   const [includeToolInput, setIncludeToolInput] = useState(false);
   const [includeToolOutput, setIncludeToolOutput] = useState(false);
+  const [includeThinking, setIncludeThinking] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
   const userScrolledAwayRef = useRef(false);
@@ -897,6 +898,7 @@ export const ChatScreen = () => {
         format: exportFormat,
         includeToolInput,
         includeToolOutput,
+        includeThinking,
       };
       await exportChat(activeConversation, opts);
     } catch (e: any) {
@@ -1048,6 +1050,7 @@ export const ChatScreen = () => {
             setExportFormat('pdf');
             setIncludeToolInput(false);
             setIncludeToolOutput(false);
+            setIncludeThinking(false);
             setExportModalVisible(true);
           }}
           disabled={!chatHasMessages}
@@ -1092,6 +1095,17 @@ export const ChatScreen = () => {
 
                 {exportFormat !== 'json' && (
                   <>
+                    <Text style={styles.exportSectionLabel}>Export Options</Text>
+                    <TouchableOpacity
+                      style={styles.exportCheckRow}
+                      onPress={() => setIncludeThinking(v => !v)}
+                    >
+                      <View style={[styles.exportCheckBox, includeThinking && styles.exportCheckBoxActive]}>
+                        {includeThinking && <Check size={14} color={colors.onPrimary} />}
+                      </View>
+                      <Text style={styles.exportCheckLabel}>Include model thinking</Text>
+                    </TouchableOpacity>
+
                     <Text style={styles.exportSectionLabel}>Tool Details</Text>
                     <TouchableOpacity
                       style={styles.exportCheckRow}

@@ -112,6 +112,49 @@ describe('McpManager', () => {
     expect(toolNames).toEqual(['fetch_users', 'search']);
   });
 
+  it('sanitizes tool names and uses "__" for namespaces to satisfy OpenAI requirements', async () => {
+    toolsByServerId['complex-server'] = [
+      {
+        name: 'get-user.details',
+        description: 'Tool with dots',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'search',
+        description: 'Collision tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+    // Another server with same tool name to trigger namespacing
+    toolsByServerId['other-server'] = [
+      {
+        name: 'search',
+        description: 'Collision tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('complex-server', 'Complex Server'),
+      createServer('other-server', 'Other Server'),
+    ]);
+
+    const allTools = McpManager.getTools();
+    const toolNames = allTools.map(t => t.name);
+
+    // 1. Check dot sanitization: 'get-user.details' -> 'get_user_details'
+    expect(toolNames).toContain('get_user_details');
+    
+    // 2. Check namespace separator: 'complex_server__search' instead of 'complex_server.search'
+    expect(toolNames).toContain('complex_server__search');
+    expect(toolNames).toContain('other_server__search');
+
+    // 3. Ensure no dots or invalid chars in any tool name
+    toolNames.forEach(name => {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]+$/);
+    });
+  });
+
   it('exposes tool execution policy and blocks disabled tools', async () => {
     toolsByServerId['server-a'] = [
       {
