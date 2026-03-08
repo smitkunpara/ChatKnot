@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mode System Foundation** — Added first-class Mode entities with store CRUD support, persistence, and migration coverage for existing installations.
+- **Mode-Aware Runtime Wiring** — Connected mode configuration to prompt handling, MCP tool availability, draft state handling, and model selection logic.
+- **Settings Mode Management UI** — Added mode management workflows in Settings, including mode listing, editing, and per-mode MCP controls.
+- **Chat Mode Integration** — Integrated mode selection into chat flows, including an in-composer mode selector and chat-level mode behavior.
+- **Per-Conversation Mode Persistence** — Conversations now persist their selected mode, and default mode protections were added to prevent invalid destructive edits.
+
+### Changed
+- **MCP Configuration Architecture** — Refactored MCP handling to separate a global MCP registry from per-mode runtime overrides for clearer control boundaries.
+- **MCP Override Merge Behavior** — Added merge logic for applying mode-level MCP overrides on top of global MCP configuration at runtime.
+- **Mode Constraints Simplified** — Removed mode-level model override behavior as part of the multiple-mode support refactor.
+- **Approval Policy Cleanup** — Removed global "auto-approve all" behavior and aligned approvals with the updated mode/MCP design.
+
+### Fixed
+- **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen` caused by a prematurely closed `KeyboardAwareContainer`.
+
 ## [0.2.3] - 2026-03-06
 
 ### Added
