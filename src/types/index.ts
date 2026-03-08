@@ -119,14 +119,12 @@ export interface McpServerConfig {
   headerRefs?: Record<string, string>;
   enabled: boolean;
   tools: McpToolSchema[];
-  autoAllow: boolean;
   allowedTools: string[];
   autoApprovedTools?: string[];
 }
 
 export interface ModeServerOverride {
   enabled: boolean;
-  autoAllow: boolean;
   allowedTools?: string[];
   autoApprovedTools?: string[];
 }
@@ -135,8 +133,6 @@ export interface Mode {
   id: string;
   name: string;
   systemPrompt: string;
-  providerId: string | null;
-  model: string | null;
   mcpServerOverrides: Record<string, ModeServerOverride>;
   isDefault: boolean;
 }

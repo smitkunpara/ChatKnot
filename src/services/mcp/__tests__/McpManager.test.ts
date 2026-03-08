@@ -28,14 +28,13 @@ jest.mock('../McpClient', () => ({
 const createServer = (
   id: string,
   name: string,
-  options: Partial<Pick<McpServerConfig, 'autoAllow' | 'allowedTools' | 'autoApprovedTools'>> = {}
+  options: Partial<Pick<McpServerConfig, 'allowedTools' | 'autoApprovedTools'>> = {}
 ): McpServerConfig => ({
   id,
   name,
   url: `https://${id}.example.com`,
   enabled: true,
   tools: [],
-  autoAllow: options.autoAllow ?? false,
   allowedTools: options.allowedTools ?? [],
   autoApprovedTools: options.autoApprovedTools ?? [],
 });
@@ -123,7 +122,6 @@ describe('McpManager', () => {
 
     await McpManager.initialize([
       createServer('server-a', 'Alpha Server', {
-        autoAllow: false,
         allowedTools: ['other-tool'],
       }),
     ]);
@@ -150,7 +148,6 @@ describe('McpManager', () => {
 
     await McpManager.initialize([
       createServer('server-a', 'Alpha Server', {
-        autoAllow: true,
         allowedTools: [],
       }),
     ]);
@@ -176,7 +173,6 @@ describe('McpManager', () => {
 
     await McpManager.initialize([
       createServer('server-a', 'Alpha Server', {
-        autoAllow: false,
         allowedTools: ['search'],
         autoApprovedTools: ['search'],
       }),

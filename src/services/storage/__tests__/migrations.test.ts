@@ -124,7 +124,6 @@ describe('storage migrations foundation helpers', () => {
           token: 'server-token',
           enabled: true,
           tools: [],
-          autoAllow: false,
           allowedTools: [],
         },
       ],
@@ -224,7 +223,7 @@ describe('storage migrations foundation helpers', () => {
         providers: Array<{ apiKey: string }>;
         mcpServers: Array<{ token?: string; headers?: Record<string, string> }>;
         modes: Array<{
-          mcpServerOverrides: Record<string, { enabled: boolean; autoAllow: boolean }>;
+          mcpServerOverrides: Record<string, { enabled: boolean }>;
         }>;
       };
     };

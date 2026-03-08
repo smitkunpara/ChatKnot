@@ -259,7 +259,6 @@ class McpManagerService {
       allowedTools.includes(entry.tool.name) ||
       allowedTools.includes(entry.originalToolName);
     const autoAllow =
-      !!serverConfig?.autoAllow ||
       autoApprovedTools.includes(entry.tool.name) ||
       autoApprovedTools.includes(entry.originalToolName);
 

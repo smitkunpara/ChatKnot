@@ -159,10 +159,8 @@ export const ChatScreen = () => {
         selectedProviderId: activeConversation?.providerId || '',
         selectedModel: activeConversation?.modelOverride || '',
         lastUsedModel,
-        modeProviderId: activeMode?.providerId,
-        modeModel: activeMode?.model,
       }),
-    [providers, activeConversation?.providerId, activeConversation?.modelOverride, lastUsedModel, activeMode?.providerId, activeMode?.model]
+    [providers, activeConversation?.providerId, activeConversation?.modelOverride, lastUsedModel]
   );
 
   const noModelAvailableMessage = modelResolution.selection
@@ -481,8 +479,6 @@ export const ChatScreen = () => {
           selectedProviderId: currentConv.providerId,
           selectedModel: currentConv.modelOverride || '',
           lastUsedModel: settingsState.lastUsedModel,
-          modeProviderId: loopMode?.providerId,
-          modeModel: loopMode?.model,
         });
 
         if (!modelSelection.selection) {

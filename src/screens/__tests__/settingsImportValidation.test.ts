@@ -205,7 +205,7 @@ describe('validateImportPayload', () => {
             const payload = {
                 modes: [{
                     id: 'm1', name: 'Test', systemPrompt: 'Hi',
-                    mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
+                    mcpServerOverrides: { s1: { enabled: true } },
                 }],
             };
             expect(validateImportPayload(payload)).toBeNull();

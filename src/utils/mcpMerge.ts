@@ -2,7 +2,7 @@ import { McpServerConfig, ModeServerOverride } from '../types';
 
 /**
  * Merge global MCP server configs with per-mode overrides.
- * Each mode can override `enabled`, `autoAllow`, `allowedTools`, and `autoApprovedTools`.
+ * Each mode can override `enabled`, `allowedTools`, and `autoApprovedTools`.
  * Servers without an override use their global defaults.
  */
 export const mergeServersWithOverrides = (
@@ -15,7 +15,6 @@ export const mergeServersWithOverrides = (
     return {
       ...server,
       enabled: override.enabled,
-      autoAllow: override.autoAllow,
       allowedTools: override.allowedTools ?? server.allowedTools,
       autoApprovedTools: override.autoApprovedTools ?? server.autoApprovedTools,
     };

@@ -4,8 +4,6 @@ const createMode = (overrides: Partial<import('../../types').Mode> = {}): import
   id: overrides.id ?? `mode-${Math.random().toString(36).slice(2, 8)}`,
   name: overrides.name ?? 'Test Mode',
   systemPrompt: overrides.systemPrompt ?? 'You are a test assistant.',
-  providerId: overrides.providerId ?? null,
-  model: overrides.model ?? null,
   mcpServerOverrides: overrides.mcpServerOverrides ?? {},
   isDefault: overrides.isDefault ?? false,
 });
@@ -16,7 +14,6 @@ const createMcpServer = (id: string, name = `Server ${id}`): import('../../types
   url: `https://${id}.example.com`,
   enabled: true,
   tools: [],
-  autoAllow: false,
   allowedTools: [],
 });
 
@@ -166,11 +163,11 @@ describe('useSettingsStore mode CRUD', () => {
     const { store } = await loadStore();
     store.getState().addMode(createMode({
       id: 'mode-1',
-      mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
+      mcpServerOverrides: { s1: { enabled: true } },
     }));
 
     store.getState().updateMode('mode-1', {
-      mcpServerOverrides: { s2: { enabled: true, autoAllow: true }, s3: { enabled: false, autoAllow: false } },
+      mcpServerOverrides: { s2: { enabled: true }, s3: { enabled: false } },
     });
 
     expect(Object.keys(store.getState().modes[0].mcpServerOverrides)).toHaveLength(2);
@@ -181,28 +178,18 @@ describe('useSettingsStore mode CRUD', () => {
     const { store } = await loadStore();
     store.getState().addMode(createMode({
       id: 'mode-1',
-      mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
+      mcpServerOverrides: { s1: { enabled: true } },
     }));
 
     store.getState().updateMode('mode-1', {
       mcpServerOverrides: {
-        s1: { enabled: true, autoAllow: false, allowedTools: ['tool1', 'tool2'], autoApprovedTools: ['tool1'] },
+        s1: { enabled: true, allowedTools: ['tool1', 'tool2'], autoApprovedTools: ['tool1'] },
       },
     });
 
     const overrides = store.getState().modes[0].mcpServerOverrides['s1'];
     expect(overrides.allowedTools).toEqual(['tool1', 'tool2']);
     expect(overrides.autoApprovedTools).toEqual(['tool1']);
-  });
-
-  it('updateMode with providerId and model overrides', async () => {
-    const { store } = await loadStore();
-    store.getState().addMode(createMode({ id: 'mode-1', providerId: null, model: null }));
-
-    store.getState().updateMode('mode-1', { providerId: 'p1', model: 'gpt-4o' });
-
-    expect(store.getState().modes[0].providerId).toBe('p1');
-    expect(store.getState().modes[0].model).toBe('gpt-4o');
   });
 
   it('updateMode does not affect other modes', async () => {

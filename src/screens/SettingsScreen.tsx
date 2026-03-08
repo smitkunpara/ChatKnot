@@ -632,8 +632,6 @@ export const SettingsScreen = () => {
       id: uuid.v4() as string,
       name: 'New Mode',
       systemPrompt: '',
-      providerId: null,
-      model: null,
       mcpServerOverrides: {},
       isDefault: false,
     };
@@ -713,7 +711,6 @@ export const SettingsScreen = () => {
       token: undefined,
       enabled: true,
       tools: [],
-      autoAllow: false,
       allowedTools: [],
       autoApprovedTools: [],
     };
@@ -803,8 +800,6 @@ export const SettingsScreen = () => {
       id: mode.id,
       name: mode.name,
       systemPrompt: mode.systemPrompt,
-      providerId: mode.providerId,
-      model: mode.model,
       isDefault: mode.isDefault,
       mcpServerOverrides: mode.mcpServerOverrides ?? {},
     }));
@@ -819,7 +814,6 @@ export const SettingsScreen = () => {
       tokenRef: server.tokenRef,
       enabled: !!server.enabled,
       tools: server.tools || [],
-      autoAllow: !!server.autoAllow,
       allowedTools: server.allowedTools || [],
       autoApprovedTools: server.autoApprovedTools || [],
     }));
@@ -880,18 +874,16 @@ export const SettingsScreen = () => {
       let importedMcpServers = Array.isArray(settings?.mcpServers) ? settings.mcpServers : [];
       if (!Array.isArray(importedModes) || importedModes.length === 0) {
         // Build overrides from legacy servers
-        const overrides: Record<string, { enabled: boolean; autoAllow: boolean }> = {};
+        const overrides: Record<string, { enabled: boolean }> = {};
         for (const s of importedMcpServers) {
           if (s?.id) {
-            overrides[s.id] = { enabled: !!s.enabled, autoAllow: !!s.autoAllow };
+            overrides[s.id] = { enabled: !!s.enabled };
           }
         }
         importedModes = [{
           id: uuid.v4() as string,
           name: 'Default',
           systemPrompt: typeof settings?.systemPrompt === 'string' ? settings.systemPrompt : '',
-          providerId: null,
-          model: null,
           mcpServerOverrides: overrides,
           isDefault: true,
         }];
@@ -1097,92 +1089,12 @@ export const SettingsScreen = () => {
               />
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Provider & Model</Text>
-              <Text style={styles.sectionHint}>Optional. If set, conversations using this mode will default to this provider and model.</Text>
-              {providers.length > 0 ? (
-                <>
-                  <View style={styles.modeProviderRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.modeProviderPill,
-                        !editingModeDraft.providerId ? styles.themePillActive : undefined,
-                      ]}
-                      onPress={() =>
-                        setModeDrafts(prev => updateModeDraft(prev, editingMode.id, { providerId: null, model: null }))
-                      }
-                    >
-                      <Text style={[styles.modeProviderPillText, !editingModeDraft.providerId ? styles.themePillTextActive : undefined]}>
-                        None
-                      </Text>
-                    </TouchableOpacity>
-                    {providers.filter(p => p.enabled).map(provider => (
-                      <TouchableOpacity
-                        key={provider.id}
-                        style={[
-                          styles.modeProviderPill,
-                          editingModeDraft.providerId === provider.id ? styles.themePillActive : undefined,
-                        ]}
-                        onPress={() => {
-                          const visibleModels = getProviderVisibleModels(provider);
-                          setModeDrafts(prev =>
-                            updateModeDraft(prev, editingMode.id, {
-                              providerId: provider.id,
-                              model: visibleModels[0] || provider.model || null,
-                            })
-                          );
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.modeProviderPillText,
-                            editingModeDraft.providerId === provider.id ? styles.themePillTextActive : undefined,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {provider.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  {editingModeDraft.providerId ? (() => {
-                    const selectedProvider = providers.find(p => p.id === editingModeDraft.providerId);
-                    if (!selectedProvider) return null;
-                    const visibleModels = getProviderVisibleModels(selectedProvider);
-                    return (
-                      <TouchableOpacity
-                        style={styles.modelPickerBtn}
-                        onPress={() => {
-                          setActiveProviderIdForPicker(selectedProvider.id);
-                          setModelSearch('');
-                          setModelPickerVisible(true);
-                          setDraftAvailableModels(prev => ({
-                            ...prev,
-                            [selectedProvider.id]: selectedProvider.availableModels || [],
-                          }));
-                        }}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.modelLabel}>Model</Text>
-                          <Text style={styles.modelText}>{editingModeDraft.model || 'Select model'}</Text>
-                        </View>
-                        <ChevronDown size={18} color={colors.textTertiary} />
-                      </TouchableOpacity>
-                    );
-                  })() : null}
-                </>
-              ) : (
-                <Text style={styles.sectionHint}>No providers configured. Add providers first.</Text>
-              )}
-            </View>
-
             <Text style={styles.sectionHeader}>MCP Servers</Text>
             {mcpServers.length > 0 ? (
               mcpServers.map(server => {
                 const overrides = editingMode?.mcpServerOverrides ?? {};
                 const override = overrides[server.id];
                 const isEnabled = override ? override.enabled : server.enabled;
-                const isAutoAllow = override ? override.autoAllow : server.autoAllow;
                 const allowedTools = override?.allowedTools ?? server.allowedTools ?? [];
                 const autoApprovedTools = override?.autoApprovedTools ?? server.autoApprovedTools ?? [];
 
@@ -1201,7 +1113,6 @@ export const SettingsScreen = () => {
                       ...overrides,
                       [server.id]: {
                         enabled: isEnabled,
-                        autoAllow: isAutoAllow,
                         allowedTools,
                         autoApprovedTools,
                         ...override,
@@ -1226,15 +1137,6 @@ export const SettingsScreen = () => {
                         onValueChange={enabled => updateOverride({ enabled })}
                         trackColor={{ false: colors.border, true: colors.primarySoft }}
                         thumbColor={isEnabled ? colors.primary : colors.textTertiary}
-                      />
-                    </View>
-                    <View style={[styles.row, { marginTop: 4 }]}>
-                      <Text style={styles.overrideLabel}>Auto-approve all tools</Text>
-                      <Switch
-                        value={isAutoAllow}
-                        onValueChange={autoAllow => updateOverride({ autoAllow })}
-                        trackColor={{ false: colors.border, true: colors.primarySoft }}
-                        thumbColor={isAutoAllow ? colors.primary : colors.textTertiary}
                       />
                     </View>
 
@@ -1777,13 +1679,6 @@ export const SettingsScreen = () => {
                   <TouchableOpacity
                     style={styles.modelRow}
                     onPress={() => {
-                      if (activeView === 'modeEditor' && editingModeId) {
-                        setModeDrafts(prev => updateModeDraft(prev, editingModeId, { model: item }));
-                        setModelPickerVisible(false);
-                        setActiveProviderIdForPicker(null);
-                        return;
-                      }
-
                       if (!activeProviderForPicker || !activeProviderDraftForPicker) return;
 
                       const nextHiddenModels = (activeProviderDraftForPicker.hiddenModels || []).filter(
@@ -2153,6 +2048,11 @@ const createStyles = (colors: any) =>
       fontSize: 12,
       marginTop: 4,
     },
+    itemTitle: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '700',
+    },
     serverNameInput: {
       color: colors.text,
       fontSize: 15,
@@ -2464,24 +2364,5 @@ const createStyles = (colors: any) =>
       fontSize: 10,
       fontWeight: '700',
       textTransform: 'uppercase',
-    },
-    modeProviderRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginBottom: 10,
-    },
-    modeProviderPill: {
-      paddingVertical: 8,
-      paddingHorizontal: 14,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceAlt,
-    },
-    modeProviderPillText: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      fontWeight: '600',
     },
   });

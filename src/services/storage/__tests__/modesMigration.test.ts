@@ -41,7 +41,7 @@ describe('migrateLegacySettingsToModes', () => {
       providers: [],
       systemPrompt: 'Act as a code reviewer.',
       mcpServers: [
-        { id: 's1', name: 'Server 1', url: 'https://s1.example.com', enabled: true, tools: [], autoAllow: false, allowedTools: [] },
+        { id: 's1', name: 'Server 1', url: 'https://s1.example.com', enabled: true, tools: [], allowedTools: [] },
       ],
       theme: 'dark',
       lastUsedModel: null,
@@ -55,10 +55,8 @@ describe('migrateLegacySettingsToModes', () => {
     expect(defaultMode.isDefault).toBe(true);
     expect(defaultMode.systemPrompt).toBe('Act as a code reviewer.');
     // New architecture: mode has overrides, global mcpServers preserved
-    expect(defaultMode.mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
+    expect(defaultMode.mcpServerOverrides).toEqual({ s1: { enabled: true } });
     expect(defaultMode.mcpServers).toBeUndefined();
-    expect(defaultMode.providerId).toBeNull();
-    expect(defaultMode.model).toBeNull();
     expect(typeof defaultMode.id).toBe('string');
     expect(defaultMode.id.length).toBeGreaterThan(0);
 
@@ -118,7 +116,7 @@ describe('migrateLegacySettingsToModes', () => {
     const stateWithModes = {
       providers: [],
       modes: [
-        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServers: [{ id: 's1', name: 'S1', url: 'https://s1.test', enabled: true, autoAllow: false }], isDefault: true },
+        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', mcpServers: [{ id: 's1', name: 'S1', url: 'https://s1.test', enabled: true }], isDefault: true },
       ],
       lastUsedModeId: 'mode-existing',
       theme: 'system',
@@ -128,7 +126,7 @@ describe('migrateLegacySettingsToModes', () => {
     const mode = (result.modes as any[])[0];
 
     // Mode should now have overrides instead of mcpServers
-    expect(mode.mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
+    expect(mode.mcpServerOverrides).toEqual({ s1: { enabled: true } });
     expect(mode.mcpServers).toBeUndefined();
     // Servers lifted to global
     expect((result.mcpServers as any[]).length).toBe(1);
@@ -138,7 +136,7 @@ describe('migrateLegacySettingsToModes', () => {
     const stateWithOverrides = {
       providers: [],
       modes: [
-        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServerOverrides: {}, isDefault: true },
+        { id: 'mode-existing', name: 'Existing', systemPrompt: 'Hi', mcpServerOverrides: {}, isDefault: true },
       ],
       lastUsedModeId: 'mode-existing',
       theme: 'system',
@@ -163,7 +161,6 @@ describe('migrateLegacySettingsToModes', () => {
           headerRefs: { Authorization: 'vault://mcp-server/s1/header/Authorization' },
           enabled: true,
           tools: [],
-          autoAllow: false,
           allowedTools: [],
         },
       ],
@@ -185,7 +182,7 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
       providers: [],
       systemPrompt: 'Custom prompt',
       mcpServers: [
-        { id: 's1', name: 'S1', url: 'https://s1.test', enabled: true, tools: [], autoAllow: false, allowedTools: [] },
+        { id: 's1', name: 'S1', url: 'https://s1.test', enabled: true, tools: [], allowedTools: [] },
       ],
       theme: 'dark',
       lastUsedModel: null,
@@ -198,7 +195,7 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
     expect(parsed.state.modes).toHaveLength(1);
     expect(parsed.state.modes[0].name).toBe('Default');
     expect(parsed.state.modes[0].systemPrompt).toBe('Custom prompt');
-    expect(parsed.state.modes[0].mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
+    expect(parsed.state.modes[0].mcpServerOverrides).toEqual({ s1: { enabled: true } });
     expect(parsed.state.lastUsedModeId).toBe(parsed.state.modes[0].id);
     // Legacy systemPrompt removed, mcpServers kept at global level
     expect(parsed.state.systemPrompt).toBeUndefined();
@@ -209,7 +206,7 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
     const modeState = toPersistedState({
       providers: [],
       modes: [
-        { id: 'mode-1', name: 'Existing', systemPrompt: 'Hi', providerId: null, model: null, mcpServerOverrides: {}, isDefault: true },
+        { id: 'mode-1', name: 'Existing', systemPrompt: 'Hi', mcpServerOverrides: {}, isDefault: true },
       ],
       lastUsedModeId: 'mode-1',
       theme: 'system',
@@ -236,8 +233,6 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
           id: 'mode-1',
           name: 'Default',
           systemPrompt: 'Hi',
-          providerId: null,
-          model: null,
           mcpServers: [
             {
               id: 's1',
@@ -246,7 +241,6 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
               tokenRef: 'vault://mcp-server/s1/token',
               enabled: true,
               tools: [],
-              autoAllow: false,
               allowedTools: [],
             },
           ],
@@ -263,7 +257,7 @@ describe('hydratePersistedSettingsPayload with modes migration', () => {
     // After migration, servers are at global level and hydrated there
     expect(parsed.state.mcpServers[0].token).toBe('hydrated-token');
     // Mode now has overrides, not mcpServers
-    expect(parsed.state.modes[0].mcpServerOverrides).toEqual({ s1: { enabled: true, autoAllow: false } });
+    expect(parsed.state.modes[0].mcpServerOverrides).toEqual({ s1: { enabled: true } });
   });
 });
 
@@ -279,9 +273,7 @@ describe('migratePersistedSettingsPayloadDetailed with global mcpServers', () =>
           id: 'mode-1',
           name: 'Default',
           systemPrompt: 'Hi',
-          providerId: null,
-          model: null,
-          mcpServerOverrides: { s1: { enabled: true, autoAllow: false } },
+          mcpServerOverrides: { s1: { enabled: true } },
           isDefault: true,
         },
       ],
@@ -296,7 +288,6 @@ describe('migratePersistedSettingsPayloadDetailed with global mcpServers', () =>
           headerRefs: { Authorization: 'vault://mcp-server/s1/header/Authorization' },
           enabled: true,
           tools: [],
-          autoAllow: false,
           allowedTools: [],
         },
       ],

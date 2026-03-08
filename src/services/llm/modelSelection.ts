@@ -11,8 +11,6 @@ export interface ResolveModelSelectionArgs {
   providers: LlmProviderConfig[];
   selectedProviderId?: string;
   selectedModel?: string;
-  modeProviderId?: string | null;
-  modeModel?: string | null;
   lastUsedModel?: LastUsedModelPreference | null;
 }
 
@@ -112,19 +110,13 @@ export const resolveModelSelection = (
     args.selectedModel
   );
 
-  const fromMode = findOption(
-    availableModels,
-    args.modeProviderId ?? undefined,
-    args.modeModel ?? undefined
-  );
-
   const fromLastUsed = findOption(
     availableModels,
     args.lastUsedModel?.providerId,
     args.lastUsedModel?.model
   );
 
-  const selection = fromSelection || fromMode || fromLastUsed || availableModels[0] || null;
+  const selection = fromSelection || fromLastUsed || availableModels[0] || null;
 
   return {
     availableModels,

@@ -26,7 +26,6 @@ const createServer = (overrides: Partial<McpServerConfig> = {}): McpServerConfig
   headers: {},
   enabled: true,
   tools: [],
-  autoAllow: false,
   allowedTools: [],
   autoApprovedTools: [],
   ...overrides,

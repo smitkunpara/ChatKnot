@@ -513,9 +513,9 @@ export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecor
       const globalIds = new Set(globalServers.map((s: any) => s.id));
       const migratedModes = modes.map((m) => {
         const modeServers = Array.isArray(m.mcpServers) ? (m.mcpServers as any[]) : [];
-        const overrides: Record<string, { enabled: boolean; autoAllow: boolean }> = {};
+        const overrides: Record<string, { enabled: boolean }> = {};
         for (const s of modeServers) {
-          overrides[s.id] = { enabled: !!s.enabled, autoAllow: !!s.autoAllow };
+          overrides[s.id] = { enabled: !!s.enabled };
           if (!globalIds.has(s.id)) {
             globalServers.push(s);
             globalIds.add(s.id);
@@ -541,17 +541,14 @@ export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecor
     id: defaultModeId,
     name: 'Default',
     systemPrompt: legacySystemPrompt,
-    providerId: null,
-    model: null,
-    mcpServerOverrides: {} as Record<string, { enabled: boolean; autoAllow: boolean }>,
+    mcpServerOverrides: {} as Record<string, { enabled: boolean }>,
     isDefault: true,
   };
 
-  // Build overrides from legacy servers' enabled/autoAllow
+  // Build overrides from legacy servers' enabled
   for (const server of legacyMcpServers as any[]) {
     defaultMode.mcpServerOverrides[server.id] = {
       enabled: !!server.enabled,
-      autoAllow: !!server.autoAllow,
     };
   }
 

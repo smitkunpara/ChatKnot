@@ -22,7 +22,6 @@ export interface McpServerDraft {
   name: string;
   url: string;
   enabled: boolean;
-  autoAllow: boolean;
   allowedTools: string[];
   autoApprovedTools: string[];
   headers: McpServerHeaderDraft[];
@@ -128,7 +127,6 @@ export const beginServerDraft = (
       name: server.name,
       url: server.url,
       enabled: server.enabled,
-      autoAllow: server.autoAllow,
       allowedTools: [...(server.allowedTools || [])],
       autoApprovedTools: [...(server.autoApprovedTools || [])],
       headers: getHeaderDrafts(server.headers),
@@ -197,7 +195,6 @@ export const saveServerDraft = (
     name: draft.name,
     url: draft.url,
     enabled: draft.enabled,
-    autoAllow: draft.autoAllow,
     allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
     autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
@@ -241,7 +238,6 @@ export const saveServerDraftWithValidation = async (
     name: draft.name,
     url: draft.url,
     enabled: draft.enabled,
-    autoAllow: draft.autoAllow,
     allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
     autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
@@ -294,8 +290,6 @@ export const clearAllDrafts = <TDraft extends Record<string, unknown>>(drafts: T
 export interface ModeDraft {
   name: string;
   systemPrompt: string;
-  providerId: string | null;
-  model: string | null;
 }
 
 export type ModeDraftMap = Record<string, ModeDraft>;
@@ -309,8 +303,6 @@ export const beginModeDraft = (
     [mode.id]: {
       name: mode.name,
       systemPrompt: mode.systemPrompt,
-      providerId: mode.providerId,
-      model: mode.model,
     },
   };
 };
@@ -353,8 +345,6 @@ export const saveModeDraft = (
   commit(mode.id, {
     name: draft.name,
     systemPrompt: draft.systemPrompt,
-    providerId: draft.providerId,
-    model: draft.model,
   });
 
   return discardModeDraft(drafts, mode.id);
