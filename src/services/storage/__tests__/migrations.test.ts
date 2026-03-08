@@ -124,7 +124,6 @@ describe('storage migrations foundation helpers', () => {
           token: 'server-token',
           enabled: true,
           tools: [],
-          autoAllow: false,
           allowedTools: [],
         },
       ],
@@ -223,10 +222,14 @@ describe('storage migrations foundation helpers', () => {
       state: {
         providers: Array<{ apiKey: string }>;
         mcpServers: Array<{ token?: string; headers?: Record<string, string> }>;
+        modes: Array<{
+          mcpServerOverrides: Record<string, { enabled: boolean }>;
+        }>;
       };
     };
 
     expect(parsed.state.providers[0].apiKey).toBe('provider-secret');
+    // After legacy-to-modes migration, mcpServers stay at global level
     expect(parsed.state.mcpServers[0].token).toBe('server-token');
     expect(parsed.state.mcpServers[0].headers).toEqual({
       Authorization: 'Bearer hydrated',
