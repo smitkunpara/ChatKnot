@@ -15,7 +15,6 @@ const createServer = (): McpServerConfig => ({
   headers: { Authorization: 'Bearer persisted-token' },
   enabled: true,
   tools: [],
-  autoAllow: false,
   allowedTools: [],
   autoApprovedTools: [],
 });

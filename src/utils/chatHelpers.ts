@@ -103,12 +103,14 @@ function stripTechnicalDetail(msg: string): string {
 
 export const buildEffectiveSystemPrompt = ({
   conversationPrompt,
+  modePrompt,
   globalPrompt,
 }: {
   conversationPrompt?: string;
+  modePrompt?: string;
   globalPrompt?: string;
 }): string => {
-  return conversationPrompt?.trim() || globalPrompt?.trim() || 'You are a helpful AI assistant.';
+  return conversationPrompt?.trim() || modePrompt?.trim() || globalPrompt?.trim() || 'You are a helpful AI assistant.';
 };
 
 export const buildAppSystemPrompt = ({

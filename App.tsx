@@ -13,9 +13,14 @@ import {
   applyHealthCheckReport,
   HealthCheckPhase,
 } from './src/services/startup/StartupHealthCheck';
+import { mergeServersWithOverrides } from './src/utils/mcpMerge';
 
 export default function App() {
-  const mcpServers = useSettingsStore(state => state.mcpServers);
+  const modes = useSettingsStore(state => state.modes);
+  const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
+  const globalMcpServers = useSettingsStore(state => state.mcpServers);
+  const activeMode = modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
+  const activeMcpServers = mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {});
   const { isDark, colors } = useAppTheme();
   const [isReady, setReady] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
@@ -58,8 +63,10 @@ export default function App() {
       setLoadingProgress(15);
 
       // Step 2: Run startup health checks
-      const { providers, mcpServers: servers, updateMcpServer, updateProvider, setModelVisibility } =
+      const { providers, mcpServers: bootGlobalServers, modes: bootModes, lastUsedModeId: bootModeId, updateMcpServer, updateProvider, setModelVisibility } =
         useSettingsStore.getState();
+      const bootMode = bootModes.find(m => m.id === bootModeId) ?? bootModes[0] ?? null;
+      const servers = mergeServersWithOverrides(bootGlobalServers, bootMode?.mcpServerOverrides ?? {});
 
       try {
         const report = await runStartupHealthCheck(servers, providers, (phase, msg, pct) => {
@@ -71,6 +78,7 @@ export default function App() {
 
         if (isMounted) {
           // Step 3: Reconcile — only update settings that changed
+          // Apply MCP results back to global servers
           applyHealthCheckReport(
             report,
             servers,
@@ -114,11 +122,11 @@ export default function App() {
     };
   }, []);
 
-  // Re-initialize MCP manager when servers config changes (after boot)
+  // Re-initialize MCP manager when active mode's servers change (after boot)
   useEffect(() => {
     if (!healthCheckDone) return;
-    McpManager.initialize(mcpServers).catch(console.error);
-  }, [mcpServers, healthCheckDone]);
+    McpManager.reinitialize(activeMcpServers).catch(console.error);
+  }, [activeMcpServers, healthCheckDone]);
 
   if (!isReady) {
     return (

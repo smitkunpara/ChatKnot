@@ -261,7 +261,6 @@ class McpManagerService {
       allowedTools.includes(entry.tool.name) ||
       allowedTools.includes(entry.originalToolName);
     const autoAllow =
-      !!serverConfig?.autoAllow ||
       autoApprovedTools.includes(entry.tool.name) ||
       autoApprovedTools.includes(entry.originalToolName);
 
@@ -282,6 +281,10 @@ class McpManagerService {
 
   getRuntimeState(serverId: string): McpServerRuntimeState | undefined {
     return this.runtimeStates.get(serverId);
+  }
+
+  async reinitialize(configs: McpServerConfig[]) {
+    await this.initialize(configs);
   }
 }
 

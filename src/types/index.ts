@@ -41,6 +41,7 @@ export interface Conversation {
   title: string;
   messages: Message[];
   providerId: string;
+  modeId: string;
   modelOverride?: string;
   systemPrompt: string;
   createdAt?: number;
@@ -121,15 +122,29 @@ export interface McpServerConfig {
   headerRefs?: Record<string, string>;
   enabled: boolean;
   tools: McpToolSchema[];
-  autoAllow: boolean;
   allowedTools: string[];
   autoApprovedTools?: string[];
+}
+
+export interface ModeServerOverride {
+  enabled: boolean;
+  allowedTools?: string[];
+  autoApprovedTools?: string[];
+}
+
+export interface Mode {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  mcpServerOverrides: Record<string, ModeServerOverride>;
+  isDefault: boolean;
 }
 
 export interface AppSettings {
   providers: LlmProviderConfig[];
   mcpServers: McpServerConfig[];
-  systemPrompt: string;
+  modes: Mode[];
+  lastUsedModeId: string | null;
   theme: 'light' | 'dark' | 'system';
   lastUsedModel: LastUsedModelPreference | null;
 }

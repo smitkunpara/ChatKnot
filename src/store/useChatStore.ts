@@ -15,11 +15,12 @@ interface ChatState {
   activeConversationId: string | null;
   isLoading: boolean;
 
-  createConversation: (providerId: string, systemPrompt: string, modelOverride?: string) => void;
+  createConversation: (providerId: string, modeId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
   updateProviderInConversation: (conversationId: string, providerId: string) => void;
   updateModelInConversation: (conversationId: string, providerId: string, model: string) => void;
+  updateModeInConversation: (conversationId: string, modeId: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'timestamp' | 'id'> & { id?: string }) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
   updateMessageReasoning: (conversationId: string, messageId: string, reasoning: string) => void;
@@ -42,13 +43,14 @@ export const useChatStore = create<ChatState>()(
       activeConversationId: null,
       isLoading: false,
 
-      createConversation: (providerId, systemPrompt, modelOverride) => {
+      createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
         const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
           messages: [],
           providerId,
+          modeId,
           modelOverride,
           systemPrompt,
           createdAt: now,
@@ -82,6 +84,12 @@ export const useChatStore = create<ChatState>()(
           }
           return c;
         }),
+      })),
+
+      updateModeInConversation: (conversationId, modeId) => set((state) => ({
+        conversations: state.conversations.map((c) =>
+          c.id === conversationId ? { ...c, modeId } : c
+        ),
       })),
 
       addMessage: (conversationId, message) => set((state) => ({
@@ -215,10 +223,15 @@ export const useChatStore = create<ChatState>()(
           };
         }
 
+        const conversations = Array.isArray(persistedState.conversations)
+          ? persistedState.conversations.map((c: any) => ({
+            ...c,
+            modeId: c.modeId || '', // UI will handle defaulting to active mode if empty
+          }))
+          : [];
+
         return {
-          conversations: Array.isArray(persistedState.conversations)
-            ? persistedState.conversations
-            : [],
+          conversations,
           activeConversationId: persistedState.activeConversationId || null,
           isLoading: false,
         };

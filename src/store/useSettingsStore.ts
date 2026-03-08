@@ -5,6 +5,7 @@ import {
   LastUsedModelPreference,
   LlmProviderConfig,
   McpServerConfig,
+  Mode,
 } from '../types';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import {
@@ -13,6 +14,7 @@ import {
   hydratePersistedSettingsPayload,
   migratePersistedSettingsPayload,
 } from '../services/storage/migrations';
+import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
 import 'react-native-get-random-values';
 
 const rawSettingsPersistStorage = createEncryptedStateStorage({
@@ -58,11 +60,16 @@ interface SettingsState extends AppSettings {
   setLastUsedModel: (providerId: string, model: string) => void;
   clearLastUsedModel: () => void;
 
-  updateMcpServer: (server: McpServerConfig) => void;
   addMcpServer: (server: McpServerConfig) => void;
+  updateMcpServer: (server: McpServerConfig) => void;
   removeMcpServer: (id: string) => void;
 
-  updateSystemPrompt: (prompt: string) => void;
+  addMode: (mode: Mode) => void;
+  updateMode: (id: string, partial: Partial<Omit<Mode, 'id'>>) => void;
+  removeMode: (id: string) => void;
+  setLastUsedMode: (id: string | null) => void;
+  setDefaultMode: (id: string) => void;
+
   setTheme: (theme: AppSettings['theme']) => void;
   replaceAllSettings: (settings: Partial<AppSettings>) => void;
 }
@@ -163,7 +170,8 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       providers: [],
       mcpServers: [],
-      systemPrompt: 'You are a helpful AI assistant.',
+      modes: [],
+      lastUsedModeId: null,
       theme: 'system',
       lastUsedModel: null,
 
@@ -232,27 +240,83 @@ export const useSettingsStore = create<SettingsState>()(
 
       clearLastUsedModel: () => set({ lastUsedModel: null }),
 
-      updateMcpServer: (updatedServer) => set((state) => ({
-        mcpServers: state.mcpServers.map((s) =>
-          s.id === updatedServer.id ? ensureMcpServerSecretRefs(updatedServer) : s
-        ),
-      })),
-      addMcpServer: (server) => set((state) => ({
-        mcpServers: [...state.mcpServers, ensureMcpServerSecretRefs(server)],
-      })),
-      removeMcpServer: (id) => set((state) => ({
-        mcpServers: state.mcpServers.filter((s) => s.id !== id),
-      })),
+      addMcpServer: (server) =>
+        set((state) => ({
+          mcpServers: [...state.mcpServers, ensureMcpServerSecretRefs(server)],
+        })),
 
-      updateSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
+      updateMcpServer: (server) =>
+        set((state) => ({
+          mcpServers: state.mcpServers.map((s) =>
+            s.id === server.id ? ensureMcpServerSecretRefs(server) : s
+          ),
+        })),
+
+      removeMcpServer: (id) =>
+        set((state) => ({
+          mcpServers: state.mcpServers.filter((s) => s.id !== id),
+          // Cascading delete: remove overrides referencing this server from all modes
+          modes: state.modes.map((m) => {
+            if (!m.mcpServerOverrides[id]) return m;
+            const { [id]: _, ...rest } = m.mcpServerOverrides;
+            return { ...m, mcpServerOverrides: rest };
+          }),
+        })),
+
+      addMode: (mode) =>
+        set((state) => {
+          const safeName = mode.name.slice(0, MAX_MODE_NAME_LENGTH);
+          const newMode: Mode = {
+            ...mode,
+            name: safeName,
+            mcpServerOverrides: mode.mcpServerOverrides ?? {},
+          };
+          const nextModes = [...state.modes, newMode];
+          return {
+            modes: nextModes,
+            lastUsedModeId: state.lastUsedModeId ?? newMode.id,
+          };
+        }),
+
+      updateMode: (id, partial) =>
+        set((state) => ({
+          modes: state.modes.map((m) => {
+            if (m.id !== id) return m;
+            const updated = { ...m, ...partial };
+            if (partial.name !== undefined) {
+              updated.name = partial.name.slice(0, MAX_MODE_NAME_LENGTH);
+            }
+            return updated;
+          }),
+        })),
+
+      removeMode: (id) =>
+        set((state) => {
+          const target = state.modes.find((m) => m.id === id);
+          if (!target || target.isDefault) return state;
+          const nextModes = state.modes.filter((m) => m.id !== id);
+          const nextLastUsedModeId =
+            state.lastUsedModeId === id
+              ? (nextModes[0]?.id ?? null)
+              : state.lastUsedModeId;
+          return { modes: nextModes, lastUsedModeId: nextLastUsedModeId };
+        }),
+
+      setLastUsedMode: (id) => set({ lastUsedModeId: id }),
+
+      setDefaultMode: (id) =>
+        set((state) => ({
+          modes: state.modes.map((m) => ({
+            ...m,
+            isDefault: m.id === id,
+          })),
+        })),
+
       setTheme: (theme) => set({ theme }),
       replaceAllSettings: (settings) =>
         set(() => {
           const nextProviders = Array.isArray(settings.providers)
             ? settings.providers.map(normalizeProviderConfig)
-            : [];
-          const nextMcpServers = Array.isArray(settings.mcpServers)
-            ? settings.mcpServers.map(ensureMcpServerSecretRefs)
             : [];
 
           const nextTheme =
@@ -267,13 +331,28 @@ export const useSettingsStore = create<SettingsState>()(
               ? settings.lastUsedModel
               : null;
 
+          const nextModes = Array.isArray(settings.modes)
+            ? settings.modes.map((m: Mode) => ({
+                ...m,
+                name: m.name.slice(0, MAX_MODE_NAME_LENGTH),
+                mcpServerOverrides: m.mcpServerOverrides ?? {},
+              }))
+            : [];
+
+          const nextMcpServers = Array.isArray(settings.mcpServers)
+            ? settings.mcpServers.map(ensureMcpServerSecretRefs)
+            : [];
+
+          const nextLastUsedModeId =
+            typeof settings.lastUsedModeId === 'string'
+              ? settings.lastUsedModeId
+              : (nextModes[0]?.id ?? null);
+
           return {
             providers: nextProviders,
             mcpServers: nextMcpServers,
-            systemPrompt:
-              typeof settings.systemPrompt === 'string' && settings.systemPrompt.trim().length > 0
-                ? settings.systemPrompt
-                : 'You are a helpful AI assistant.',
+            modes: nextModes,
+            lastUsedModeId: nextLastUsedModeId,
             theme: nextTheme,
             lastUsedModel: nextLastUsedModel,
           };
