@@ -111,6 +111,7 @@ export const SettingsScreen = () => {
     addMode,
     updateMode,
     removeMode,
+    setDefaultMode,
     setTheme,
     replaceAllSettings,
   } = useSettingsStore();
@@ -641,7 +642,7 @@ export const SettingsScreen = () => {
 
   const handleRemoveMode = (mode: Mode) => {
     if (mode.isDefault) {
-      Alert.alert('Cannot Delete', 'The default mode cannot be deleted.');
+      Alert.alert('Default Mode', 'The default mode cannot be deleted. Mark another mode as default first.');
       return;
     }
     Alert.alert('Delete Mode', `Delete "${mode.name}"? Mode overrides will be removed.`, [
@@ -1039,15 +1040,13 @@ export const SettingsScreen = () => {
                   </Text>
                 </View>
                 <View style={styles.rowRight}>
-                  {!mode.isDefault ? (
-                    <TouchableOpacity
-                      onPress={() => handleRemoveMode(mode)}
-                      style={styles.iconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Trash size={17} color={colors.danger} />
-                    </TouchableOpacity>
-                  ) : null}
+                  <TouchableOpacity
+                    onPress={() => handleRemoveMode(mode)}
+                    style={[styles.iconButton, mode.isDefault && { opacity: 0.3 }]}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash size={17} color={colors.danger} />
+                  </TouchableOpacity>
                   <ChevronRight size={18} color={colors.textTertiary} />
                 </View>
               </TouchableOpacity>
@@ -1061,6 +1060,25 @@ export const SettingsScreen = () => {
 
         {activeView === 'modeEditor' && editingMode && editingModeDraft ? (
           <>
+            <View style={styles.sectionCard}>
+              <View style={styles.row}>
+                <Text style={styles.sectionTitle}>Mode Settings</Text>
+                {editingMode.isDefault ? (
+                  <View style={styles.defaultBadge}>
+                    <Text style={styles.defaultBadgeText}>Default Mode</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.setDefaultBtn}
+                    onPress={() => setDefaultMode(editingMode.id)}
+                  >
+                    <Check size={14} color={colors.primary} />
+                    <Text style={styles.setDefaultText}>Set as Default</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>Mode Name</Text>
               <TextInput
@@ -2000,6 +2018,22 @@ const createStyles = (colors: any) =>
       color: colors.text,
       fontSize: 14,
       marginTop: 2,
+    },
+    setDefaultBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.primarySoft,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    setDefaultText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '700',
     },
     warningText: {
       color: colors.danger,

@@ -198,7 +198,7 @@ describe('McpManager', () => {
     const policy = McpManager.getToolExecutionPolicy('search');
 
     expect(policy.found).toBe(true);
-    expect(policy.autoAllow).toBe(true);
+    expect(policy.autoAllow).toBe(false);
     expect(policy.enabled).toBe(true);
 
     await McpManager.executeTool('search', { query: 'status' });

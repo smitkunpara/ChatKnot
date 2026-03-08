@@ -106,6 +106,7 @@ export const ChatScreen = () => {
   const addToolCall = useChatStore(state => state.addToolCall);
   const updateToolCallStatus = useChatStore(state => state.updateToolCallStatus);
   const updateModelInConversation = useChatStore(state => state.updateModelInConversation);
+  const updateModeInConversation = useChatStore(state => state.updateModeInConversation);
   const setLoading = useChatStore(state => state.setLoading);
   const providers = useSettingsStore(state => state.providers);
   const globalMcpServers = useSettingsStore(state => state.mcpServers);
@@ -115,10 +116,22 @@ export const ChatScreen = () => {
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
-  const activeMode = useMemo(
-    () => modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null,
-    [modes, lastUsedModeId]
-  );
+  const activeMode = useMemo(() => {
+    const convModeId = activeConversation?.modeId;
+    if (convModeId) {
+      const mode = modes.find(m => m.id === convModeId);
+      if (mode) return mode;
+    }
+    return modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
+  }, [modes, lastUsedModeId, activeConversation?.modeId]);
+
+  // Sync lastUsedModeId when active conversation changes
+  useEffect(() => {
+    if (activeConversation?.modeId && activeConversation.modeId !== lastUsedModeId) {
+      setLastUsedMode(activeConversation.modeId);
+    }
+  }, [activeConversation?.id, activeConversation?.modeId, lastUsedModeId, setLastUsedMode]);
+
   const activeMcpServers = useMemo(
     () => mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {}),
     [globalMcpServers, activeMode?.mcpServerOverrides]
@@ -488,6 +501,7 @@ export const ChatScreen = () => {
 
       createConversation(
         modelResolution.selection.providerId,
+        activeMode?.id || '',
         activeMode?.systemPrompt || 'You are a helpful AI assistant.',
         modelResolution.selection.model
       );
@@ -1281,6 +1295,9 @@ export const ChatScreen = () => {
                     ]}
                     onPress={() => {
                       setLastUsedMode(mode.id);
+                      if (activeConversationId) {
+                        updateModeInConversation(activeConversationId, mode.id);
+                      }
                       setModeSelectorVisible(false);
                     }}
                   >

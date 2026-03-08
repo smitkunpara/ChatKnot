@@ -678,10 +678,26 @@ export const executeStorageHardeningBootstrap = async (
 
     const legacyChatRaw = await legacyStorage.getItem(chatStorageKey);
     if (legacyChatRaw) {
-      await encryptedChatStorage.setItem(chatStorageKey, legacyChatRaw);
+      // Add modeId migration for conversations during storage hardening
+      let migratedChatRaw = legacyChatRaw;
+      try {
+        const parsed = JSON.parse(legacyChatRaw);
+        const state = parsed.state || parsed;
+        if (Array.isArray(state.conversations)) {
+          state.conversations = state.conversations.map((c: any) => ({
+            ...c,
+            modeId: c.modeId || '',
+          }));
+          migratedChatRaw = JSON.stringify(parsed.state ? parsed : { state });
+        }
+      } catch (e) {
+        logger.warn('Failed to parse legacy chat for modeId migration; proceeding with raw value.', e);
+      }
+
+      await encryptedChatStorage.setItem(chatStorageKey, migratedChatRaw);
       result.migratedChat = true;
 
-      await maybeCleanupLegacyKey(chatStorageKey, legacyChatRaw, legacyChatRaw, legacyStorage, logger);
+      await maybeCleanupLegacyKey(chatStorageKey, legacyChatRaw, migratedChatRaw, legacyStorage, logger);
     }
 
     if (result.errors.length > 0) {

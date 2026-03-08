@@ -41,6 +41,7 @@ export interface Conversation {
   title: string;
   messages: Message[];
   providerId: string;
+  modeId: string;
   modelOverride?: string;
   systemPrompt: string;
   createdAt?: number;

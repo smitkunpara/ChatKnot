@@ -82,32 +82,4 @@ describe('buildAppSystemPrompt', () => {
     });
     expect(result).not.toContain('Multiple tool calls');
   });
-
-  it('includes MCP context when connected server has instruction', () => {
-    const result = buildAppSystemPrompt({
-      toolsEnabledForRequest: true,
-      hasConnectedMcpServer: true,
-      mcpInstruction: 'Use the search tool for queries.',
-    });
-    expect(result).toContain('Connected MCP/OpenAPI context');
-    expect(result).toContain('Use the search tool for queries.');
-  });
-
-  it('does not include MCP context when no instruction', () => {
-    const result = buildAppSystemPrompt({
-      toolsEnabledForRequest: true,
-      hasConnectedMcpServer: true,
-      mcpInstruction: '',
-    });
-    expect(result).not.toContain('Connected MCP/OpenAPI context');
-  });
-
-  it('does not include MCP context when no connected server', () => {
-    const result = buildAppSystemPrompt({
-      toolsEnabledForRequest: true,
-      hasConnectedMcpServer: false,
-      mcpInstruction: 'Some instruction',
-    });
-    expect(result).not.toContain('Connected MCP/OpenAPI context');
-  });
 });

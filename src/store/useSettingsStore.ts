@@ -68,6 +68,7 @@ interface SettingsState extends AppSettings {
   updateMode: (id: string, partial: Partial<Omit<Mode, 'id'>>) => void;
   removeMode: (id: string) => void;
   setLastUsedMode: (id: string | null) => void;
+  setDefaultMode: (id: string) => void;
 
   setTheme: (theme: AppSettings['theme']) => void;
   replaceAllSettings: (settings: Partial<AppSettings>) => void;
@@ -302,6 +303,14 @@ export const useSettingsStore = create<SettingsState>()(
         }),
 
       setLastUsedMode: (id) => set({ lastUsedModeId: id }),
+
+      setDefaultMode: (id) =>
+        set((state) => ({
+          modes: state.modes.map((m) => ({
+            ...m,
+            isDefault: m.id === id,
+          })),
+        })),
 
       setTheme: (theme) => set({ theme }),
       replaceAllSettings: (settings) =>

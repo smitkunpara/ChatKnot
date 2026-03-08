@@ -173,8 +173,6 @@ const createMode = (overrides: Partial<Mode> = {}): Mode => ({
   id: 'mode-1',
   name: 'Default',
   systemPrompt: 'You are helpful.',
-  providerId: 'provider-1',
-  model: 'gpt-4o-mini',
   mcpServerOverrides: {},
   isDefault: true,
   ...overrides,
@@ -188,8 +186,6 @@ describe('settingsDraftState — ModeDraft', () => {
     expect(drafts[mode.id]).toEqual({
       name: 'Default',
       systemPrompt: 'You are helpful.',
-      providerId: 'provider-1',
-      model: 'gpt-4o-mini',
     });
     expect(mode.name).toBe('Default');
   });
@@ -197,10 +193,9 @@ describe('settingsDraftState — ModeDraft', () => {
   it('updates mode draft fields', () => {
     const mode = createMode();
     let drafts = beginModeDraft({}, mode);
-    drafts = updateModeDraft(drafts, mode.id, { name: 'Renamed', model: 'gpt-4.1-mini' });
+    drafts = updateModeDraft(drafts, mode.id, { name: 'Renamed' });
 
     expect(drafts[mode.id]?.name).toBe('Renamed');
-    expect(drafts[mode.id]?.model).toBe('gpt-4.1-mini');
     expect(drafts[mode.id]?.systemPrompt).toBe('You are helpful.');
   });
 
@@ -224,8 +219,6 @@ describe('settingsDraftState — ModeDraft', () => {
     drafts = updateModeDraft(drafts, mode.id, {
       name: 'Coding',
       systemPrompt: 'Write code.',
-      providerId: 'provider-2',
-      model: 'claude-4',
     });
 
     const nextDrafts = saveModeDraft(drafts, mode, commit);
@@ -234,8 +227,6 @@ describe('settingsDraftState — ModeDraft', () => {
     expect(commit).toHaveBeenCalledWith(mode.id, {
       name: 'Coding',
       systemPrompt: 'Write code.',
-      providerId: 'provider-2',
-      model: 'claude-4',
     });
     expect(nextDrafts[mode.id]).toBeUndefined();
   });
