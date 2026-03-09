@@ -9,8 +9,9 @@ A privacy-focused React Native mobile application for chatting with AI providers
 - [-] Multiple mode support
     - each mode has its own system prompt + model + mcp configuration
 - [x] Export chat (markdown/pdf/json)
-- [ ] AI Search and AI Tab rename
 - [x] iamge/file support
+- [ ] imporve the add/edit ui for settings
+- [ ] AI Search and AI Tab rename
 - [ ] add custom resoning effort/other parameter in the app
 
 

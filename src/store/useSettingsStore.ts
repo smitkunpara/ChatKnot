@@ -87,6 +87,14 @@ const normalizeProviderConfig = (provider: LlmProviderConfig): LlmProviderConfig
 
 const normalizeSettingValue = (value: string | undefined | null): string => (value || '').trim();
 
+const sortModes = (modes: Mode[]): Mode[] => {
+  return [...modes].sort((a, b) => {
+    if (a.isDefault && !b.isDefault) return -1;
+    if (!a.isDefault && b.isDefault) return 1;
+    return 0;
+  });
+};
+
 const shouldClearLastUsedModelForProvider = (
   lastUsedModel: LastUsedModelPreference | null,
   provider: LlmProviderConfig
@@ -271,7 +279,7 @@ export const useSettingsStore = create<SettingsState>()(
             name: safeName,
             mcpServerOverrides: mode.mcpServerOverrides ?? {},
           };
-          const nextModes = [...state.modes, newMode];
+          const nextModes = sortModes([...state.modes, newMode]);
           return {
             modes: nextModes,
             lastUsedModeId: state.lastUsedModeId ?? newMode.id,
@@ -279,16 +287,17 @@ export const useSettingsStore = create<SettingsState>()(
         }),
 
       updateMode: (id, partial) =>
-        set((state) => ({
-          modes: state.modes.map((m) => {
+        set((state) => {
+          const updatedModes = state.modes.map((m) => {
             if (m.id !== id) return m;
             const updated = { ...m, ...partial };
             if (partial.name !== undefined) {
               updated.name = partial.name.slice(0, MAX_MODE_NAME_LENGTH);
             }
             return updated;
-          }),
-        })),
+          });
+          return { modes: sortModes(updatedModes) };
+        }),
 
       removeMode: (id) =>
         set((state) => {
@@ -306,10 +315,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setDefaultMode: (id) =>
         set((state) => ({
-          modes: state.modes.map((m) => ({
+          modes: sortModes(state.modes.map((m) => ({
             ...m,
             isDefault: m.id === id,
-          })),
+          }))),
         })),
 
       setTheme: (theme) => set({ theme }),
@@ -332,11 +341,11 @@ export const useSettingsStore = create<SettingsState>()(
               : null;
 
           const nextModes = Array.isArray(settings.modes)
-            ? settings.modes.map((m: Mode) => ({
+            ? sortModes(settings.modes.map((m: Mode) => ({
                 ...m,
                 name: m.name.slice(0, MAX_MODE_NAME_LENGTH),
                 mcpServerOverrides: m.mcpServerOverrides ?? {},
-              }))
+              })))
             : [];
 
           const nextMcpServers = Array.isArray(settings.mcpServers)

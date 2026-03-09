@@ -1083,7 +1083,7 @@ export const SettingsScreen = () => {
               <Text style={styles.sectionTitle}>Mode Name</Text>
               <TextInput
                 style={styles.input}
-                value={editingModeDraft.name}
+                value={editingModeDraft.name ?? ''}
                 onChangeText={name =>
                   setModeDrafts(prev => updateModeDraft(prev, editingMode.id, { name: name.slice(0, MAX_MODE_NAME_LENGTH) }))
                 }
@@ -1098,7 +1098,7 @@ export const SettingsScreen = () => {
               <TextInput
                 style={[styles.input, styles.textArea]}
                 multiline
-                value={editingModeDraft.systemPrompt}
+                value={editingModeDraft.systemPrompt ?? ''}
                 onChangeText={systemPrompt =>
                   setModeDrafts(prev => updateModeDraft(prev, editingMode.id, { systemPrompt }))
                 }
