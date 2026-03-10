@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Approval Policy Cleanup** — Removed global "auto-approve all" behavior and aligned approvals with the updated mode/MCP design.
 - **Sidebar Sorting** — Conversations in the sidebar are now sorted by last activity (most recently active at top) instead of creation order.
 - **Mode Editor UX** — Added explicit Save and Discard buttons to the mode editor. Hardware/software back button now saves mode changes instead of silently discarding them. Added a Delete Mode button for non-default modes.
+- **Provider Editor UX** — Converted provider editing from inline cards to full-page editors with Save, Discard, and Delete buttons. Unsaved changes popup on back press.
+- **MCP Server Editor UX** — Converted MCP server editing from inline cards to full-page editors with Save, Discard, and Delete buttons. Unsaved changes popup on back press.
+- **Model Picker UX** — Renamed modal title to "Manage Models". Tapping a model now toggles visibility instead of selecting and closing. Removed selection check icon.
 
 ### Fixed
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen` caused by a prematurely closed `KeyboardAwareContainer`.
