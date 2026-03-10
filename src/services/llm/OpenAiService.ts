@@ -572,6 +572,16 @@ export class OpenAiService {
       // Yield to the event loop so React can flush a render.
       const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
+      let lastYieldTime = Date.now();
+      const maybeYieldToUI = async () => {
+        const now = Date.now();
+        // Yield every 50ms to allow UI updates without excessive overhead
+        if (now - lastYieldTime > 50) {
+          await yieldToUI();
+          lastYieldTime = Date.now();
+        }
+      };
+
       if (reader) {
         const decoder = new TextDecoder();
         let pendingBuffer = '';
@@ -622,8 +632,11 @@ export class OpenAiService {
             }
           }
           // Yield once per reader.read() so React can paint whatever was updated
-          await yieldToUI();
+          await maybeYieldToUI();
         }
+
+        // Final yield to ensure UI catches up
+        await yieldToUI();
 
         if (pendingBuffer.trim().length > 0) {
           const dataLines = pendingBuffer
@@ -645,8 +658,9 @@ export class OpenAiService {
           for (const line of sseLines) {
             processSsePayload(line.replace(/^data:\s?/, ''));
             // Yield per SSE event so the UI renders progressively
-            await yieldToUI();
+            await maybeYieldToUI();
           }
+          await yieldToUI();
         } else {
           try {
             const json = JSON.parse(text);

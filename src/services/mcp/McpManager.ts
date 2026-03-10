@@ -34,6 +34,7 @@ class McpManagerService {
   private connectedToolsByServer: Map<string, McpToolSchema[]> = new Map();
   private runtimeStates: Map<string, McpServerRuntimeState> = new Map();
   private listeners: Set<(states: McpServerRuntimeState[]) => void> = new Set();
+  private cachedTools: McpToolSchema[] | null = null;
 
   private sanitizeNamespace(serverName: string): string {
     const normalized = (serverName || '')
@@ -72,6 +73,7 @@ class McpManagerService {
 
   private rebuildToolRegistry() {
     this.tools.clear();
+    this.cachedTools = null;
 
     const rawNameCounts = new Map<string, number>();
     this.connectedToolsByServer.forEach(serverTools => {
@@ -152,6 +154,7 @@ class McpManagerService {
     }
     this.clients.clear();
     this.tools.clear();
+    this.cachedTools = null;
     this.serverConfigs.clear();
     this.connectedToolsByServer.clear();
     this.runtimeStates.clear();
@@ -220,9 +223,15 @@ class McpManagerService {
   }
 
   getTools(): McpToolSchema[] {
-    return Array.from(this.tools.entries())
+    if (this.cachedTools) {
+      return this.cachedTools;
+    }
+
+    this.cachedTools = Array.from(this.tools.entries())
       .filter(([toolName]) => this.getToolExecutionPolicy(toolName).enabled)
       .map(([, value]) => value.tool);
+
+    return this.cachedTools;
   }
 
   async executeTool(name: string, args: any): Promise<any> {

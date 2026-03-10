@@ -2,15 +2,29 @@ import { LlmProviderConfig } from '../../types';
 import { OpenAiService } from './OpenAiService';
 
 export class ProviderFactory {
+  private static instanceCache = new Map<string, OpenAiService>();
+
   static create(config: LlmProviderConfig): OpenAiService {
+    // Generate a cache key based on the provider configuration
+    const cacheKey = `${config.type}:${config.baseUrl}:${config.apiKey}:${config.model}`;
+    
+    if (this.instanceCache.has(cacheKey)) {
+      return this.instanceCache.get(cacheKey)!;
+    }
+
+    let service: OpenAiService;
     switch (config.type) {
       case 'openai':
       case 'custom-openai':
       case 'openrouter': // OpenRouter is OpenAI compatible
-        return new OpenAiService(config);
+        service = new OpenAiService(config);
+        break;
       // Additional provider types (anthropic, gemini) can be added here when native APIs are supported.
       default:
         throw new Error(`Unsupported provider type: ${config.type}`);
     }
+
+    this.instanceCache.set(cacheKey, service);
+    return service;
   }
 }

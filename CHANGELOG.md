@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen` caused by a prematurely closed `KeyboardAwareContainer`.
 
+### Performance
+- **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments to prevent redundant disk reads and encoding overhead during the chat loop.
+- **Provider Instance Caching** — Optimized AI service instantiation by caching `OpenAiService` instances, reducing object creation and configuration overhead.
+- **Throttled Stream Rendering** — Improved UI responsiveness and throughput by throttling event-loop yields (`setTimeout(0)`) during streaming to once every 50ms.
+- **Memoized Message Sanitization** — Added `WeakMap` based caching for message sanitization to prevent redundant filtering and processing of conversation history.
+- **Cached MCP Tool Registry** — Optimized tool-calling overhead by caching the filtered MCP tool list, avoiding repetitive execution policy checks on every request.
+
 ## [0.2.3] - 2026-03-06
 
 ### Added
