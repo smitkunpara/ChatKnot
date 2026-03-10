@@ -114,6 +114,11 @@ export const ChatScreen = () => {
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
+  const activeConversation = useMemo(
+    () => conversations.find(c => c.id === activeConversationId),
+    [conversations, activeConversationId]
+  );
+
   const activeMode = useMemo(() => {
     const convModeId = activeConversation?.modeId;
     if (convModeId) {
@@ -190,11 +195,6 @@ export const ChatScreen = () => {
       approvalResolversRef.current.set(toolCallId, resolve);
     });
   }, []);
-
-  const activeConversation = useMemo(
-    () => conversations.find(c => c.id === activeConversationId),
-    [conversations, activeConversationId]
-  );
 
   const modelResolution = useMemo(
     () =>
