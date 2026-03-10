@@ -53,6 +53,7 @@ import {
   buildAppSystemPrompt,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
+import { formatLocalDateTime } from '../utils/dateFormat';
 import { mergeServersWithOverrides } from '../utils/mcpMerge';
 import * as FileSystem from 'expo-file-system';
 import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
@@ -574,6 +575,9 @@ export const ChatScreen = () => {
           break;
         }
 
+        console.log(`[ChatKnot Debug] ⏳ Preparing payload — collecting context from storage (iteration ${absoluteIterationCount})...`);
+        const payloadStartTime = Date.now();
+
         const currentConv = useChatStore
           .getState()
           .conversations.find(c => c.id === conversationId);
@@ -673,7 +677,14 @@ export const ChatScreen = () => {
         const appSystemPrompt = buildAppSystemPrompt({
           toolsEnabledForRequest,
           hasConnectedMcpServer,
+          modeName: loopMode?.name,
+          currentDateTime: formatLocalDateTime(Date.now()),
         });
+
+        const payloadElapsed = Date.now() - payloadStartTime;
+        console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — messages: ${hydratedMessages.length}, tools: ${openAiTools.length}, model: ${settingsState.lastUsedModel?.model ?? 'unknown'}`);
+        console.log(`[ChatKnot Debug] 🚀 Making API request...`);
+        const apiStartTime = Date.now();
 
         let streamedContent = '';
         let streamedReasoning = '';
@@ -705,6 +716,8 @@ export const ChatScreen = () => {
         });
 
         activeRequestControllerRef.current = null;
+        const apiElapsed = Date.now() - apiStartTime;
+        console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
         if (stopRequestedRef.current) break;
 
         const assistantText = (result.fullContent || streamedContent || '').trim();

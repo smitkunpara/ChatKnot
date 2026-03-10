@@ -116,15 +116,27 @@ export const buildEffectiveSystemPrompt = ({
 export const buildAppSystemPrompt = ({
   toolsEnabledForRequest,
   hasConnectedMcpServer,
+  modeName,
+  currentDateTime,
 }: {
   toolsEnabledForRequest: boolean;
   hasConnectedMcpServer: boolean;
+  modeName?: string;
+  currentDateTime?: string;
 }): string => {
   const lines: string[] = [
     'Application default instructions:',
     '- Always respond in Markdown format.',
     '- Keep answers clear, concise, and actionable.',
   ];
+
+  if (currentDateTime) {
+    lines.push(`- Current date and time: ${currentDateTime}.`);
+  }
+
+  if (modeName) {
+    lines.push(`- The user is currently in "${modeName}" mode. Adapt your responses to best suit this mode.`);
+  }
 
   if (toolsEnabledForRequest) {
     lines.push('- Multiple tool calls are supported in a single turn when useful.');

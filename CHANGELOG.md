@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings Mode Management UI** — Added mode management workflows in Settings, including mode listing, editing, and per-mode MCP controls.
 - **Chat Mode Integration** — Integrated mode selection into chat flows, including an in-composer mode selector and chat-level mode behavior.
 - **Per-Conversation Mode Persistence** — Conversations now persist their selected mode, and default mode protections were added to prevent invalid destructive edits.
+- **Mode Context in App System Prompt** — The app system prompt now includes the active mode name so the AI can adapt responses based on the current mode.
+- **Date/Time in App System Prompt** — The app system prompt now includes the current local date and time for time-aware responses.
+- **Chat Loop Debug Logging** — Added timing logs for payload preparation and API request phases to help diagnose response latency.
 
 ### Changed
 - **MCP Configuration Architecture** — Refactored MCP handling to separate a global MCP registry from per-mode runtime overrides for clearer control boundaries.
