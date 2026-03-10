@@ -315,9 +315,9 @@ const createStyles = (colors: any) =>
     assistantContent: {
       paddingVertical: 4,
       paddingHorizontal: 2,
-      width: '100%',
     },
     assistantWithTools: {
+      width: '100%',
     },
     errorContent: {
       backgroundColor: colors.dangerSoft,
