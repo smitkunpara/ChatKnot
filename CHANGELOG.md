@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen` caused by a prematurely closed `KeyboardAwareContainer`.
+- **Chat Scrolling Stability** — Resolved an issue where opening or closing the keyboard caused the chat history to scroll unexpectedly to the top. Removed auto-scroll on focus and prevented full component remounts on keyboard dismissal.
 
 ### Performance
 - **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments to prevent redundant disk reads and encoding overhead during the chat loop.
