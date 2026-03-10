@@ -76,8 +76,7 @@ export const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
 
-  // Force re-render on Android when keyboard closes to fix KeyboardAvoidingView padding issue
-  const [keyboardResetKey, setKeyboardResetKey] = useState(0);
+  // Track keyboard visibility for input area adjustments
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -86,8 +85,6 @@ export const ChatScreen = () => {
     });
     const hideListener = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
-      // Force re-render to reset KeyboardAvoidingView padding
-      setKeyboardResetKey(prev => prev + 1);
     });
     return () => {
       showListener.remove();
@@ -369,12 +366,8 @@ export const ChatScreen = () => {
   };
 
   const handleInputFocus = () => {
-    setTimeout(() => {
-      if (flatListRef.current && activeConversation?.messages.length) {
-        // Scroll to show last message above the input area
-        flatListRef.current.scrollToEnd({ animated: true });
-      }
-    }, 220);
+    // Intentionally left blank to prevent auto-scrolling when tapping the typebox.
+    // The chat list should stay at the current scroll position.
   };
 
   const handleRetryAssistant = (assistantMessageId: string) => {
@@ -482,10 +475,16 @@ export const ChatScreen = () => {
     currentModelToolsSupported,
   ]);
 
+  const attachmentBase64Cache = useRef<Map<string, string>>(new Map());
+
   const readFileAsBase64 = async (uri: string): Promise<string> => {
+    if (attachmentBase64Cache.current.has(uri)) {
+      return attachmentBase64Cache.current.get(uri)!;
+    }
     const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: 'base64',
     });
+    attachmentBase64Cache.current.set(uri, base64);
     return base64;
   };
 
@@ -967,7 +966,6 @@ export const ChatScreen = () => {
       )}
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
-        key={keyboardResetKey}  // Force re-render on Android when keyboard closes
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
