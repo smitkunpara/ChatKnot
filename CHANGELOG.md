@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP Override Merge Behavior** — Added merge logic for applying mode-level MCP overrides on top of global MCP configuration at runtime.
 - **Mode Constraints Simplified** — Removed mode-level model override behavior as part of the multiple-mode support refactor.
 - **Approval Policy Cleanup** — Removed global "auto-approve all" behavior and aligned approvals with the updated mode/MCP design.
+- **Sidebar Sorting** — Conversations in the sidebar are now sorted by last activity (most recently active at top) instead of creation order.
+- **Mode Editor UX** — Added explicit Save and Discard buttons to the mode editor. Hardware/software back button now saves mode changes instead of silently discarding them. Added a Delete Mode button for non-default modes.
 
 ### Fixed
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen` caused by a prematurely closed `KeyboardAwareContainer`.

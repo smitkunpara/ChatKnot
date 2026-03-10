@@ -143,6 +143,7 @@ export const SettingsScreen = () => {
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importPayloadText, setImportPayloadText] = useState('');
   const activeViewRef = useRef<SettingsView>('index');
+  const saveModeEditorRef = useRef<() => void>(() => {});
   const [editingModeId, setEditingModeId] = useState<string | null>(null);
   const [modeDrafts, setModeDrafts] = useState<ModeDraftMap>({});
 
@@ -169,6 +170,10 @@ export const SettingsScreen = () => {
       setActiveView('index');
 
       const onBackPress = () => {
+        if (activeViewRef.current === 'modeEditor') {
+          saveModeEditorRef.current();
+          return true;
+        }
         if (activeViewRef.current !== 'index') {
           closeAllEditModes();
           setActiveView('index');
@@ -192,8 +197,12 @@ export const SettingsScreen = () => {
       }
 
       event.preventDefault();
-      closeAllEditModes();
-      setActiveView('index');
+      if (activeView === 'modeEditor') {
+        saveModeEditorRef.current();
+      } else {
+        closeAllEditModes();
+        setActiveView('index');
+      }
     });
 
     return unsubscribe;
@@ -670,6 +679,7 @@ export const SettingsScreen = () => {
     setEditingModeId(null);
     setActiveView('modes');
   };
+  saveModeEditorRef.current = saveModeEditor;
 
   const cancelModeEditor = () => {
     if (editingModeId) {
@@ -1209,6 +1219,24 @@ export const SettingsScreen = () => {
                 <Text style={styles.sectionHint}>No MCP servers configured. Add servers in the MCP Servers category.</Text>
               </View>
             )}
+
+            <View style={styles.modeEditorActions}>
+              <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={saveModeEditor}>
+                <Save size={16} color={colors.onPrimary} />
+                <Text style={styles.primaryButtonText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={cancelModeEditor}>
+                <X size={16} color={colors.textSecondary} />
+                <Text style={styles.secondaryButtonText}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+
+            {!editingMode.isDefault ? (
+              <TouchableOpacity style={styles.dangerButton} onPress={() => handleRemoveMode(editingMode)}>
+                <Trash size={16} color={colors.danger} />
+                <Text style={styles.dangerButtonText}>Delete Mode</Text>
+              </TouchableOpacity>
+            ) : null}
           </>
         ) : null}
 
@@ -1947,6 +1975,45 @@ const createStyles = (colors: any) =>
       color: colors.onPrimary,
       fontWeight: '700',
       fontSize: 14,
+    },
+    secondaryButton: {
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      paddingVertical: 11,
+      flexDirection: 'row' as const,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      gap: 6,
+      marginTop: 2,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    secondaryButtonText: {
+      color: colors.textSecondary,
+      fontWeight: '600' as const,
+      fontSize: 14,
+    },
+    dangerButton: {
+      backgroundColor: 'transparent',
+      borderRadius: 10,
+      paddingVertical: 11,
+      flexDirection: 'row' as const,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      gap: 6,
+      marginTop: 16,
+      borderWidth: 1,
+      borderColor: colors.danger,
+    },
+    dangerButtonText: {
+      color: colors.danger,
+      fontWeight: '600' as const,
+      fontSize: 14,
+    },
+    modeEditorActions: {
+      flexDirection: 'row' as const,
+      gap: 10,
+      marginTop: 16,
     },
     searchBar: {
       flexDirection: 'row',

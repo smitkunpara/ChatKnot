@@ -29,9 +29,10 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return conversations;
+    const sorted = [...conversations].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    if (!searchQuery.trim()) return sorted;
     const query = searchQuery.toLowerCase();
-    return conversations.filter(c => {
+    return sorted.filter(c => {
       const label = getSidebarConversationLabel(c).toLowerCase();
       return label.includes(query);
     });
