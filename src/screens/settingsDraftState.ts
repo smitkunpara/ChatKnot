@@ -11,6 +11,7 @@ import {
 } from '../services/mcp/OpenApiValidationService';
 
 export interface ProviderDraft {
+  name: string;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -60,6 +61,7 @@ export const beginProviderDraft = (
   return {
     ...drafts,
     [provider.id]: {
+      name: provider.name,
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKey,
       model: provider.model,
@@ -107,6 +109,7 @@ export const saveProviderDraft = (
 
   commit({
     ...provider,
+    name: draft.name,
     baseUrl: draft.baseUrl,
     apiKey: draft.apiKey,
     model: draft.model,

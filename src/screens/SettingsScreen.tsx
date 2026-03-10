@@ -116,17 +116,7 @@ export const SettingsScreen = () => {
     replaceAllSettings,
   } = useSettingsStore();
 
-  const [newProviderName, setNewProviderName] = useState('');
-  const [newBaseUrl, setNewBaseUrl] = useState(DEFAULT_OPENAI_BASE_URL);
-  const [newApiKey, setNewApiKey] = useState('');
-  const [isValidatingNewProvider, setIsValidatingNewProvider] = useState(false);
-  const [newMcpName, setNewMcpName] = useState('');
-  const [newMcpUrl, setNewMcpUrl] = useState('');
-  const [newMcpHeaderName, setNewMcpHeaderName] = useState('');
-  const [newMcpHeaderValue, setNewMcpHeaderValue] = useState('');
-  const [newMcpValidationError, setNewMcpValidationError] = useState<string | null>(null);
   const [serverValidationErrors, setServerValidationErrors] = useState<Record<string, string>>({});
-  const [isValidatingNewMcp, setIsValidatingNewMcp] = useState(false);
   const [validatingServerId, setValidatingServerId] = useState<string | null>(null);
   const [isFetchingModels, setIsFetchingModels] = useState<string | null>(null);
   const [modelPickerVisible, setModelPickerVisible] = useState(false);
@@ -235,55 +225,20 @@ export const SettingsScreen = () => {
     return unsubscribe;
   }, []);
 
-  const handleAddProvider = async () => {
-    if (!newProviderName.trim() || !newBaseUrl.trim()) {
-      Alert.alert('Missing fields', 'Provider name and base URL are required.');
-      return;
-    }
-
+  const handleAddProvider = () => {
     const provider: LlmProviderConfig = {
       id: uuid.v4() as string,
-      name: newProviderName.trim(),
+      name: 'New Provider',
       type: 'custom-openai',
-      baseUrl: newBaseUrl.trim(),
-      apiKey: newApiKey.trim(),
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      apiKey: '',
       model: '',
       availableModels: [],
       hiddenModels: [],
       enabled: true,
     };
-
-    setIsValidatingNewProvider(true);
-    try {
-      const validationService = new OpenAiService(provider);
-      const { models, capabilities } = await validationService.listModelsWithCapabilities();
-
-      if (!models.length) {
-        Alert.alert('Invalid Provider', 'No compatible text models found at this endpoint.');
-        setIsValidatingNewProvider(false);
-        return;
-      }
-
-      const providerWithModels = {
-        ...provider,
-        availableModels: models,
-        modelCapabilities: capabilities,
-        model: models[0],
-      };
-
-      addProvider(providerWithModels);
-      setNewProviderName('');
-      setNewBaseUrl(DEFAULT_OPENAI_BASE_URL);
-      setNewApiKey('');
-      navigateToProviderEditor(providerWithModels);
-    } catch (error: any) {
-      Alert.alert(
-        'Provider Validation Failed',
-        error?.message || 'This endpoint is not OpenAI-compatible or credentials are invalid.'
-      );
-    } finally {
-      setIsValidatingNewProvider(false);
-    }
+    addProvider(provider);
+    navigateToProviderEditor(provider);
   };
 
   const clearServerValidationError = (serverId: string) => {
@@ -754,7 +709,8 @@ export const SettingsScreen = () => {
 
   const hasProviderUnsavedChanges = (): boolean => {
     if (!editingProvider || !editingProviderDraft) return false;
-    return editingProviderDraft.baseUrl !== editingProvider.baseUrl ||
+    return editingProviderDraft.name !== editingProvider.name ||
+           editingProviderDraft.baseUrl !== editingProvider.baseUrl ||
            editingProviderDraft.apiKey !== editingProvider.apiKey ||
            editingProviderDraft.model !== editingProvider.model ||
            editingProviderDraft.enabled !== editingProvider.enabled;
@@ -820,36 +776,12 @@ export const SettingsScreen = () => {
   saveProviderEditorRef.current = promptProviderUnsavedChanges;
   saveServerEditorRef.current = promptServerUnsavedChanges;
 
-  const handleAddMcpGlobal = async () => {
-    if (!newMcpUrl.trim()) {
-      setNewMcpValidationError('Server URL: Please provide an MCP server URL.');
-      return;
-    }
-
-    const headers: Record<string, string> = {};
-    if (newMcpHeaderName.trim() && newMcpHeaderValue.trim()) {
-      headers[newMcpHeaderName.trim()] = newMcpHeaderValue.trim();
-    }
-
-    setIsValidatingNewMcp(true);
-    setNewMcpValidationError(null);
-
-    const validation = await validateOpenApiEndpoint({
-      url: newMcpUrl,
-      headers,
-    });
-
-    if (!validation.ok) {
-      setNewMcpValidationError(formatOpenApiValidationError(validation.error));
-      setIsValidatingNewMcp(false);
-      return;
-    }
-
+  const handleAddMcpGlobal = () => {
     const server: McpServerConfig = {
       id: uuid.v4() as string,
-      name: newMcpName.trim() || 'New Server',
-      url: validation.normalizedInputUrl,
-      headers,
+      name: 'New Server',
+      url: '',
+      headers: {},
       token: undefined,
       enabled: true,
       tools: [],
@@ -857,12 +789,6 @@ export const SettingsScreen = () => {
       autoApprovedTools: [],
     };
     addMcpServer(server);
-    setNewMcpName('');
-    setNewMcpUrl('');
-    setNewMcpHeaderName('');
-    setNewMcpHeaderValue('');
-    setNewMcpValidationError(null);
-    setIsValidatingNewMcp(false);
     navigateToServerEditor(server);
   };
 
@@ -903,7 +829,7 @@ export const SettingsScreen = () => {
   const headerTitle = activeView === 'modeEditor'
     ? (editingModeDraft?.name || editingMode?.name || 'Edit Mode')
     : activeView === 'providerEditor'
-    ? (editingProvider?.name || 'Edit Provider')
+    ? (editingProviderDraft?.name || editingProvider?.name || 'Edit Provider')
     : activeView === 'mcpServerEditor'
     ? (editingServer?.name || 'Edit Server')
     : inCategoryView ? activeCategory?.title || 'Settings' : 'Settings';
@@ -1431,56 +1357,10 @@ export const SettingsScreen = () => {
               );
             })}
 
-            <Text style={styles.sectionHeader}>Add New Server</Text>
-            <View style={styles.sectionCard}>
-              <TextInput
-                style={styles.input}
-                value={newMcpName}
-                onChangeText={setNewMcpName}
-                placeholder="Server Name"
-                placeholderTextColor={colors.placeholder}
-              />
-              <TextInput
-                style={styles.input}
-                value={newMcpUrl}
-                onChangeText={text => {
-                  setNewMcpUrl(text);
-                  if (newMcpValidationError) {
-                    setNewMcpValidationError(null);
-                  }
-                }}
-                placeholder="Server URL"
-                placeholderTextColor={colors.placeholder}
-              />
-              <TextInput
-                style={styles.input}
-                value={newMcpHeaderName}
-                onChangeText={setNewMcpHeaderName}
-                placeholder="Header Name (optional)"
-                placeholderTextColor={colors.placeholder}
-              />
-              <TextInput
-                style={styles.input}
-                value={newMcpHeaderValue}
-                onChangeText={setNewMcpHeaderValue}
-                placeholder="Header Value (optional)"
-                placeholderTextColor={colors.placeholder}
-                secureTextEntry
-              />
-              {newMcpValidationError ? <Text style={styles.warningText}>{newMcpValidationError}</Text> : null}
-              <TouchableOpacity
-                style={[styles.primaryButton, isValidatingNewMcp ? styles.primaryButtonDisabled : undefined]}
-                onPress={() => { void handleAddMcpGlobal(); }}
-                disabled={isValidatingNewMcp}
-              >
-                {isValidatingNewMcp ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Plus size={18} color={colors.onPrimary} />
-                )}
-                <Text style={styles.primaryButtonText}>Add Server</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleAddMcpGlobal}>
+              <Plus size={18} color={colors.onPrimary} />
+              <Text style={styles.primaryButtonText}>Add Server</Text>
+            </TouchableOpacity>
           </>
         ) : null}
 
@@ -1657,49 +1537,16 @@ export const SettingsScreen = () => {
                     ) : null}
                   </View>
                   <Text style={styles.categoryDescription} numberOfLines={1}>
-                    {provider.model || 'No model selected'}
+                    {provider.model || 'Not configured'}
                   </Text>
                 </View>
                 <ChevronRight size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             ))}
-            <Text style={styles.sectionHeader}>Add New Provider</Text>
-            <View style={styles.sectionCard}>
-              <TextInput
-                style={styles.input}
-                value={newProviderName}
-                onChangeText={setNewProviderName}
-                placeholder="Provider Name"
-                placeholderTextColor={colors.placeholder}
-              />
-              <TextInput
-                style={styles.input}
-                value={newBaseUrl}
-                onChangeText={setNewBaseUrl}
-                placeholder="Base URL"
-                placeholderTextColor={colors.placeholder}
-              />
-              <TextInput
-                style={styles.input}
-                value={newApiKey}
-                onChangeText={setNewApiKey}
-                placeholder="API Key"
-                placeholderTextColor={colors.placeholder}
-                secureTextEntry
-              />
-              <TouchableOpacity
-                style={[styles.primaryButton, isValidatingNewProvider ? styles.primaryButtonDisabled : undefined]}
-                onPress={() => { void handleAddProvider(); }}
-                disabled={isValidatingNewProvider}
-              >
-                {isValidatingNewProvider ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Plus size={18} color={colors.onPrimary} />
-                )}
-                <Text style={styles.primaryButtonText}>Add Provider</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleAddProvider}>
+              <Plus size={18} color={colors.onPrimary} />
+              <Text style={styles.primaryButtonText}>Add Provider</Text>
+            </TouchableOpacity>
           </>
         ) : null}
 
@@ -1709,6 +1556,7 @@ export const SettingsScreen = () => {
           const effectiveProvider = draft
             ? {
               ...editingProvider,
+              name: draft.name,
               baseUrl: draft.baseUrl,
               apiKey: draft.apiKey,
               model: draft.model,
@@ -1721,8 +1569,21 @@ export const SettingsScreen = () => {
           return (
             <>
               <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>Provider Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={effectiveProvider.name}
+                  onChangeText={value =>
+                    setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, { name: value }))
+                  }
+                  placeholder="Provider Name"
+                  placeholderTextColor={colors.placeholder}
+                />
+              </View>
+
+              <View style={styles.sectionCard}>
                 <View style={styles.row}>
-                  <Text style={styles.sectionTitle}>Provider Settings</Text>
+                  <Text style={styles.sectionTitle}>Enabled</Text>
                   <Switch
                     value={effectiveProvider.enabled}
                     onValueChange={enabled =>
