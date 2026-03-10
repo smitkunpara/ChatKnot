@@ -218,7 +218,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     // text block
                     if (!block.content.trim()) return null;
                     return (
-                      <View key={`text-${idx}`} style={styles.textRow}>
+                      <View key={`text-${idx}`}>
                         <Markdown
                           style={markdownStyles}
                           rules={createTableRenderRules(colors)}
