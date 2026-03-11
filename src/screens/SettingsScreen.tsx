@@ -139,7 +139,13 @@ export const SettingsScreen = () => {
   const saveProviderEditorRef = useRef<() => void>(() => {});
   const saveServerEditorRef = useRef<() => void>(() => {});
   const [editingModeId, setEditingModeId] = useState<string | null>(null);
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [modeDrafts, setModeDrafts] = useState<ModeDraftMap>({});
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    buttons: { label: string; style?: 'primary' | 'danger' | 'cancel'; onPress: () => void }[];
+  } | null>(null);
 
   const closeAllEditModes = React.useCallback(() => {
     setEditingProviders({});
@@ -238,6 +244,7 @@ export const SettingsScreen = () => {
       enabled: true,
     };
     addProvider(provider);
+    setIsCreatingNew(true);
     navigateToProviderEditor(provider);
   };
 
@@ -618,28 +625,38 @@ export const SettingsScreen = () => {
       isDefault: false,
     };
     addMode(newMode);
+    setIsCreatingNew(true);
     navigateToModeEditor(newMode);
   };
 
   const handleRemoveMode = (mode: Mode) => {
     if (mode.isDefault) {
-      Alert.alert('Default Mode', 'The default mode cannot be deleted. Mark another mode as default first.');
+      setConfirmDialog({
+        title: 'Default Mode',
+        message: 'The default mode cannot be deleted. Mark another mode as default first.',
+        buttons: [{ label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) }],
+      });
       return;
     }
-    Alert.alert('Delete Mode', `Delete "${mode.name}"? Mode overrides will be removed.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          removeMode(mode.id);
-          if (editingModeId === mode.id) {
-            setEditingModeId(null);
-            setActiveView('modes');
-          }
+    setConfirmDialog({
+      title: 'Delete Mode',
+      message: `Delete "${mode.name}"? Mode overrides will be removed.`,
+      buttons: [
+        { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+        {
+          label: 'Delete',
+          style: 'danger',
+          onPress: () => {
+            setConfirmDialog(null);
+            removeMode(mode.id);
+            if (editingModeId === mode.id) {
+              setEditingModeId(null);
+              setActiveView('modes');
+            }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   const saveModeEditor = () => {
@@ -649,15 +666,20 @@ export const SettingsScreen = () => {
       );
     }
     setEditingModeId(null);
+    setIsCreatingNew(false);
     setActiveView('modes');
   };
   saveModeEditorRef.current = saveModeEditor;
 
   const cancelModeEditor = () => {
     if (editingModeId) {
+      if (isCreatingNew) {
+        removeMode(editingModeId);
+      }
       setModeDrafts(prev => discardModeDraft(prev, editingModeId));
     }
     setEditingModeId(null);
+    setIsCreatingNew(false);
     setActiveView('modes');
   };
 
@@ -668,15 +690,19 @@ export const SettingsScreen = () => {
   };
 
   const promptModeUnsavedChanges = () => {
-    if (!hasModeUnsavedChanges()) {
+    if (!hasModeUnsavedChanges() && !isCreatingNew) {
       cancelModeEditor();
       return;
     }
-    Alert.alert('Unsaved Changes', 'You have unsaved changes. What would you like to do?', [
-      { text: 'Save', onPress: saveModeEditor },
-      { text: 'Discard', style: 'destructive', onPress: cancelModeEditor },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setConfirmDialog({
+      title: 'Unsaved Changes',
+      message: 'You have unsaved changes. What would you like to do?',
+      buttons: [
+        { label: 'Save', style: 'primary', onPress: () => { setConfirmDialog(null); saveModeEditor(); } },
+        { label: 'Discard', style: 'danger', onPress: () => { setConfirmDialog(null); cancelModeEditor(); } },
+        { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+      ],
+    });
   };
   saveModeEditorRef.current = promptModeUnsavedChanges;
 
@@ -696,14 +722,19 @@ export const SettingsScreen = () => {
       saveProviderEdit(editingProvider);
     }
     setEditingProviderId(null);
+    setIsCreatingNew(false);
     setActiveView('providers');
   };
 
   const cancelProviderEditor = () => {
     if (editingProviderId) {
+      if (isCreatingNew) {
+        removeProvider(editingProviderId);
+      }
       cancelProviderEdit(editingProviderId);
     }
     setEditingProviderId(null);
+    setIsCreatingNew(false);
     setActiveView('providers');
   };
 
@@ -717,15 +748,19 @@ export const SettingsScreen = () => {
   };
 
   const promptProviderUnsavedChanges = () => {
-    if (!hasProviderUnsavedChanges()) {
+    if (!hasProviderUnsavedChanges() && !isCreatingNew) {
       cancelProviderEditor();
       return;
     }
-    Alert.alert('Unsaved Changes', 'You have unsaved changes. What would you like to do?', [
-      { text: 'Save', onPress: saveProviderEditor },
-      { text: 'Discard', style: 'destructive', onPress: cancelProviderEditor },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setConfirmDialog({
+      title: 'Unsaved Changes',
+      message: 'You have unsaved changes. What would you like to do?',
+      buttons: [
+        { label: 'Save', style: 'primary', onPress: () => { setConfirmDialog(null); saveProviderEditor(); } },
+        { label: 'Discard', style: 'danger', onPress: () => { setConfirmDialog(null); cancelProviderEditor(); } },
+        { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+      ],
+    });
   };
 
   // ─── MCP Server editor helpers ───────────────────────────
@@ -746,14 +781,19 @@ export const SettingsScreen = () => {
       if (serverValidationErrors[editingServer.id]) return;
     }
     setEditingServerId(null);
+    setIsCreatingNew(false);
     setActiveView('mcpServers');
   };
 
   const cancelServerEditor = () => {
     if (editingServerId) {
+      if (isCreatingNew) {
+        removeGlobalMcpServer(editingServerId);
+      }
       cancelServerEdit(editingServerId);
     }
     setEditingServerId(null);
+    setIsCreatingNew(false);
     setActiveView('mcpServers');
   };
 
@@ -763,15 +803,19 @@ export const SettingsScreen = () => {
   };
 
   const promptServerUnsavedChanges = () => {
-    if (!hasServerUnsavedChanges()) {
+    if (!hasServerUnsavedChanges() && !isCreatingNew) {
       cancelServerEditor();
       return;
     }
-    Alert.alert('Unsaved Changes', 'You have unsaved changes. What would you like to do?', [
-      { text: 'Save', onPress: () => { void saveServerEditor(); } },
-      { text: 'Discard', style: 'destructive', onPress: cancelServerEditor },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setConfirmDialog({
+      title: 'Unsaved Changes',
+      message: 'You have unsaved changes. What would you like to do?',
+      buttons: [
+        { label: 'Save', style: 'primary', onPress: () => { setConfirmDialog(null); void saveServerEditor(); } },
+        { label: 'Discard', style: 'danger', onPress: () => { setConfirmDialog(null); cancelServerEditor(); } },
+        { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+      ],
+    });
   };
   saveProviderEditorRef.current = promptProviderUnsavedChanges;
   saveServerEditorRef.current = promptServerUnsavedChanges;
@@ -789,6 +833,7 @@ export const SettingsScreen = () => {
       autoApprovedTools: [],
     };
     addMcpServer(server);
+    setIsCreatingNew(true);
     navigateToServerEditor(server);
   };
 
@@ -1121,16 +1166,7 @@ export const SettingsScreen = () => {
                     {Object.keys(mode.mcpServerOverrides ?? {}).length} override{Object.keys(mode.mcpServerOverrides ?? {}).length !== 1 ? 's' : ''}
                   </Text>
                 </View>
-                <View style={styles.rowRight}>
-                  <TouchableOpacity
-                    onPress={() => handleRemoveMode(mode)}
-                    style={[styles.iconButton, mode.isDefault && { opacity: 0.3 }]}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Trash size={17} color={colors.danger} />
-                  </TouchableOpacity>
-                  <ChevronRight size={18} color={colors.textTertiary} />
-                </View>
+                <ChevronRight size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={styles.primaryButton} onPress={handleAddMode}>
@@ -1338,19 +1374,6 @@ export const SettingsScreen = () => {
                     <Text style={styles.categoryDescription} numberOfLines={1}>
                       {server.url}
                     </Text>
-                    <View style={[
-                      styles.statusBadge,
-                      status === 'connected' ? styles.statusConnected
-                        : status === 'error' ? styles.statusError
-                        : styles.statusPending,
-                    ]}>
-                      <Text style={[
-                        styles.statusText,
-                        status === 'connected' ? styles.statusTextConnected
-                          : status === 'error' ? styles.statusTextError
-                          : styles.statusTextPending,
-                      ]}>{statusLabel}</Text>
-                    </View>
                   </View>
                   <ChevronRight size={18} color={colors.textTertiary} />
                 </TouchableOpacity>
@@ -1474,6 +1497,15 @@ export const SettingsScreen = () => {
                 </View>
               </View>
 
+              {runtime?.toolNames && runtime.toolNames.length > 0 ? (
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>Available Tools ({runtime.toolNames.length})</Text>
+                  {runtime.toolNames.map(toolName => (
+                    <Text key={toolName} style={styles.toolNameText}>{toolName}</Text>
+                  ))}
+                </View>
+              ) : null}
+
               {serverValidationErrors[editingServer.id] ? (
                 <Text style={styles.warningText}>{serverValidationErrors[editingServer.id]}</Text>
               ) : null}
@@ -1498,18 +1530,23 @@ export const SettingsScreen = () => {
               </View>
 
               <TouchableOpacity style={styles.dangerButton} onPress={() => {
-                Alert.alert('Delete Server', `Delete "${editingServer.name}"?`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => {
-                      removeGlobalMcpServer(editingServer.id);
-                      setEditingServerId(null);
-                      setActiveView('mcpServers');
+                setConfirmDialog({
+                  title: 'Delete Server',
+                  message: `Delete "${editingServer.name}"?`,
+                  buttons: [
+                    { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+                    {
+                      label: 'Delete',
+                      style: 'danger',
+                      onPress: () => {
+                        setConfirmDialog(null);
+                        removeGlobalMcpServer(editingServer.id);
+                        setEditingServerId(null);
+                        setActiveView('mcpServers');
+                      },
                     },
-                  },
-                ]);
+                  ],
+                });
               }}>
                 <Trash size={16} color={colors.danger} />
                 <Text style={styles.dangerButtonText}>Delete Server</Text>
@@ -1537,7 +1574,7 @@ export const SettingsScreen = () => {
                     ) : null}
                   </View>
                   <Text style={styles.categoryDescription} numberOfLines={1}>
-                    {provider.model || 'Not configured'}
+                    {provider.baseUrl}
                   </Text>
                 </View>
                 <ChevronRight size={18} color={colors.textTertiary} />
@@ -1634,7 +1671,7 @@ export const SettingsScreen = () => {
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modelLabel}>Manage Models</Text>
-                  <Text style={styles.modelText}>{effectiveProvider.model || 'Select model'}</Text>
+                  <Text style={styles.modelText}>{effectiveProvider.model || 'No model selected'}</Text>
                 </View>
                 {isFetchingModels === editingProvider.id ? (
                   <ActivityIndicator size="small" color={colors.primary} />
@@ -1655,18 +1692,23 @@ export const SettingsScreen = () => {
               </View>
 
               <TouchableOpacity style={styles.dangerButton} onPress={() => {
-                Alert.alert('Delete Provider', `Delete "${editingProvider.name}"?`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => {
-                      removeProvider(editingProvider.id);
-                      setEditingProviderId(null);
-                      setActiveView('providers');
+                setConfirmDialog({
+                  title: 'Delete Provider',
+                  message: `Delete "${editingProvider.name}"?`,
+                  buttons: [
+                    { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+                    {
+                      label: 'Delete',
+                      style: 'danger',
+                      onPress: () => {
+                        setConfirmDialog(null);
+                        removeProvider(editingProvider.id);
+                        setEditingProviderId(null);
+                        setActiveView('providers');
+                      },
                     },
-                  },
-                ]);
+                  ],
+                });
               }}>
                 <Trash size={16} color={colors.danger} />
                 <Text style={styles.dangerButtonText}>Delete Provider</Text>
@@ -1882,6 +1924,41 @@ export const SettingsScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={confirmDialog !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmDialog(null)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmContent}>
+            <Text style={styles.confirmTitle}>{confirmDialog?.title}</Text>
+            <Text style={styles.confirmMessage}>{confirmDialog?.message}</Text>
+            <View style={styles.confirmActions}>
+              {confirmDialog?.buttons.map((btn, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    styles.confirmBtn,
+                    btn.style === 'primary' ? styles.confirmBtnPrimary
+                      : btn.style === 'danger' ? styles.confirmBtnDanger
+                      : styles.confirmBtnCancel,
+                  ]}
+                  onPress={btn.onPress}
+                >
+                  <Text style={[
+                    styles.confirmBtnText,
+                    btn.style === 'primary' ? styles.confirmBtnTextPrimary
+                      : btn.style === 'danger' ? styles.confirmBtnTextDanger
+                      : styles.confirmBtnTextCancel,
+                  ]}>{btn.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1951,6 +2028,10 @@ const createStyles = (colors: any) =>
       fontWeight: '700',
       marginBottom: 3,
     },
+    categoryDescription: {
+      color: colors.textSecondary,
+      fontSize: 13,
+    },
     categoryHint: {
       color: colors.textSecondary,
       fontSize: 12,
@@ -1965,6 +2046,12 @@ const createStyles = (colors: any) =>
       color: colors.textSecondary,
       fontSize: 12,
       marginBottom: 10,
+    },
+    toolNameText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      paddingVertical: 4,
+      paddingHorizontal: 2,
     },
     themeRow: {
       flexDirection: 'row',
@@ -2524,5 +2611,63 @@ const createStyles = (colors: any) =>
       fontSize: 10,
       fontWeight: '700',
       textTransform: 'uppercase',
+    },
+    confirmOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    confirmContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+    },
+    confirmTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    confirmMessage: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+      marginBottom: 20,
+    },
+    confirmActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 10,
+    },
+    confirmBtn: {
+      paddingVertical: 10,
+      paddingHorizontal: 18,
+      borderRadius: 10,
+    },
+    confirmBtnPrimary: {
+      backgroundColor: colors.primary,
+    },
+    confirmBtnDanger: {
+      backgroundColor: colors.danger,
+    },
+    confirmBtnCancel: {
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    confirmBtnText: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    confirmBtnTextPrimary: {
+      color: colors.onPrimary,
+    },
+    confirmBtnTextDanger: {
+      color: '#fff',
+    },
+    confirmBtnTextCancel: {
+      color: colors.textSecondary,
     },
   });
