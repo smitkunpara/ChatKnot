@@ -1,21 +1,11 @@
 <p align="center">
-  <img src="assets/logo.png" width="200" height="200" alt="ChatKnot Logo">
+  <img src="assets/logo.png" width="200" height="200" style="border-radius: 40px;" alt="ChatKnot Logo">
 </p>
 
 # ChatKnot 🚀
 
 A privacy-focused, high-performance React Native mobile application for chatting with AI providers and connecting **MCP (Model Context Protocol)** and **OpenAPI** tools.
 
-## Project Status
-
-- [x] Initial chat app
-- [x] MCP support
-- [x] Multiple mode support
-    - each mode has its own system prompt + model + mcp configuration
-- [x] Export chat (markdown/pdf/json)
-- [x] image/file support
-- [x] AI Search and AI Tab rename
-- [ ] add custom reasoning effort/other parameter in the app
 
 ## 🌟 Key Features
 
@@ -27,7 +17,6 @@ A privacy-focused, high-performance React Native mobile application for chatting
 ### 🛠️ Model Context Protocol (MCP) & OpenAPI
 - **Dynamic Tool Integration**: Connect MCP servers and OpenAPI endpoints to extend AI capabilities with real-time data and tools.
 - **Granular Permissions**: Configure "Auto-Approve" or "Manual" execution policies per tool and per mode.
-- **Intelligent Error Recovery**: Full JSON error payloads (e.g., `valid_input`, `suggestions`) are forwarded to the AI, allowing it to self-correct failed tool calls.
 
 ### 📂 Multimodal input & Export
 - **File Support**: Attach images for vision-capable models and text-based documents (PDF, Code, Markdown) for context mapping.
@@ -74,4 +63,12 @@ To generate a production APK for Android:
 npm run android:apk:release
 ```
 
+## 📱 Platform Compatibility
+> [!IMPORTANT]
+> **Android Primary**: ChatKnot is currently only tested and fully operational on **Android**. Support for iOS and Web is in the experimental phase.
 
+## 📄 License & Legal
+- **License**: MIT License - see the [LICENSE](LICENSE) file for details.
+- **Privacy**: All keys and chat data are stored locally on your device using hardware-backed encryption.
+---
+*ChatKnot is an open-source tool for personal AI productivity. Happy Chatting! 🚀*
