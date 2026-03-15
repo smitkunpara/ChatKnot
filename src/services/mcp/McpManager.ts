@@ -241,7 +241,7 @@ class McpManagerService {
     }
 
     if (!policy.enabled) {
-      throw new Error(`Tool ${name} is disabled in MCP settings.`);
+      throw new Error(`Tool ${name} is disabled for this mode.`);
     }
 
     const client = this.clients.get(policy.serverId!);
