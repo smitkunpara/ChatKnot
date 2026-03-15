@@ -293,6 +293,7 @@ export const clearAllDrafts = <TDraft extends Record<string, unknown>>(drafts: T
 export interface ModeDraft {
   name: string;
   systemPrompt: string;
+  mcpServerOverrides: Record<string, import('../types').ModeServerOverride>;
 }
 
 export type ModeDraftMap = Record<string, ModeDraft>;
@@ -306,6 +307,7 @@ export const beginModeDraft = (
     [mode.id]: {
       name: mode.name,
       systemPrompt: mode.systemPrompt,
+      mcpServerOverrides: JSON.parse(JSON.stringify(mode.mcpServerOverrides || {})),
     },
   };
 };
@@ -325,6 +327,9 @@ export const updateModeDraft = (
     [modeId]: {
       ...currentDraft,
       ...patch,
+      mcpServerOverrides: patch.mcpServerOverrides 
+        ? JSON.parse(JSON.stringify(patch.mcpServerOverrides))
+        : currentDraft.mcpServerOverrides,
     },
   };
 };
@@ -348,6 +353,7 @@ export const saveModeDraft = (
   commit(mode.id, {
     name: draft.name,
     systemPrompt: draft.systemPrompt,
+    mcpServerOverrides: draft.mcpServerOverrides,
   });
 
   return discardModeDraft(drafts, mode.id);

@@ -1221,7 +1221,7 @@ export const SettingsScreen = () => {
             <Text style={styles.sectionHeader}>MCP Servers</Text>
             {mcpServers.length > 0 ? (
               mcpServers.map(server => {
-                const overrides = editingMode?.mcpServerOverrides ?? {};
+                const overrides = editingModeDraft.mcpServerOverrides ?? {};
                 const override = overrides[server.id];
                 const isEnabled = override ? override.enabled : server.enabled;
                 const allowedTools = override?.allowedTools ?? server.allowedTools ?? [];
@@ -1236,8 +1236,8 @@ export const SettingsScreen = () => {
                 );
 
                 const updateOverride = (patch: Partial<import('../types').ModeServerOverride>) => {
-                  if (!editingModeId) return;
-                  updateMode(editingModeId, {
+                  if (!editingMode.id) return;
+                  setModeDrafts(prev => updateModeDraft(prev, editingMode.id, {
                     mcpServerOverrides: {
                       ...overrides,
                       [server.id]: {
@@ -1247,7 +1247,7 @@ export const SettingsScreen = () => {
                         ...patch,
                       },
                     },
-                  });
+                  }));
                 };
 
                 return (

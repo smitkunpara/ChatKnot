@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" width="200" height="200" style="border-radius: 40px;" alt="ChatKnot Logo">
+  <img src="assets/logo.png" width="200" height="200" alt="ChatKnot Logo">
 </p>
 
 # ChatKnot 🚀

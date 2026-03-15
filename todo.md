@@ -1,7 +1,7 @@
 # Development Tracker 🚀
 
 ## 🐛 Known Issues / Bugs
-- [/] **MCP List Flicker** (Working): Toggling enable/disable or changing tool permissions in Mode settings causes the entire list to reload/flicker.
+- [x] **MCP List Flicker**: Toggling enable/disable or changing tool permissions in Mode settings causes the entire list to reload/flicker.
 - [ ] **TypeBox Stickiness**: The chat input box (TypeBox) pops up but does not return to its initial position after use.
 
 ## 💡 Upcoming Features & Improvements
@@ -9,6 +9,7 @@
 - [ ] **Custom Reasoning Parameters**: Add support for `reasoning_effort` (high/medium/low) for models supporting it (e.g., o1/o3).
 - [ ] **Other Parameters**: Add support for `top_p`, `frequency_penalty`, etc., in the Mode or Provider settings.
 - [/] Search Refinement (Partially Done): AI Search and AI Tab rename (as mentioned in Project Status).
+- [ ] **Conditional List Update Warning**: The "list update" warning should only appear if the user is actually using the affected services.
 
 ## ✅ Completed
 - [x] **Initial chat app foundation**
