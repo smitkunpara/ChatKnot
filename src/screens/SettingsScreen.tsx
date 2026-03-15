@@ -1033,19 +1033,12 @@ export const SettingsScreen = () => {
         () => { }
       );
 
-      // Apply health check results back to global mcpServers
-      for (const result of report.mcpResults) {
-        if (result.server) {
-          updateMcpServer(result.server);
-        }
-      }
-
-      // Apply provider-level results
+      // Apply health check results back to global stores
       applyHealthCheckReport(
         report,
         allMcpServers,
         updated.providers,
-        () => {}, // MCP updates handled above per-mode
+        updateMcpServer,
         updated.updateProvider,
         updated.setModelVisibility
       );
@@ -1248,10 +1241,10 @@ export const SettingsScreen = () => {
                     mcpServerOverrides: {
                       ...overrides,
                       [server.id]: {
+                        ...override,
                         enabled: isEnabled,
                         allowedTools,
                         autoApprovedTools,
-                        ...override,
                         ...patch,
                       },
                     },
@@ -1375,7 +1368,15 @@ export const SettingsScreen = () => {
                       {server.url}
                     </Text>
                   </View>
-                  <ChevronRight size={18} color={colors.textTertiary} />
+                  <View style={styles.rowRight}>
+                    <Switch
+                      value={server.enabled}
+                      onValueChange={enabled => updateMcpServer({ ...server, enabled })}
+                      trackColor={{ false: colors.border, true: colors.primarySoft }}
+                      thumbColor={server.enabled ? colors.primary : colors.textTertiary}
+                    />
+                    <ChevronRight size={18} color={colors.textTertiary} />
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -1567,17 +1568,20 @@ export const SettingsScreen = () => {
                 <View style={styles.categoryBody}>
                   <View style={styles.modeCardHeader}>
                     <Text style={styles.categoryTitle}>{provider.name}</Text>
-                    {provider.enabled ? (
-                      <View style={styles.defaultBadge}>
-                        <Text style={styles.defaultBadgeText}>Active</Text>
-                      </View>
-                    ) : null}
                   </View>
                   <Text style={styles.categoryDescription} numberOfLines={1}>
                     {provider.baseUrl}
                   </Text>
                 </View>
-                <ChevronRight size={18} color={colors.textTertiary} />
+                <View style={styles.rowRight}>
+                  <Switch
+                    value={provider.enabled}
+                    onValueChange={enabled => updateProvider({ ...provider, enabled })}
+                    trackColor={{ false: colors.border, true: colors.primarySoft }}
+                    thumbColor={provider.enabled ? colors.primary : colors.textTertiary}
+                  />
+                  <ChevronRight size={18} color={colors.textTertiary} />
+                </View>
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={styles.primaryButton} onPress={handleAddProvider}>
