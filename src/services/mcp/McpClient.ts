@@ -138,12 +138,27 @@ export class McpClient {
     });
 
     if (!response.ok) {
-      throw new Error(`MCP POST failed: ${response.statusText}`);
+      const text = await response.text();
+      console.error(`MCP POST error ${response.status}:`, text);
+      
+      let errorData: any = null;
+      try {
+        errorData = JSON.parse(text);
+      } catch {
+        errorData = { status: response.status, body: text };
+      }
+
+      const mcpError: any = new Error(`MCP POST failed: ${response.statusText}`);
+      mcpError.data = errorData;
+      throw mcpError;
     }
 
     const data = await response.json();
     if (data.error) {
-      throw new Error(`MCP Error: ${data.error.message}`);
+      const errorMsg = data.error.message || 'Unknown MCP Error';
+      const mcpError: any = new Error(`MCP Error: ${errorMsg}`);
+      mcpError.data = data.error;
+      throw mcpError;
     }
     return data.result;
   }
@@ -265,7 +280,17 @@ export class McpClient {
     if (!response.ok) {
       const text = await response.text();
       console.error(`OpenAPI tool error ${response.status}:`, text);
-      throw new Error(`API Error ${response.status}: ${text}`);
+      
+      let errorData: any = null;
+      try {
+        errorData = JSON.parse(text);
+      } catch {
+        errorData = { status: response.status, body: text };
+      }
+
+      const openApiError: any = new Error(`API Error ${response.status}`);
+      openApiError.data = errorData;
+      throw openApiError;
     }
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {

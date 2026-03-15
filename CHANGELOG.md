@@ -5,7 +5,7 @@ All notable changes to ChatKnot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-15
 
 ### Added
 - **Mode System Foundation** — Added first-class Mode entities with store CRUD support, persistence, and migration coverage for existing installations.
@@ -18,21 +18,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chat Loop Debug Logging** — Added timing logs for payload preparation and API request phases to help diagnose response latency.
 
 ### Changed
+- **Settings UI Toggles** — Moved enable/disable toggles for AI Providers and MCP Servers directly to the list view for faster access.
 - **MCP Configuration Architecture** — Refactored MCP handling to separate a global MCP registry from per-mode runtime overrides for clearer control boundaries.
 - **MCP Override Merge Behavior** — Added merge logic for applying mode-level MCP overrides on top of global MCP configuration at runtime.
 - **Mode Constraints Simplified** — Removed mode-level model override behavior as part of the multiple-mode support refactor.
 - **Approval Policy Cleanup** — Removed global "auto-approve all" behavior and aligned approvals with the updated mode/MCP design.
+- **Sidebar Sorting** — Conversations in the sidebar are now sorted by last activity (most recently active at top) instead of creation order.
+- **Mode Editor UX** — Added explicit Save and Discard buttons to the mode editor. Added a Delete Mode button for non-default modes.
+- **Provider Editor UX** — Converted provider editing from inline cards to full-page editors.
+- **Model Picker UX** — Renamed modal title to "Manage Models" and optimized visibility toggling.
 
 ### Fixed
-- **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen` caused by a prematurely closed `KeyboardAwareContainer`.
-- **Chat Scrolling Stability** — Resolved an issue where opening or closing the keyboard caused the chat history to scroll unexpectedly to the top. Removed auto-scroll on focus and prevented full component remounts on keyboard dismissal.
+- **Hiding UI During Tools** — Typing cursor and copy buttons are now intelligently hidden while the AI is executing tools.
+- **Raw Tool Error Pass-through** — Failed tool execution results now pass the complete JSON error payload to the AI for smarter self-correction.
+- **MCP Payload Flattening** — Resolved issues where MCP response objects were double-serialized, ensuring clean JSON for the AI.
+- **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen`.
+- **Chat Scrolling Stability** — Resolved keyboard-triggered scrolling issues.
 
 ### Performance
-- **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments to prevent redundant disk reads and encoding overhead during the chat loop.
-- **Provider Instance Caching** — Optimized AI service instantiation by caching `OpenAiService` instances, reducing object creation and configuration overhead.
-- **Throttled Stream Rendering** — Improved UI responsiveness and throughput by throttling event-loop yields (`setTimeout(0)`) during streaming to once every 50ms.
-- **Memoized Message Sanitization** — Added `WeakMap` based caching for message sanitization to prevent redundant filtering and processing of conversation history.
-- **Cached MCP Tool Registry** — Optimized tool-calling overhead by caching the filtered MCP tool list, avoiding repetitive execution policy checks on every request.
+- **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments.
+- **Provider Instance Caching** — Optimized AI service instantiation.
+- **Throttled Stream Rendering** — Improved UI responsiveness during streaming.
+- **Cached MCP Tool Registry** — Optimized tool-calling overhead.
+
 
 ## [0.2.3] - 2026-03-06
 

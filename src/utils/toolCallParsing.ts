@@ -270,6 +270,42 @@ export const parseToolArguments = (rawArgs: string, toolName: string): any => {
 
 export const serializeToolResult = (value: any): string => {
   if (typeof value === 'string') return value;
+
+  // Handle standard MCP CallToolResult format by flattening the text content.
+  // This prevents the AI from seeing double-JSON-encoded payload strings,
+  // making formatting issues or rich error feedback much clearer.
+  if (value && typeof value === 'object' && Array.isArray(value.content)) {
+    const textParts = value.content
+      .filter((c: any) => c.type === 'text')
+      .map((c: any) => c.text);
+
+    // If there's extra root metadata besides 'content' and 'isError'/'_meta', preserve it at the top level
+    const extraKeys = Object.keys(value).filter(k => k !== 'content' && k !== 'isError' && k !== '_meta');
+    
+    if (extraKeys.length > 0) {
+      // If there are extra top-level keys, send an object containing the text and the extra keys
+      const output: any = {};
+      if (textParts.length > 0) {
+        // Try to parse the text as JSON to avoid escaping it again
+        let parsedText;
+        try { parsedText = JSON.parse(textParts.join('\n')); } catch { parsedText = textParts.join('\n'); }
+        output.content = parsedText;
+      }
+      for (const k of extraKeys) output[k] = value[k];
+      if (value.isError) output.isError = true;
+      try {
+        return JSON.stringify(output, null, 2);
+      } catch {
+        return String(output);
+      }
+    } else {
+      // Just return the unwrapped text, which is cleaner
+      const rawText = textParts.join('\n');
+      // Even if value.isError is true, standard AI tool use just expects the error text directly.
+      return rawText;
+    }
+  }
+
   try {
     return JSON.stringify(value, null, 2);
   } catch {

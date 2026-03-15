@@ -218,7 +218,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     // text block
                     if (!block.content.trim()) return null;
                     return (
-                      <View key={`text-${idx}`} style={styles.textRow}>
+                      <View key={`text-${idx}`}>
                         <Markdown
                           style={markdownStyles}
                           rules={createTableRenderRules(colors)}
@@ -227,8 +227,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     );
                   })}
 
-                  {/* Show streaming cursor only when we're streaming non-think content or there's no content yet */}
-                  {isStreaming && !isStreamingThinking && (
+                  {/* Hide the cursor once MCP/tool UI is present so we do not show two loading indicators. */}
+                  {isStreaming && !isStreamingThinking && !hasToolCalls && (
                     <View style={styles.textRow}>
                       <StreamingCursor color={colors.primary} />
                     </View>
@@ -255,9 +255,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
             {!isStreaming && (message.content || hasToolCalls) ? (
               <>
-                <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
-                  <Copy size={13} color={colors.textTertiary} />
-                </TouchableOpacity>
+                {hasText ? (
+                  <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
+                    <Copy size={13} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                ) : null}
                 {!isUser && onRetryAssistant ? (
                   <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
                     <RotateCcw size={13} color={colors.textTertiary} />

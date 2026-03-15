@@ -50,6 +50,7 @@ import {
   MAX_IDENTICAL_TOOL_CALLS,
   FALLBACK_FINAL_TEXT,
   getErrorMessage,
+  serializeToolExecutionError,
   buildAppSystemPrompt,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
@@ -113,6 +114,11 @@ export const ChatScreen = () => {
   const setLastUsedMode = useSettingsStore(state => state.setLastUsedMode);
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
+
+  const activeConversation = useMemo(
+    () => conversations.find(c => c.id === activeConversationId),
+    [conversations, activeConversationId]
+  );
 
   const activeMode = useMemo(() => {
     const convModeId = activeConversation?.modeId;
@@ -190,11 +196,6 @@ export const ChatScreen = () => {
       approvalResolversRef.current.set(toolCallId, resolve);
     });
   }, []);
-
-  const activeConversation = useMemo(
-    () => conversations.find(c => c.id === activeConversationId),
-    [conversations, activeConversationId]
-  );
 
   const modelResolution = useMemo(
     () =>
@@ -872,22 +873,14 @@ export const ChatScreen = () => {
               toolCallId: call.id,
             });
           } catch (error: any) {
-            const errorStr = getErrorMessage(error);
+            const errorStr = serializeToolExecutionError(error);
 
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: errorStr,
             });
             addMessage(conversationId, {
               role: 'tool',
-              content: JSON.stringify(
-                {
-                  error: 'TOOL_EXECUTION_FAILED',
-                  tool: call.name,
-                  message: errorStr,
-                },
-                null,
-                2
-              ),
+              content: errorStr,
               toolCallId: call.id,
             });
           }

@@ -176,7 +176,7 @@ describe('McpManager', () => {
     expect(policy.enabled).toBe(false);
 
     await expect(McpManager.executeTool('search', { query: 'status' })).rejects.toThrow(
-      'Tool search is disabled in MCP settings.'
+      'Tool search is disabled for this mode.'
     );
   });
 

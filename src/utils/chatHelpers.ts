@@ -20,6 +20,23 @@ export const getErrorMessage = (error: any): string => {
   return formatApiError(raw);
 };
 
+export const serializeToolExecutionError = (error: any): string => {
+  const errorData = error?.data;
+  if (errorData !== undefined) {
+    if (typeof errorData === 'string') {
+      return errorData;
+    }
+
+    try {
+      return JSON.stringify(errorData, null, 2);
+    } catch {
+      return String(errorData);
+    }
+  }
+
+  return getErrorMessage(error);
+};
+
 function formatApiError(raw: string): string {
   // Match pattern: "API Error: <status> - <json or text>"
   const apiMatch = raw.match(/^API Error:\s*(\d+)\s*-\s*([\s\S]*)$/);
