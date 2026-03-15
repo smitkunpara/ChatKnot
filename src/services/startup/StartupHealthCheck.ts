@@ -245,7 +245,17 @@ export async function runStartupHealthCheck(
           report.warnings.push(`MCP "${server.name}" check failed: ${reason}.`);
         }
       } else if (mcpResult.toolsChanged) {
-        report.warnings.push(`MCP tool list for "${server.name}" is updated.`);
+        // Only warn for removed tools that were enabled (in allowedTools, or all if allowedTools is empty)
+        const enabledSet = (server.allowedTools && server.allowedTools.length > 0)
+          ? new Set(server.allowedTools)
+          : new Set((server.tools || []).map(t => t.name));
+        const removedEnabledTools = mcpResult.removedTools.filter(t => enabledSet.has(t));
+        if (removedEnabledTools.length > 0) {
+          const toolsList = removedEnabledTools.map(t => `"${t}"`).join(', ');
+          report.warnings.push(
+            `Tool${removedEnabledTools.length > 1 ? 's' : ''} removed from "${server.name}": ${toolsList}.`
+          );
+        }
       }
     }
   } else {
@@ -276,11 +286,17 @@ export async function runStartupHealthCheck(
           report.warnings.push(`AI provider "${provider.name}" check failed: ${reason}.`);
         }
       } else if (aiResult.modelsChanged) {
-        report.warnings.push(`AI list for "${provider.name}" is updated.`);
-        if (aiResult.removedModels.length > 0) {
+        // Only warn for removed models that were visible (not in hiddenModels)
+        const hiddenSet = new Set(provider.hiddenModels || []);
+        const removedVisibleModels = aiResult.removedModels.filter(m => !hiddenSet.has(m));
+        if (removedVisibleModels.length > 0) {
+          const modelsList = removedVisibleModels.map(m => `"${m}"`).join(', ');
+          report.warnings.push(
+            `Model${removedVisibleModels.length > 1 ? 's' : ''} removed from "${provider.name}": ${modelsList}.`
+          );
           report.removedVisibleModels.push({
             providerId: provider.id,
-            models: aiResult.removedModels,
+            models: removedVisibleModels,
           });
         }
       }
@@ -298,9 +314,9 @@ export async function runStartupHealthCheck(
  * Apply the health check findings to the stores.
  * Rules:
  *  - New AI models: hidden by default (only user can make visible)
- *  - Removed AI models: removed from visible list silently
- *  - New MCP tools: enabled by default, NOT auto-approved
- *  - User-disabled tools: NOT re-enabled
+ *  - Removed AI models: removed from hidden list silently
+ *  - New MCP tools: disabled by default
+ *  - User-enabled tools: NOT re-disabled
  *  - Existing settings preserved — only new items get defaults
  */
 export function applyHealthCheckReport(
@@ -347,16 +363,15 @@ export function applyHealthCheckReport(
     const strictlyCleanedAllowed = cleanedAllowed.filter(t => mcpResult.currentTools.includes(t));
     const strictlyCleanedAutoApproved = cleanedAutoApproved.filter(t => mcpResult.currentTools.includes(t));
 
-    // New tools (present in current, absent from old): enable by default.
-    // If allowedTools is empty, all are enabled implicitly.
-    // If allowedTools is not empty, append new tools to allowedTools.
+    // New tools are disabled by default.
+    // If allowedTools was empty (all enabled) and there are known previous tools,
+    // explicitly list old tools so new ones remain disabled.
+    // If allowedTools was non-empty, new tools simply aren't added → disabled.
     let nextAllowed = [...strictlyCleanedAllowed];
-    if (nextAllowed.length > 0 && newToolNames.length > 0) {
-      nextAllowed.push(...newToolNames);
-      const allEnabled = mcpResult.currentTools.every(t => nextAllowed.includes(t));
-      if (allEnabled) {
-        nextAllowed = [];
-      }
+    const hadPreviousTools = (server.tools || []).length > 0;
+    if (newToolNames.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
+      // was all-enabled; keep prior tools enabled, new ones excluded (disabled)
+      nextAllowed = mcpResult.currentTools.filter(t => !newToolNames.includes(t));
     }
 
     updateMcpServer({
@@ -390,8 +405,14 @@ export function applyHealthCheckReport(
 
     if (!hasModelChange && !needsCapabilityUpdate) continue;
 
-    // New models not previously known: visible by default (we do not add to hiddenModels)
+    // New models are hidden by default (user must explicitly make them visible)
     const hiddenModels = new Set(provider.hiddenModels || []);
+
+    // Add newly appeared models to hidden list
+    const newModels = currentModels.filter(m => !prevModels.has(m));
+    for (const model of newModels) {
+      hiddenModels.add(model);
+    }
 
     // Removed models: clean from hidden list (no longer relevant)
     const removedModels = [...prevModels].filter(m => !currentModelSet.has(m));

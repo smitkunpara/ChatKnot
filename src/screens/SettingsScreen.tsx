@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -146,6 +146,8 @@ export const SettingsScreen = () => {
     message: string;
     buttons: { label: string; style?: 'primary' | 'danger' | 'cancel'; onPress: () => void }[];
   } | null>(null);
+  // Tracks which MCP servers are expanded in the mode editor
+  const [expandedMcpInMode, setExpandedMcpInMode] = useState<Record<string, boolean>>({});
 
   const closeAllEditModes = React.useCallback(() => {
     setEditingProviders({});
@@ -158,6 +160,7 @@ export const SettingsScreen = () => {
     setActiveProviderIdForPicker(null);
     setModelSearch('');
     setModeDrafts({});
+    setExpandedMcpInMode({});
   }, []);
 
   useEffect(() => {
@@ -597,12 +600,8 @@ export const SettingsScreen = () => {
     setModelSearch('');
     setModelPickerVisible(true);
 
-    const currentModels = draftAvailableModels[provider.id] || provider.availableModels || [];
-    const hasCapabilities = Object.keys(draftModelCapabilities[provider.id] || provider.modelCapabilities || {}).length > 0;
-    // Fetch if no models loaded OR if capabilities are missing (e.g. provider added before capability code)
-    if (currentModels.length === 0 || !hasCapabilities) {
-      fetchModels(provider, { persistProvider: false });
-    }
+    // Always fetch fresh data when the model picker opens
+    fetchModels(provider, { persistProvider: false });
   };
 
   // ─── Mode helpers ───────────────────────────
@@ -772,6 +771,48 @@ export const SettingsScreen = () => {
     beginServerEdit(server);
     setEditingServerId(server.id);
     setActiveView('mcpServerEditor');
+
+    // Silently refresh tool list for this server in the background
+    if (server.url && server.enabled) {
+      void (async () => {
+        try {
+          const validation = await validateOpenApiEndpoint({
+            url: server.url,
+            headers: server.headers || {},
+          });
+          if (!validation.ok) return;
+
+          const freshTools = validation.tools;
+          const freshToolNames: string[] = freshTools.map((t: any) => t.name);
+          const oldToolNames = new Set((server.tools || []).map(t => t.name));
+          const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
+          const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
+
+          const cleanedAllowed = (server.allowedTools || []).filter(
+            t => !removedSet.has(t) && freshToolNames.includes(t)
+          );
+          const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
+            t => !removedSet.has(t) && freshToolNames.includes(t)
+          );
+
+          // New tools disabled by default when the server had prior tools
+          let nextAllowed = [...cleanedAllowed];
+          const hadPreviousTools = (server.tools || []).length > 0;
+          if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
+            nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
+          }
+
+          updateMcpServer({
+            ...server,
+            tools: freshTools,
+            allowedTools: nextAllowed,
+            autoApprovedTools: cleanedAutoApproved,
+          });
+        } catch {
+          // silent — editor works fine with cached data
+        }
+      })();
+    }
   };
 
   const saveServerEditor = async () => {
@@ -911,18 +952,22 @@ export const SettingsScreen = () => {
 
   const handleExportSettings = async () => {
     const settingsSnapshot = useSettingsStore.getState();
-    const compactProviders = settingsSnapshot.providers.map((provider) => ({
-      id: provider.id,
-      name: provider.name,
-      type: provider.type,
-      baseUrl: provider.baseUrl,
-      apiKey: provider.apiKey,
-      apiKeyRef: provider.apiKeyRef,
-      model: provider.model,
-      hiddenModels: provider.hiddenModels || [],
-      enabled: !!provider.enabled,
-      availableModels: [],
-    }));
+    const compactProviders = settingsSnapshot.providers.map((provider) => {
+      // Export only visible models (exclude hidden ones)
+      const hiddenSet = new Set(provider.hiddenModels || []);
+      const visibleModels = (provider.availableModels || []).filter(m => !hiddenSet.has(m));
+      return {
+        id: provider.id,
+        name: provider.name,
+        type: provider.type,
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        apiKeyRef: provider.apiKeyRef,
+        model: provider.model,
+        enabled: !!provider.enabled,
+        availableModels: visibleModels,
+      };
+    });
 
     const compactModes = settingsSnapshot.modes.map((mode) => ({
       id: mode.id,
@@ -932,19 +977,27 @@ export const SettingsScreen = () => {
       mcpServerOverrides: mode.mcpServerOverrides ?? {},
     }));
 
-    const compactMcpServers = settingsSnapshot.mcpServers.map((server) => ({
-      id: server.id,
-      name: server.name,
-      url: server.url,
-      headers: server.headers || {},
-      headerRefs: server.headerRefs || {},
-      token: server.token,
-      tokenRef: server.tokenRef,
-      enabled: !!server.enabled,
-      tools: server.tools || [],
-      allowedTools: server.allowedTools || [],
-      autoApprovedTools: server.autoApprovedTools || [],
-    }));
+    const compactMcpServers = settingsSnapshot.mcpServers.map((server) => {
+      // Export only enabled tools (in allowedTools, or all if allowedTools is empty)
+      const enabledToolNames = (server.allowedTools && server.allowedTools.length > 0)
+        ? new Set(server.allowedTools)
+        : new Set((server.tools || []).map(t => t.name));
+      const enabledTools = (server.tools || []).filter(t => enabledToolNames.has(t.name));
+      const enabledAutoApproved = (server.autoApprovedTools || []).filter(t => enabledToolNames.has(t));
+      return {
+        id: server.id,
+        name: server.name,
+        url: server.url,
+        headers: server.headers || {},
+        headerRefs: server.headerRefs || {},
+        token: server.token,
+        tokenRef: server.tokenRef,
+        enabled: !!server.enabled,
+        tools: enabledTools,      // only enabled tools
+        allowedTools: [],          // all exported tools are enabled; empty = all allowed
+        autoApprovedTools: enabledAutoApproved,
+      };
+    });
 
     const payload = {
       schema: 'mcp-connector-settings-v1',
@@ -1017,9 +1070,28 @@ export const SettingsScreen = () => {
         }];
       }
 
+      // Sanitize providers: drop hiddenModels (not tracked in new exports;
+      // post-import health check will discover and hide new models automatically)
+      const importedProviders = Array.isArray(settings?.providers)
+        ? settings.providers.map((p: any) => ({ ...p, hiddenModels: [] }))
+        : settings?.providers;
+
+      // Sanitize MCP servers: drop autoApprovedTools that are not also enabled
+      const sanitizedMcpServers = importedMcpServers.map((s: any) => {
+        const allowed: string[] = Array.isArray(s.allowedTools) ? s.allowedTools : [];
+        const autoApproved: string[] = Array.isArray(s.autoApprovedTools) ? s.autoApprovedTools : [];
+        const enabledSet = allowed.length > 0
+          ? new Set(allowed)
+          : new Set((s.tools || []).map((t: any) => t.name));
+        return {
+          ...s,
+          autoApprovedTools: autoApproved.filter((t: string) => enabledSet.has(t)),
+        };
+      });
+
       replaceAllSettings({
-        providers: settings?.providers,
-        mcpServers: importedMcpServers,
+        providers: importedProviders,
+        mcpServers: sanitizedMcpServers,
         modes: importedModes,
         theme: settings?.theme,
         lastUsedModel: settings?.lastUsedModel,
@@ -1223,9 +1295,11 @@ export const SettingsScreen = () => {
               mcpServers.map(server => {
                 const overrides = editingModeDraft.mcpServerOverrides ?? {};
                 const override = overrides[server.id];
-                const isEnabled = override ? override.enabled : server.enabled;
+                // Default to disabled in mode context — user must explicitly enable per-mode
+                const isEnabled = override ? override.enabled : false;
                 const allowedTools = override?.allowedTools ?? server.allowedTools ?? [];
                 const autoApprovedTools = override?.autoApprovedTools ?? server.autoApprovedTools ?? [];
+                const isExpanded = expandedMcpInMode[server.id] ?? false;
 
                 const runtime = mcpRuntimeById[server.id];
                 const runtimeToolNames = Array.from(
@@ -1234,6 +1308,21 @@ export const SettingsScreen = () => {
                     ...((server.tools || []).map((t: any) => t.name)),
                   ])
                 );
+
+                const totalTools = runtimeToolNames.length;
+                let enabledCount = 0;
+                if (totalTools > 0) {
+                  if (!isEnabled) {
+                    enabledCount = 0;
+                  } else {
+                    if ((allowedTools || []).length === 0) {
+                      enabledCount = totalTools;
+                    } else {
+                      const allowedSet = new Set(allowedTools);
+                      enabledCount = runtimeToolNames.filter(n => allowedSet.has(n)).length;
+                    }
+                  }
+                }
 
                 const updateOverride = (patch: Partial<import('../types').ModeServerOverride>) => {
                   if (!editingMode.id) return;
@@ -1250,25 +1339,98 @@ export const SettingsScreen = () => {
                   }));
                 };
 
+                const handleToggleMcpEnabled = (enabled: boolean) => {
+                  updateOverride({ enabled });
+                  if (enabled) {
+                    // Auto-expand and fetch fresh tools when user enables this MCP
+                    setExpandedMcpInMode(prev => ({ ...prev, [server.id]: true }));
+                    if (server.url) {
+                      void (async () => {
+                        try {
+                          const validation = await validateOpenApiEndpoint({
+                            url: server.url,
+                            headers: server.headers || {},
+                          });
+                          if (!validation.ok) return;
+                          const freshTools = validation.tools;
+                          const freshToolNames: string[] = freshTools.map((t: any) => t.name);
+                          const oldToolNames = new Set((server.tools || []).map(t => t.name));
+                          const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
+                          const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
+                          const cleanedAllowed = (server.allowedTools || []).filter(
+                            t => !removedSet.has(t) && freshToolNames.includes(t)
+                          );
+                          const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
+                            t => !removedSet.has(t) && freshToolNames.includes(t)
+                          );
+                          let nextAllowed = [...cleanedAllowed];
+                          const hadPreviousTools = (server.tools || []).length > 0;
+                          if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
+                            nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
+                          }
+                          updateMcpServer({
+                            ...server,
+                            tools: freshTools,
+                            allowedTools: nextAllowed,
+                            autoApprovedTools: cleanedAutoApproved,
+                          });
+                        } catch {
+                          // silent — works fine with cached tool data
+                        }
+                      })();
+                    }
+                  } else {
+                    // Collapse when disabled
+                    setExpandedMcpInMode(prev => ({ ...prev, [server.id]: false }));
+                  }
+                };
+
                 return (
-                  <View key={server.id} style={styles.sectionCard}>
-                    <View style={styles.row}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.itemTitle} numberOfLines={1}>{server.name}</Text>
-                        <Text style={styles.serverSub} numberOfLines={1}>{server.url}</Text>
-                      </View>
-                    </View>
-                    <View style={[styles.row, { marginTop: 8 }]}>
-                      <Text style={styles.overrideLabel}>Enabled</Text>
+                  <View key={server.id} style={[styles.categoryCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                    {/* Top row: name left, chevron+toggle right */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        if (isEnabled) {
+                          setExpandedMcpInMode(prev => ({ ...prev, [server.id]: !isExpanded }));
+                        }
+                      }}
+                      activeOpacity={isEnabled ? 0.7 : 1}
+                    >
+                      <Text style={styles.categoryTitle} numberOfLines={1}>{server.name}</Text>
+                      {runtimeToolNames.length > 0 ? (
+                        <Text style={styles.categoryDescription} numberOfLines={1}>
+                          {`${enabledCount}/${totalTools} tools enabled`}
+                        </Text>
+                      ) : (
+                        <Text style={styles.categoryDescription} numberOfLines={1}>{server.url}</Text>
+                      )}
+                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {/* Always reserve space for chevron to prevent layout shifts */}
+                      <TouchableOpacity
+                        style={{ padding: 4, marginRight: 4, opacity: isEnabled ? 1 : 0 }}
+                        disabled={!isEnabled}
+                        onPress={() => setExpandedMcpInMode(prev => ({ ...prev, [server.id]: !isExpanded }))}
+                      >
+                        {isExpanded ? (
+                          <ChevronUp size={16} color={colors.textTertiary} />
+                        ) : (
+                          <ChevronDown size={16} color={colors.textTertiary} />
+                        )}
+                      </TouchableOpacity>
                       <Switch
                         value={isEnabled}
-                        onValueChange={enabled => updateOverride({ enabled })}
+                        onValueChange={handleToggleMcpEnabled}
                         trackColor={{ false: colors.border, true: colors.primarySoft }}
                         thumbColor={isEnabled ? colors.primary : colors.textTertiary}
                       />
                     </View>
+                    </View>
 
-                    {runtimeToolNames.length > 0 ? (
+                    {/* Tool controls — only shown when enabled AND expanded */}
+                    {isEnabled && isExpanded && runtimeToolNames.length > 0 ? (
                       <View style={styles.toolPermissionWrap}>
                         <Text style={styles.permissionTitle}>Tool Controls</Text>
                         <Text style={styles.permissionHint}>Enable and auto-approve tools individually per mode.</Text>
@@ -1492,12 +1654,9 @@ export const SettingsScreen = () => {
                     : status === 'error' ? styles.statusError
                     : styles.statusPending,
                 ]}>
-                  <Text style={[
-                    styles.statusText,
-                    status === 'connected' ? styles.statusTextConnected
-                      : status === 'error' ? styles.statusTextError
-                      : styles.statusTextPending,
-                  ]}>{statusLabel}</Text>
+                  <Text style={[styles.statusText, status === 'connected' ? styles.statusTextConnected : status === 'error' ? styles.statusTextError : styles.statusTextPending]}>
+                    {statusLabel}
+                  </Text>
                 </View>
               </View>
 

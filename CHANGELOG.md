@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mode Editor UX** — Added explicit Save and Discard buttons to the mode editor. Added a Delete Mode button for non-default modes.
 - **Provider Editor UX** — Converted provider editing from inline cards to full-page editors.
 - **Model Picker UX** — Renamed modal title to "Manage Models" and optimized visibility toggling.
+- **Settings refresh refined** — Removed the broad background refresh performed on every Settings open. Refreshes are now targeted: opening an MCP server editor silently validates and refreshes that server's tools; opening the model picker always fetches fresh model lists and capabilities. This reduces unnecessary network activity and avoids overwriting local visibility/approval decisions.
+- **Mode editor MCP UX** — Per-mode MCP entries default to disabled; enabling a server in a mode auto-expands its tool controls and triggers a silent tool refresh. Tool controls are collapsed when disabled to reduce clutter. Server rows now show a compact summary like "5/12 tools enabled" and the chevron flips upward when expanded; layout stability improvements prevent content shift.
+- **Export/Import sanitization** — Exports now include only visible models and enabled tools (hidden models and disabled tools omitted). Imports drop incoming `hiddenModels` lists; MCP `autoApprovedTools` entries are filtered to only include enabled tools. A post-import health check reconciles new models/tools, defaulting newly discovered models to hidden and newly discovered tools to disabled by default.
+- **Per-server silent refresh** — `navigateToServerEditor` now performs a silent OpenAPI validation and tool refresh for the specific server to keep stored server tools/allowed lists aligned with runtime state instead of refreshing all servers.
+- **Startup Warning Precision** — Startup warnings are now scoped to AI-visible and tool-enabled changes only: warnings are suppressed when hidden AI models change, disabled/auto-but-not-enabled tools change, or when only new items are added. Warning messages now include the specific model or tool names that were removed (e.g., `Model "gpt-4o" removed from "OpenAI":`).
+- **New AI Models Hidden by Default** — AI models discovered for the first time are now hidden until the user explicitly makes them visible.
+- **New MCP Tools Disabled by Default** — MCP tools discovered for the first time on a known server are now disabled until the user explicitly enables them.
+- **Export Filtered to Active Items** — Settings export now includes only visible AI models (hidden models omitted) and enabled MCP tools (disabled tools omitted), producing a clean minimal snapshot.
+- **Import Defaults to Hidden/Disabled** — On import, AI models and MCP tools not included in the export file are treated as hidden/disabled by default after the post-import health check.
 
 ### Fixed
 - **Hiding UI During Tools** — Typing cursor and copy buttons are now intelligently hidden while the AI is executing tools.
