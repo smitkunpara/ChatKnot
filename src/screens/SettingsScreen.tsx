@@ -1033,19 +1033,12 @@ export const SettingsScreen = () => {
         () => { }
       );
 
-      // Apply health check results back to global mcpServers
-      for (const result of report.mcpResults) {
-        if (result.server) {
-          updateMcpServer(result.server);
-        }
-      }
-
       // Apply provider-level results
       applyHealthCheckReport(
         report,
         allMcpServers,
         updated.providers,
-        () => {}, // MCP updates handled above per-mode
+        updateMcpServer, 
         updated.updateProvider,
         updated.setModelVisibility
       );
@@ -1251,7 +1244,6 @@ export const SettingsScreen = () => {
                         enabled: isEnabled,
                         allowedTools,
                         autoApprovedTools,
-                        ...override,
                         ...patch,
                       },
                     },

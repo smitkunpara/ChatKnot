@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/logo.png" width="200" height="200" alt="ChatKnot Logo">
+</p>
+
 # ChatKnot 🚀
 
-A privacy-focused React Native mobile application for chatting with AI providers and connecting MCP/OpenAPI tools using the Model Context Protocol.
+A privacy-focused, high-performance React Native mobile application for chatting with AI providers and connecting **MCP (Model Context Protocol)** and **OpenAPI** tools.
 
 ## Project Status
 
@@ -9,22 +13,34 @@ A privacy-focused React Native mobile application for chatting with AI providers
 - [x] Multiple mode support
     - each mode has its own system prompt + model + mcp configuration
 - [x] Export chat (markdown/pdf/json)
-- [x] iamge/file support
-- [ ] AI Search and AI Tab rename
-- [ ] add custom resoning effort/other parameter in the app
-
+- [x] image/file support
+- [x] AI Search and AI Tab rename
+- [ ] add custom reasoning effort/other parameter in the app
 
 ## 🌟 Key Features
 
-- **Multi-Provider AI**: Configure any OpenAI-compatible endpoint with streaming support.
-- **MCP Tool Calling**: Connect MCP servers and OpenAPI endpoints to extend AI capabilities.
-- **Multimodal Input**: Attach images (for vision-capable models) and text-based documents (PDF, code files, markdown).
-- **Model Capabilities**: Visual capability tags (vision, tools, file) shown next to each model.
-- **User-Friendly Errors**: API errors are parsed and displayed as clean, readable messages.
-- **Encrypted Storage**: Sensitive data and keys are protected with hardware-backed encryption.
-- **Health Checks**: Automatic verification of AI and MCP endpoints on startup.
-- **Chat Export**: Export conversations as PDF (rendered markdown), Markdown (collapsible tool details), or JSON (OpenAI format).
-- **Clean UI**: Modern dark/light interface with organized conversation management.
+### 🤖 Multi-Provider & Multi-Mode Support
+- **Custom Endpoints**: Connect any OpenAI-compatible provider (Local LLMs, OpenRouter, Anthropic, etc.).
+- **Smart Modes**: Create specialized "Modes" (e.g., Coding, Research, Creative) each with its own system prompt, model selection, and tool configuration.
+- **Thinking UI**: Dedicated interface for models that stream internal reasoning, featuring chunk-based rendering, shimmering animations, and a progress timer.
+
+### 🛠️ Model Context Protocol (MCP) & OpenAPI
+- **Dynamic Tool Integration**: Connect MCP servers and OpenAPI endpoints to extend AI capabilities with real-time data and tools.
+- **Granular Permissions**: Configure "Auto-Approve" or "Manual" execution policies per tool and per mode.
+- **Intelligent Error Recovery**: Full JSON error payloads (e.g., `valid_input`, `suggestions`) are forwarded to the AI, allowing it to self-correct failed tool calls.
+
+### 📂 Multimodal input & Export
+- **File Support**: Attach images for vision-capable models and text-based documents (PDF, Code, Markdown) for context mapping.
+- **Rich Exports**: Save your conversations as PDF (clean markdown rendering), Markdown (with collapsible tool details), or JSON.
+
+### 🔒 Security & Performance
+- **Encrypted Vault**: All API keys and sensitive configurations are stored using hardware-backed encryption.
+- **Performance Optimized**: Features throttled stream rendering, base64 hydration caching, and provider instance memoization for a lag-free experience.
+
+## 📝 For In-Depth Info
+For a complete list of version-specific changes, technical refactors, and recently shipped features, please check our [**Changelog**](CHANGELOG.md).
+
+---
 
 ## 🛠️ Getting Started
 
@@ -42,22 +58,15 @@ EXPO_DEBUG=true npx expo start
 
 ### AI Providers
 In **Settings -> AI Providers**:
-1. Add your provider's **Base URL** (OpenAI-compatible) and **API Key**.
-2. Fetch models and use the **Eye icon** to make them visible in the chat interface.
+1. Add your provider's **Base URL** and **API Key**.
+2. Fetch models and use the **List Toggles** to activate them or the **Eye icon** for visibility.
 3. Edits are handled in **Draft Mode** — remember to save your changes!
 
 ### MCP Servers
 In **Settings -> MCP Servers**:
-1. Add your MCP server URL (supports OpenAPI discovery).
-2. Configure **Auto-Approve** or **Manual** mode for tool executions.
-3. The app will validate your endpoint spec before saving.
-
-## 📝 System Prompts
-Chat requests use two system instructions:
-1. User instruction (global or conversation override prompt)
-2. Application default instruction (app behavior, markdown response preference, tool guidance)
-
-MCP/OpenAPI instruction context is only appended in the app instruction when at least one MCP server is connected.
+1. Add your server URL (supports OpenAPI discovery).
+2. Toggles available directly in the list for quick activation.
+3. Configure **Tool Controls** individually per mode.
 
 ## 📦 Build Release
 To generate a production APK for Android:
@@ -65,5 +74,4 @@ To generate a production APK for Android:
 npm run android:apk:release
 ```
 
----
-*ChatKnot is an open-source tool for personal AI productivity.*
+
