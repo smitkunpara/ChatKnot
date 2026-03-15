@@ -50,6 +50,7 @@ import {
   MAX_IDENTICAL_TOOL_CALLS,
   FALLBACK_FINAL_TEXT,
   getErrorMessage,
+  serializeToolExecutionError,
   buildAppSystemPrompt,
   buildEffectiveSystemPrompt,
 } from '../utils/chatHelpers';
@@ -499,32 +500,10 @@ export const ChatScreen = () => {
         return;
       }
 
-      const nextMcpServers = mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {});
-      let allowedToolsList: string[] = [];
-      for (const srv of nextMcpServers) {
-        if (srv.enabled) {
-          if (srv.allowedTools && srv.allowedTools.length > 0) {
-            allowedToolsList.push(...srv.allowedTools);
-          } else if (srv.tools) {
-            allowedToolsList.push(...srv.tools.map(t => t.name));
-          }
-        }
-      }
-
-      allowedToolsList = Array.from(new Set(allowedToolsList));
-      let toolsContext = '';
-      if (allowedToolsList.length > 0) {
-        toolsContext = `\n\nAllowed tools:\n${allowedToolsList.map(t => `- ${t}`).join('\n')}\n\nYou MUST NOT use any other tools.`;
-      } else {
-        toolsContext = `\n\nNo tools are allowed in this mode. You MUST NOT use any tools.`;
-      }
-
-      const initialPrompt = (activeMode?.systemPrompt || 'You are a helpful AI assistant.') + toolsContext;
-
       createConversation(
         modelResolution.selection.providerId,
         activeMode?.id || '',
-        initialPrompt,
+        activeMode?.systemPrompt || 'You are a helpful AI assistant.',
         modelResolution.selection.model
       );
 
@@ -814,7 +793,7 @@ export const ChatScreen = () => {
 
           const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
           if (!toolPolicy.found) {
-            const missingMessage = `Tool \"${call.name}\" is not available in the current mode. Check if the tool's MCP server is connected and enabled for this mode.`;
+            const missingMessage = `Tool \"${call.name}\" is not available. Check MCP server connection or tool name.`;
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: missingMessage,
             });
@@ -835,7 +814,7 @@ export const ChatScreen = () => {
           }
 
           if (!toolPolicy.enabled) {
-            const disabledMessage = `Tool \"${call.name}\" is disabled for this mode.`;
+            const disabledMessage = `Tool \"${call.name}\" is disabled in MCP settings.`;
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: disabledMessage,
             });
@@ -894,22 +873,14 @@ export const ChatScreen = () => {
               toolCallId: call.id,
             });
           } catch (error: any) {
-            const errorStr = getErrorMessage(error);
+            const errorStr = serializeToolExecutionError(error);
 
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
               error: errorStr,
             });
             addMessage(conversationId, {
               role: 'tool',
-              content: JSON.stringify(
-                {
-                  error: 'TOOL_EXECUTION_FAILED',
-                  tool: call.name,
-                  message: errorStr,
-                },
-                null,
-                2
-              ),
+              content: errorStr,
               toolCallId: call.id,
             });
           }
@@ -1330,32 +1301,6 @@ export const ChatScreen = () => {
                       setLastUsedMode(mode.id);
                       if (activeConversationId) {
                         updateModeInConversation(activeConversationId, mode.id);
-
-                        const nextMcpServers = mergeServersWithOverrides(globalMcpServers, mode.mcpServerOverrides ?? {});
-                        let allowedToolsList: string[] = [];
-                        for (const srv of nextMcpServers) {
-                          if (srv.enabled) {
-                            if (srv.allowedTools && srv.allowedTools.length > 0) {
-                              allowedToolsList.push(...srv.allowedTools);
-                            } else if (srv.tools) {
-                              allowedToolsList.push(...srv.tools.map(t => t.name));
-                            }
-                          }
-                        }
-
-                        allowedToolsList = Array.from(new Set(allowedToolsList));
-
-                        let toolsContext = '';
-                        if (allowedToolsList.length > 0) {
-                          toolsContext = `Allowed tools:\n${allowedToolsList.map(t => `- ${t}`).join('\n')}\n\nYou MUST NOT use any other tools.`;
-                        } else {
-                          toolsContext = `No tools are allowed in this mode. You MUST NOT use any tools.`;
-                        }
-
-                        addMessage(activeConversationId, {
-                          role: 'system',
-                          content: `Mode switched to ${mode.name} Mode.\n\n${mode.systemPrompt}\n\n${toolsContext}`,
-                        });
                       }
                       setModeSelectorVisible(false);
                     }}
