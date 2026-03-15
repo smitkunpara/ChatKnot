@@ -6,11 +6,10 @@ A privacy-focused React Native mobile application for chatting with AI providers
 
 - [x] Initial chat app
 - [x] MCP support
-- [-] Multiple mode support
+- [x] Multiple mode support
     - each mode has its own system prompt + model + mcp configuration
 - [x] Export chat (markdown/pdf/json)
 - [x] iamge/file support
-- [ ] imporve the add/edit ui for settings
 - [ ] AI Search and AI Tab rename
 - [ ] add custom resoning effort/other parameter in the app
 
@@ -36,7 +35,7 @@ npm install
 
 ### Run (Development)
 ```bash
-npx expo start
+EXPO_DEBUG=true npx expo start
 ```
 
 ## ⚙️ Configuration

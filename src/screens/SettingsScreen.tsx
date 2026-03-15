@@ -1364,19 +1364,31 @@ export const SettingsScreen = () => {
                       : 'Connecting...';
 
               return (
-                <TouchableOpacity
+                <View
                   key={server.id}
                   style={styles.categoryCard}
-                  onPress={() => navigateToServerEditor(server)}
                 >
-                  <View style={styles.categoryBody}>
+                  <TouchableOpacity 
+                    style={styles.categoryBody} 
+                    onPress={() => navigateToServerEditor(server)}
+                  >
                     <Text style={styles.categoryTitle}>{server.name}</Text>
                     <Text style={styles.categoryDescription} numberOfLines={1}>
                       {server.url}
                     </Text>
+                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Switch
+                      value={server.enabled}
+                      onValueChange={enabled => updateMcpServer({ ...server, enabled })}
+                      trackColor={{ false: colors.border, true: colors.primarySoft }}
+                      thumbColor={server.enabled ? colors.primary : colors.textTertiary}
+                    />
+                    <TouchableOpacity style={{ marginLeft: 8, padding: 4 }} onPress={() => navigateToServerEditor(server)}>
+                      <ChevronRight size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
                   </View>
-                  <ChevronRight size={18} color={colors.textTertiary} />
-                </TouchableOpacity>
+                </View>
               );
             })}
 
@@ -1559,12 +1571,14 @@ export const SettingsScreen = () => {
           <>
             <Text style={styles.sectionHeader}>AI Providers</Text>
             {providers.map(provider => (
-              <TouchableOpacity
+              <View
                 key={provider.id}
                 style={styles.categoryCard}
-                onPress={() => navigateToProviderEditor(provider)}
               >
-                <View style={styles.categoryBody}>
+                <TouchableOpacity 
+                  style={styles.categoryBody} 
+                  onPress={() => navigateToProviderEditor(provider)}
+                >
                   <View style={styles.modeCardHeader}>
                     <Text style={styles.categoryTitle}>{provider.name}</Text>
                     {provider.enabled ? (
@@ -1576,9 +1590,19 @@ export const SettingsScreen = () => {
                   <Text style={styles.categoryDescription} numberOfLines={1}>
                     {provider.baseUrl}
                   </Text>
+                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Switch
+                    value={provider.enabled}
+                    onValueChange={enabled => updateProvider({ ...provider, enabled })}
+                    trackColor={{ false: colors.border, true: colors.primarySoft }}
+                    thumbColor={provider.enabled ? colors.primary : colors.textTertiary}
+                  />
+                  <TouchableOpacity style={{ marginLeft: 8, padding: 4 }} onPress={() => navigateToProviderEditor(provider)}>
+                    <ChevronRight size={18} color={colors.textTertiary} />
+                  </TouchableOpacity>
                 </View>
-                <ChevronRight size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
+              </View>
             ))}
             <TouchableOpacity style={styles.primaryButton} onPress={handleAddProvider}>
               <Plus size={18} color={colors.onPrimary} />
@@ -1618,19 +1642,7 @@ export const SettingsScreen = () => {
                 />
               </View>
 
-              <View style={styles.sectionCard}>
-                <View style={styles.row}>
-                  <Text style={styles.sectionTitle}>Enabled</Text>
-                  <Switch
-                    value={effectiveProvider.enabled}
-                    onValueChange={enabled =>
-                      setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, { enabled }))
-                    }
-                    trackColor={{ false: colors.border, true: colors.primarySoft }}
-                    thumbColor={effectiveProvider.enabled ? colors.primary : colors.textTertiary}
-                  />
-                </View>
-              </View>
+
 
               <View style={styles.sectionCard}>
                 <Text style={styles.sectionTitle}>Base URL</Text>
