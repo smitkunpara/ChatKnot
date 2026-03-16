@@ -33,6 +33,12 @@ This major release introduces the **Mode System**, a powerful way to organize yo
 - **Caching**: Added base64 hydration and provider instance caching to reduce latency.
 - **Stream Throttling**: Smoother rendering during high-speed AI output.
 
+### 💬 Streaming & MCP UX Refinements
+- **Realtime Visible Streaming Restored**: When the user is on the active chat screen, chunks now render immediately as they arrive for true progressive typing feedback.
+- **No Partial Assistant Persistence**: Assistant chunk state stays in memory during generation and is saved only when the response completes or the user presses Stop.
+- **Background/Hidden Screen Behavior**: If the user leaves chat (e.g., opens Settings), streaming work continues in memory without repainting hidden chat UI; returning to chat shows the latest accumulated chunk instantly.
+- **Immediate MCP Auto-Scroll**: As soon as MCP tool-call UI cards are created, chat now jumps to the bottom immediately instead of waiting for MCP response completion.
+
 ---
 
 ## 📄 Full Changelog

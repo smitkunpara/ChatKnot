@@ -525,21 +525,25 @@ export class OpenAiService {
         onChunk(contentChunk, undefined);
       };
 
-      const processDelta = (delta: any) => {
-        if (!delta) return;
+      const processDelta = (delta: any): boolean => {
+        if (!delta) return false;
+        let emitted = false;
         // Capture reasoning/thinking content streamed separately by providers
         // (e.g. DeepSeek sends delta.reasoning_content, others may use delta.reasoning)
         const reasoningChunk = delta.reasoning_content || delta.reasoning || '';
         if (reasoningChunk && onReasoning) {
           fullReasoning += reasoningChunk;
           onReasoning(reasoningChunk);
+          emitted = true;
         }
         if (delta.content) {
           emitContentChunk(delta.content);
+          emitted = true;
         }
         if (delta.tool_calls) {
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
           onChunk('', toolCallsBuffer);
+          emitted = true;
         }
         if (delta.function_call) {
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
@@ -554,33 +558,26 @@ export class OpenAiService {
             },
           ]);
           onChunk('', toolCallsBuffer);
+          emitted = true;
         }
+        return emitted;
       };
 
-      const processSsePayload = (payload: string) => {
+      const processSsePayload = (payload: string): boolean => {
         const cleanPayload = payload.trim();
-        if (!cleanPayload || cleanPayload === '[DONE]') return;
+        if (!cleanPayload || cleanPayload === '[DONE]') return false;
         try {
           const json = JSON.parse(cleanPayload);
           const delta = json.choices?.[0]?.delta;
-          processDelta(delta);
+          return processDelta(delta);
         } catch (e) {
           // Ignore partial or non-JSON control events.
+          return false;
         }
       };
 
       // Yield to the event loop so React can flush a render.
       const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
-
-      let lastYieldTime = Date.now();
-      const maybeYieldToUI = async () => {
-        const now = Date.now();
-        // Yield every 50ms to allow UI updates without excessive overhead
-        if (now - lastYieldTime > 50) {
-          await yieldToUI();
-          lastYieldTime = Date.now();
-        }
-      };
 
       if (reader) {
         const decoder = new TextDecoder();
@@ -628,11 +625,13 @@ export class OpenAiService {
               .filter(line => line.startsWith('data:'))
               .map(line => line.replace(/^data:\s?/, ''));
             if (dataLines.length > 0) {
-              processSsePayload(dataLines.join('\n'));
+              const emitted = processSsePayload(dataLines.join('\n'));
+              if (emitted) {
+                // Yield for each payload so batched network chunks still render progressively.
+                await yieldToUI();
+              }
             }
           }
-          // Yield once per reader.read() so React can paint whatever was updated
-          await maybeYieldToUI();
         }
 
         // Final yield to ensure UI catches up
@@ -644,7 +643,10 @@ export class OpenAiService {
             .filter(line => line.startsWith('data:'))
             .map(line => line.replace(/^data:\s?/, ''));
           if (dataLines.length > 0) {
-            processSsePayload(dataLines.join('\n'));
+            const emitted = processSsePayload(dataLines.join('\n'));
+            if (emitted) {
+              await yieldToUI();
+            }
           }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
@@ -656,9 +658,11 @@ export class OpenAiService {
 
         if (sseLines.length > 0) {
           for (const line of sseLines) {
-            processSsePayload(line.replace(/^data:\s?/, ''));
-            // Yield per SSE event so the UI renders progressively
-            await maybeYieldToUI();
+            const emitted = processSsePayload(line.replace(/^data:\s?/, ''));
+            if (emitted) {
+              // Yield per SSE payload so UI keeps up with each chunk.
+              await yieldToUI();
+            }
           }
           await yieldToUI();
         } else {

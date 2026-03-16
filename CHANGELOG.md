@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New MCP Tools Disabled by Default** — MCP tools discovered for the first time on a known server are now disabled until the user explicitly enables them.
 - **Export Filtered to Active Items** — Settings export now includes only visible AI models (hidden models omitted) and enabled MCP tools (disabled tools omitted), producing a clean minimal snapshot.
 - **Import Defaults to Hidden/Disabled** — On import, AI models and MCP tools not included in the export file are treated as hidden/disabled by default after the post-import health check.
+- **Streaming Visibility Rules** — Chunk-by-chunk rendering now updates only while the active chat screen is visible; hidden chat screens buffer in-memory state and render the latest chunk immediately when the user returns.
+- **Assistant Persistence Timing** — Assistant streaming chunks are no longer persisted incrementally; assistant messages are committed to storage only when the response completes or the user stops generation.
 
 ### Fixed
 - **Hiding UI During Tools** — Typing cursor and copy buttons are now intelligently hidden while the AI is executing tools.
@@ -43,11 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP Payload Flattening** — Resolved issues where MCP response objects were double-serialized, ensuring clean JSON for the AI.
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen`.
 - **Chat Scrolling Stability** — Resolved keyboard-triggered scrolling issues.
+- **MCP Tool-Call Auto-Scroll** — Chat now scrolls to bottom immediately when MCP tool-call cards are created, instead of waiting for MCP execution to complete.
+- **Realtime Streaming Regression** — Restored immediate visible chunk updates in chat so streamed text appears progressively again.
 
 ### Performance
 - **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments.
 - **Provider Instance Caching** — Optimized AI service instantiation.
-- **Throttled Stream Rendering** — Improved UI responsiveness during streaming.
+- **Runtime-Only Streaming State** — Moved live assistant streaming state to a non-persisted runtime store to avoid expensive per-chunk persistence writes.
 - **Cached MCP Tool Registry** — Optimized tool-calling overhead.
 
 

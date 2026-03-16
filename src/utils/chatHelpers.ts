@@ -155,8 +155,18 @@ export const buildAppSystemPrompt = ({
     lines.push(`- The user is currently in "${modeName}" mode. Adapt your responses to best suit this mode.`);
   }
 
+  if (hasConnectedMcpServer) {
+    lines.push('- MCP tools are currently connected and available when relevant.');
+  }
+
   if (toolsEnabledForRequest) {
-    lines.push('- Multiple tool calls are supported in a single turn when useful.');
+    lines.push('- MCP tool calling is enabled for this request.');
+    lines.push('- You may request zero, one, or multiple tool calls in a single assistant turn.');
+    lines.push('- If multiple independent tools are needed, emit all of them in the same turn instead of one-per-turn.');
+    lines.push('- Every tool call must include complete JSON arguments.');
+    lines.push('- Tool calls are executed in a queue; each tool result is appended to the conversation before your next turn.');
+    lines.push('- Use prior tool results to decide whether more tools are needed or a final user-facing answer should be returned.');
+    lines.push('- Do not repeat identical tool calls unless inputs have changed or a retry is explicitly required.');
   }
 
   return lines.join('\n');

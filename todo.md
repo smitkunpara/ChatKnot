@@ -3,6 +3,7 @@
 ## 🐛 Known Issues / Bugs
 - [x] **MCP List Flicker**: Toggling enable/disable or changing tool permissions in Mode settings causes the entire list to reload/flicker.
 - [ ] **TypeBox Stickiness**: The chat input box (TypeBox) pops up but does not return to its initial position after use.
+- [ ] **New TypeBox for each chat**: when we switch between the chat and ai is working on other chat even after switching the chat i see the stop icon.
 - [/] **UI Lag**: The UI lags significantly while the AI is streaming a response.
 
 ## 💡 Upcoming Features & Improvements

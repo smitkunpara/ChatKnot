@@ -150,6 +150,11 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
 
   // Derive whether there's any visible text content (non-think) to display
   const hasVisibleText = contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0);
+  const showCopyAction = !isStreaming && hasText;
+  const showRetryAction = !isUser && !isStreaming && !!onRetryAssistant;
+  const showEditAction = isUser && !!onEdit;
+  const hasAnyActions = showCopyAction || showRetryAction || showEditAction;
+  const isToolOnlyAssistant = !isUser && hasToolCalls && !hasText && !hasReasoning && !message.isError;
 
   // Always return a consistent component structure to avoid React hook count issues
   // when FlatList recycles component instances. Render empty view when hidden.
@@ -158,7 +163,13 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   }
 
   return (
-    <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
+    <View
+      style={[
+        styles.container,
+        isUser ? styles.userContainer : styles.assistantContainer,
+        isToolOnlyAssistant ? styles.toolOnlyContainer : undefined,
+      ]}
+    >
       <View style={styles.messageRow}>
         <View style={{ flex: 1 }}>
           {isUser ? (
@@ -196,6 +207,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                 styles.assistantContent,
                 hasToolCalls ? styles.assistantWithTools : undefined,
                 message.isError ? styles.errorContent : undefined,
+                isToolOnlyAssistant ? styles.toolOnlyAssistantContent : undefined,
               ]}
             >
               {message.isError ? (
@@ -237,7 +249,14 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
               )}
 
               {hasToolCalls ? (
-                <View style={styles.toolCallsContainer}>
+                <View
+                  style={[
+                    styles.toolCallsContainer,
+                    isToolOnlyAssistant && !hasAnyActions
+                      ? styles.toolCallsContainerCompact
+                      : undefined,
+                  ]}
+                >
                   {message.toolCalls!.map((tc) => (
                     <ToolCallComponent
                       key={tc.id}
@@ -252,31 +271,25 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
             </View>
           )}
 
-          <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
-            {!isStreaming && (message.content || hasToolCalls) ? (
-              <>
-                {hasText ? (
-                  <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
-                    <Copy size={13} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                ) : null}
-                {!isUser && onRetryAssistant ? (
-                  <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
-                    <RotateCcw size={13} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                ) : null}
-              </>
-            ) : !isUser && !isStreaming && onRetryAssistant ? (
-              <TouchableOpacity onPress={() => onRetryAssistant(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
-                <RotateCcw size={13} color={colors.textTertiary} />
-              </TouchableOpacity>
-            ) : null}
-            {isUser && onEdit ? (
-              <TouchableOpacity onPress={() => onEdit(message.id, message.content)} style={styles.actionButton} accessibilityLabel="Edit message" accessibilityRole="button">
-                <Edit2 size={13} color={colors.textTertiary} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          {hasAnyActions ? (
+            <View style={[styles.actions, isUser ? styles.userActions : styles.assistantActions]}>
+              {showCopyAction ? (
+                <TouchableOpacity onPress={copyToClipboard} style={styles.actionButton} accessibilityLabel="Copy message" accessibilityRole="button">
+                  <Copy size={13} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+              {showRetryAction ? (
+                <TouchableOpacity onPress={() => onRetryAssistant?.(message.id)} style={styles.actionButton} accessibilityLabel="Retry response" accessibilityRole="button">
+                  <RotateCcw size={13} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+              {showEditAction ? (
+                <TouchableOpacity onPress={() => onEdit?.(message.id, message.content)} style={styles.actionButton} accessibilityLabel="Edit message" accessibilityRole="button">
+                  <Edit2 size={13} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
     </View>
@@ -291,6 +304,9 @@ const createStyles = (colors: any) =>
       marginVertical: 6,
       paddingHorizontal: 12,
       width: '100%',
+    },
+    toolOnlyContainer: {
+      marginVertical: 2,
     },
     userContainer: {
       alignItems: 'flex-end',
@@ -319,6 +335,10 @@ const createStyles = (colors: any) =>
     assistantContent: {
       paddingVertical: 4,
       paddingHorizontal: 2,
+    },
+    toolOnlyAssistantContent: {
+      paddingVertical: 0,
+      paddingHorizontal: 0,
     },
     assistantWithTools: {
       width: '100%',
@@ -393,6 +413,9 @@ const createStyles = (colors: any) =>
     toolCallsContainer: {
       marginBottom: 8,
       width: '100%',
+    },
+    toolCallsContainerCompact: {
+      marginBottom: 0,
     },
     textRow: {
       flexDirection: 'row',
