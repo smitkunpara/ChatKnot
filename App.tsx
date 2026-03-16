@@ -1,13 +1,16 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { useSettingsStore } from './src/store/useSettingsStore';
+import { useChatRuntimeStore } from './src/store/useChatRuntimeStore';
 import { McpManager } from './src/services/mcp/McpManager';
 import { useAppTheme } from './src/theme/useAppTheme';
 import { executeStorageHardeningBootstrap } from './src/services/storage/migrations';
 import { LoadingScreen } from './src/components/Common/LoadingScreen';
+import { ChatBackgroundTask } from './src/services/chat/ChatBackgroundTask';
 import {
   runStartupHealthCheck,
   applyHealthCheckReport,
@@ -22,11 +25,13 @@ export default function App() {
   const activeMode = modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
   const activeMcpServers = mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {});
   const { isDark, colors } = useAppTheme();
+  const isChatStreaming = useChatRuntimeStore(state => state.isLoading);
   const [isReady, setReady] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [startupWarnings, setStartupWarnings] = useState<string[]>([]);
   const [healthCheckDone, setHealthCheckDone] = useState(false);
+  const backgroundTaskIdRef = useRef<number | null>(null);
 
   const onHealthProgress = useCallback(
     (phase: HealthCheckPhase, message: string, progress?: number) => {
@@ -127,6 +132,43 @@ export default function App() {
     if (!healthCheckDone) return;
     McpManager.reinitialize(activeMcpServers).catch(console.error);
   }, [activeMcpServers, healthCheckDone]);
+
+  useEffect(() => {
+    const releaseBackgroundTask = () => {
+      if (backgroundTaskIdRef.current == null) {
+        return;
+      }
+
+      ChatBackgroundTask.end(backgroundTaskIdRef.current);
+      backgroundTaskIdRef.current = null;
+    };
+
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (nextState === 'background' && isChatStreaming) {
+        if (backgroundTaskIdRef.current == null) {
+          backgroundTaskIdRef.current = await ChatBackgroundTask.begin();
+        }
+        return;
+      }
+
+      if (nextState === 'active') {
+        releaseBackgroundTask();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      void handleAppStateChange(nextState);
+    });
+
+    if (!isChatStreaming) {
+      releaseBackgroundTask();
+    }
+
+    return () => {
+      subscription.remove();
+      releaseBackgroundTask();
+    };
+  }, [isChatStreaming]);
 
   if (!isReady) {
     return (

@@ -1,6 +1,7 @@
 import Expo
 import React
 import ReactAppDependencyProvider
+import UIKit
 
 @UIApplicationMain
 public class AppDelegate: ExpoAppDelegate {
@@ -66,5 +67,64 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
+  }
+}
+
+@objc(ChatBackgroundTask)
+class ChatBackgroundTask: NSObject, RCTBridgeModule {
+  private var activeTask: UIBackgroundTaskIdentifier = .invalid
+
+  static func moduleName() -> String! {
+    "ChatBackgroundTask"
+  }
+
+  static func requiresMainQueueSetup() -> Bool {
+    true
+  }
+
+  @objc(begin:resolver:rejecter:)
+  func begin(
+    _ taskName: String?,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async {
+      self.endActiveTaskIfNeeded()
+
+      self.activeTask = UIApplication.shared.beginBackgroundTask(
+        withName: taskName ?? "ChatKnot Streaming"
+      ) {
+        self.endActiveTaskIfNeeded()
+      }
+
+      if self.activeTask == .invalid {
+        resolve(nil)
+        return
+      }
+
+      resolve(NSNumber(value: self.activeTask.rawValue))
+    }
+  }
+
+  @objc(end:)
+  func end(_ taskIdentifier: NSNumber) {
+    DispatchQueue.main.async {
+      guard self.activeTask != .invalid else {
+        return
+      }
+
+      if NSNumber(value: self.activeTask.rawValue) == taskIdentifier {
+        self.endActiveTaskIfNeeded()
+      }
+    }
+  }
+
+  private func endActiveTaskIfNeeded() {
+    guard activeTask != .invalid else {
+      return
+    }
+
+    UIApplication.shared.endBackgroundTask(activeTask)
+    activeTask = .invalid
   }
 }

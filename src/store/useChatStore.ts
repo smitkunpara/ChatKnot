@@ -13,7 +13,6 @@ const chatPersistStorage = createEncryptedStateStorage({
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
-  isLoading: boolean;
 
   createConversation: (providerId: string, modeId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string | null) => void;
@@ -24,8 +23,12 @@ interface ChatState {
   addMessage: (conversationId: string, message: Omit<Message, 'timestamp' | 'id'> & { id?: string }) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
   updateMessageReasoning: (conversationId: string, messageId: string, reasoning: string) => void;
+  finalizeMessage: (
+    conversationId: string,
+    messageId: string,
+    payload: { content?: string; reasoning?: string; updatedAt?: number }
+  ) => void;
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
-  setLoading: (loading: boolean) => void;
   addToolCall: (conversationId: string, messageId: string, toolCall: ToolCall) => void;
   updateToolCallStatus: (
     conversationId: string,
@@ -41,7 +44,6 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       conversations: [],
       activeConversationId: null,
-      isLoading: false,
 
       createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
         const now = Date.now();
@@ -148,6 +150,27 @@ export const useChatStore = create<ChatState>()(
         }),
       })),
 
+      finalizeMessage: (conversationId, messageId, payload) => set((state) => ({
+        conversations: state.conversations.map((c) => {
+          if (c.id === conversationId) {
+            return {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === messageId
+                  ? {
+                    ...m,
+                    content: payload.content ?? m.content,
+                    reasoning: payload.reasoning ?? m.reasoning,
+                  }
+                  : m
+              ),
+              updatedAt: payload.updatedAt ?? Date.now(),
+            };
+          }
+          return c;
+        }),
+      })),
+
       editMessage: (conversationId, messageId, newContent) => set((state) => ({
         conversations: state.conversations.map((c) => {
           if (c.id === conversationId) {
@@ -161,8 +184,6 @@ export const useChatStore = create<ChatState>()(
           return c;
         }),
       })),
-
-      setLoading: (loading) => set({ isLoading: loading }),
 
       addToolCall: (conversationId, messageId, toolCall) => set((state) => ({
         conversations: state.conversations.map((c) => {
@@ -213,13 +234,16 @@ export const useChatStore = create<ChatState>()(
     {
       name: 'chat-storage',
       storage: createJSONStorage(() => chatPersistStorage),
+      partialize: (state) => ({
+        conversations: state.conversations,
+        activeConversationId: state.activeConversationId,
+      }),
       version: 2,
       migrate: (persistedState: any) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return {
             conversations: [],
             activeConversationId: null,
-            isLoading: false,
           };
         }
 
@@ -233,7 +257,6 @@ export const useChatStore = create<ChatState>()(
         return {
           conversations,
           activeConversationId: persistedState.activeConversationId || null,
-          isLoading: false,
         };
       },
     }

@@ -29,6 +29,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
           drawerContent={(props) => <Sidebar {...props} />}
           screenOptions={{
             headerShown: false,
+            freezeOnBlur: true,
             drawerHideStatusBarOnOpen: false,
             drawerStyle: {
               backgroundColor: colors.background,

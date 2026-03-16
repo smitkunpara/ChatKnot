@@ -11,6 +11,7 @@
 - [ ] **Other Parameters**: Add support for `top_p`, `frequency_penalty`, etc., in the Mode or Provider settings.
 - [/] Search Refinement (Partially Done): AI Search and AI Tab rename (as mentioned in Project Status).
 - [x] **Conditional List Update Warning**: The "list update" warning should only appear if the user is actually using the affected services.
+- [ ] **api request details with context**: instead of showing the typing cursor in ui while making the request show the request details like api request reponse
 
 ## ✅ Completed
 - [x] **Initial chat app foundation**

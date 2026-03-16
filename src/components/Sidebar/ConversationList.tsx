@@ -17,11 +17,53 @@ import {
   getSidebarConversationLabel,
   getSidebarNewChatCtaLabel,
 } from '../../utils/dateFormat';
+import { useStoreWithEqualityFn } from 'zustand/traditional';
+
+interface SidebarConversationSummary {
+  id: string;
+  title?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+const areConversationSummariesEqual = (
+  previous: SidebarConversationSummary[],
+  next: SidebarConversationSummary[]
+) => {
+  if (previous.length !== next.length) {
+    return false;
+  }
+
+  for (let index = 0; index < previous.length; index += 1) {
+    const prev = previous[index];
+    const curr = next[index];
+
+    if (
+      prev.id !== curr.id ||
+      prev.title !== curr.title ||
+      prev.createdAt !== curr.createdAt ||
+      prev.updatedAt !== curr.updatedAt
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
 
 export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const conversations = useChatStore(state => state.conversations);
+  const conversations = useStoreWithEqualityFn(
+    useChatStore,
+    state => state.conversations.map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+    })),
+    areConversationSummariesEqual
+  );
   const activeId = useChatStore(state => state.activeConversationId);
   const setActive = useChatStore(state => state.setActiveConversation);
   const deleteConversation = useChatStore(state => state.deleteConversation);

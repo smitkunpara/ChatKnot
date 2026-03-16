@@ -12,20 +12,21 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DrawerNavigationProp } from '@react-navigation/drawer';
-import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DrawerNavigationProp, useDrawerStatus } from '@react-navigation/drawer';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
+import { useChatRuntimeStore } from '../store/useChatRuntimeStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { ProviderFactory } from '../services/llm/ProviderFactory';
 import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
-import { ToolCall, Attachment } from '../types';
+import { ToolCall, Attachment, Message } from '../types';
 import { useAppTheme } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -61,19 +62,20 @@ import { ExportFormat, ExportOptions, exportChat } from '../services/export/Chat
 
 export const ChatScreen = () => {
   const navigation = useNavigation<DrawerNavigationProp<any>>();
+  const isScreenFocused = useIsFocused();
+  const drawerStatus = useDrawerStatus();
   const flatListRef = useRef<FlatList>(null);
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
   const isMountedRef = useRef(true);
+  const activeStreamingControllerRef = useRef<{
+    conversationId: string;
+    flush: () => void;
+    dispose: () => void;
+  } | null>(null);
 
   // ---- Auto-scroll tracking ----
-  // Track whether the user is near the bottom so we can auto-scroll on content growth.
-  const isNearBottomRef = useRef(true);
-  const scrollOffsetRef = useRef(0);
-  const contentHeightRef = useRef(0);
-  const layoutHeightRef = useRef(0);
-  const AUTO_SCROLL_THRESHOLD = 50; // Don't change this value
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
@@ -95,18 +97,29 @@ export const ChatScreen = () => {
   }, []);
 
   const activeConversationId = useChatStore(state => state.activeConversationId);
-  const conversations = useChatStore(state => state.conversations);
-  const isLoading = useChatStore(state => state.isLoading);
+  const activeConversation = useChatStore(
+    state => state.conversations.find(c => c.id === state.activeConversationId) ?? null
+  );
   const createConversation = useChatStore(state => state.createConversation);
   const addMessage = useChatStore(state => state.addMessage);
   const updateMessage = useChatStore(state => state.updateMessage);
-  const updateMessageReasoning = useChatStore(state => state.updateMessageReasoning);
+  const finalizeMessage = useChatStore(state => state.finalizeMessage);
   const editMessage = useChatStore(state => state.editMessage);
   const addToolCall = useChatStore(state => state.addToolCall);
   const updateToolCallStatus = useChatStore(state => state.updateToolCallStatus);
   const updateModelInConversation = useChatStore(state => state.updateModelInConversation);
   const updateModeInConversation = useChatStore(state => state.updateModeInConversation);
-  const setLoading = useChatStore(state => state.setLoading);
+  const isLoading = useChatRuntimeStore(state => state.isLoading);
+  const beginRequest = useChatRuntimeStore(state => state.beginRequest);
+  const finishRequest = useChatRuntimeStore(state => state.finishRequest);
+  const startStreamingMessage = useChatRuntimeStore(state => state.startStreamingMessage);
+  const updateStreamingMessage = useChatRuntimeStore(state => state.updateStreamingMessage);
+  const clearStreamingMessage = useChatRuntimeStore(state => state.clearStreamingMessage);
+  const streamingSession = useChatRuntimeStore(
+    state => (activeConversationId ? state.streamingSessions[activeConversationId] ?? null : null)
+  );
+  const isStreamingUiVisible = isScreenFocused && drawerStatus !== 'open';
+  const activeConversationIdRef = useRef(activeConversationId);
   const providers = useSettingsStore(state => state.providers);
   const globalMcpServers = useSettingsStore(state => state.mcpServers);
   const modes = useSettingsStore(state => state.modes);
@@ -115,10 +128,59 @@ export const ChatScreen = () => {
   const lastUsedModel = useSettingsStore(state => state.lastUsedModel);
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
-  const activeConversation = useMemo(
-    () => conversations.find(c => c.id === activeConversationId),
-    [conversations, activeConversationId]
-  );
+  const displayedMessages = useMemo(() => {
+    if (!activeConversation) {
+      return [];
+    }
+
+    if (!streamingSession) {
+      return activeConversation.messages;
+    }
+
+    let didApplyStreamingOverlay = false;
+    const nextMessages = activeConversation.messages.map((message) => {
+      if (message.id !== streamingSession.messageId) {
+        return message;
+      }
+
+      didApplyStreamingOverlay = true;
+      return {
+        ...message,
+        content: streamingSession.content,
+        reasoning: streamingSession.reasoning,
+      };
+    });
+
+    if (didApplyStreamingOverlay) {
+      return nextMessages;
+    }
+
+    return [
+      ...activeConversation.messages,
+      {
+        id: streamingSession.messageId,
+        role: 'assistant' as const,
+        content: streamingSession.content,
+        reasoning: streamingSession.reasoning,
+        timestamp: streamingSession.updatedAt,
+      },
+    ];
+  }, [activeConversation, streamingSession]);
+  const isStreamingUiVisibleRef = useRef(isStreamingUiVisible);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    isStreamingUiVisibleRef.current = isStreamingUiVisible;
+    activeStreamingControllerRef.current?.flush();
+  }, [activeConversationId, isStreamingUiVisible]);
+
+  const shouldRenderStreamingConversation = useCallback((conversationId: string) => (
+    isStreamingUiVisibleRef.current &&
+    activeConversationIdRef.current === conversationId
+  ), []);
 
   const activeMode = useMemo(() => {
     const convModeId = activeConversation?.modeId;
@@ -217,8 +279,8 @@ export const ChatScreen = () => {
   // (e.g. because generation was interrupted before any content was received), 
   // we move the retry button to the PREVIOUS assistant message and hide the empty one.
   const lastAssistantMessageId = useMemo(() => {
-    if (!activeConversation?.messages) return null;
-    const messages = activeConversation.messages;
+    if (!displayedMessages.length) return null;
+    const messages = displayedMessages;
 
     // Find the absolute last assistant message
     let lastIdx = -1;
@@ -252,9 +314,9 @@ export const ChatScreen = () => {
     }
 
     return lastMessage.id;
-  }, [activeConversation?.messages, isLoading]);
+  }, [displayedMessages, isLoading]);
 
-  const messageCount = activeConversation?.messages.length ?? 0;
+  const messageCount = displayedMessages.length;
   useEffect(() => {
     // Only auto-scroll if the user hasn't manually scrolled away.
     if (messageCount && !userScrolledAwayRef.current) {
@@ -262,22 +324,6 @@ export const ChatScreen = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageCount]);
-
-  const handleScroll = useCallback((event: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    scrollOffsetRef.current = contentOffset.y;
-    contentHeightRef.current = contentSize.height;
-    layoutHeightRef.current = layoutMeasurement.height;
-    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    isNearBottomRef.current = distanceFromBottom <= AUTO_SCROLL_THRESHOLD;
-  }, []);
-
-  const handleContentSizeChange = useCallback((_w: number, h: number) => {
-    contentHeightRef.current = h;
-    if (isNearBottomRef.current) {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }
-  }, []);
 
   useEffect(() => {
     setEditingMessageId(null);
@@ -354,23 +400,23 @@ export const ChatScreen = () => {
     McpManager.reinitialize(activeMcpServers).catch(console.error);
   }, [activeMcpServers]);
 
-  const handleEdit = (messageId: string, content: string) => {
+  const handleEdit = useCallback((messageId: string, content: string) => {
     if (!activeConversationId) return;
     setEditingMessageId(messageId);
     setEditingContent(content);
-  };
+  }, [activeConversationId]);
 
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     stopRequestedRef.current = true;
     clearPendingToolApprovals(false);
     activeRequestControllerRef.current?.abort();
-    setLoading(false);
-  };
+    finishRequest(activeConversationId);
+  }, [activeConversationId, clearPendingToolApprovals, finishRequest]);
 
-  const handleInputFocus = () => {
+  const handleInputFocus = useCallback(() => {
     // Intentionally left blank to prevent auto-scrolling when tapping the typebox.
     // The chat list should stay at the current scroll position.
-  };
+  }, []);
 
   const handleRetryAssistant = (assistantMessageId: string) => {
     if (!activeConversation || !activeConversationId || isLoading) {
@@ -389,7 +435,7 @@ export const ChatScreen = () => {
         stopRequestedRef.current = false;
         editMessage(activeConversationId, candidate.id, candidate.content);
         userScrolledAwayRef.current = false;
-        setLoading(true);
+        beginRequest(activeConversationId);
         void runChatLoop(activeConversationId);
         return;
       }
@@ -436,10 +482,9 @@ export const ChatScreen = () => {
 
   // Check if conversation has any image attachments in its history
   const conversationHasImages = useMemo(() => {
-    const conv = conversations.find(c => c.id === activeConversationId);
-    if (!conv) return false;
-    return conv.messages.some(m => m.attachments?.some(a => a.type === 'image'));
-  }, [conversations, activeConversationId]);
+    if (!activeConversation) return false;
+    return activeConversation.messages.some(m => m.attachments?.some(a => a.type === 'image'));
+  }, [activeConversation]);
 
   const previousModelSelectionRef = useRef<string | undefined>(
     modelResolution.selection
@@ -489,6 +534,75 @@ export const ChatScreen = () => {
     attachmentBase64Cache.current.set(uri, base64);
     return base64;
   };
+
+  const createStreamingController = useCallback((conversationId: string, messageId: string) => {
+    let latestContent = '';
+    let latestReasoning = '';
+
+    const pushSnapshotToUi = () => {
+      if (!shouldRenderStreamingConversation(conversationId)) {
+        return;
+      }
+
+      updateStreamingMessage(conversationId, messageId, {
+        content: latestContent,
+        reasoning: latestReasoning,
+      });
+    };
+
+    const flush = () => {
+      pushSnapshotToUi();
+    };
+
+    const scheduleFlush = () => {
+      // Update the chat UI immediately on each chunk while the chat screen is visible.
+      // Persistence is still deferred until stop/complete.
+      pushSnapshotToUi();
+    };
+
+    return {
+      updateContent: (content: string) => {
+        latestContent = content;
+        scheduleFlush();
+      },
+      updateReasoning: (reasoning: string) => {
+        latestReasoning = reasoning;
+        scheduleFlush();
+      },
+      flush,
+      dispose: () => {
+        // No buffered frame/timer cleanup needed in immediate mode.
+      },
+    };
+  }, [shouldRenderStreamingConversation, updateStreamingMessage]);
+
+  const commitStreamingAssistant = useCallback((
+    conversationId: string,
+    messageId: string,
+    content: string,
+    reasoning: string
+  ) => {
+    const conversation = useChatStore
+      .getState()
+      .conversations.find((entry) => entry.id === conversationId);
+    const existingMessage = conversation?.messages.find((entry) => entry.id === messageId);
+
+    if (existingMessage) {
+      finalizeMessage(conversationId, messageId, {
+        content,
+        reasoning,
+      });
+    } else {
+      addMessage(conversationId, {
+        id: messageId,
+        role: 'assistant',
+        content,
+        reasoning,
+      });
+    }
+
+    clearStreamingMessage(conversationId, messageId);
+  }, [addMessage, clearStreamingMessage, finalizeMessage]);
 
   const handleSend = async (text: string) => {
     Keyboard.dismiss();
@@ -557,7 +671,7 @@ export const ChatScreen = () => {
     }
 
     userScrolledAwayRef.current = false;
-    setLoading(true);
+    beginRequest(conversationId);
     await runChatLoop(conversationId);
   };
 
@@ -567,6 +681,42 @@ export const ChatScreen = () => {
     let hasFinalAnswer = false;
     let absoluteIterationCount = 0;
     const toolCallFrequencies = new Map<string, number>();
+    let currentAssistantMsgId: string | null = null;
+    let currentStreamedContent = '';
+    let currentStreamedReasoning = '';
+    let currentStreamController: ReturnType<typeof createStreamingController> | null = null;
+
+    const settleCurrentStream = (options?: {
+      content?: string;
+      reasoning?: string;
+      clearOnly?: boolean;
+    }) => {
+      if (!currentAssistantMsgId) {
+        return;
+      }
+
+      currentStreamController?.flush();
+
+      const shouldClearOnly = options?.clearOnly === true;
+      const nextContent = options?.content ?? currentStreamedContent;
+      const nextReasoning = options?.reasoning ?? currentStreamedReasoning;
+
+      if (shouldClearOnly) {
+        clearStreamingMessage(conversationId, currentAssistantMsgId);
+      } else {
+        commitStreamingAssistant(
+          conversationId,
+          currentAssistantMsgId,
+          nextContent,
+          nextReasoning
+        );
+      }
+
+      currentStreamController?.dispose();
+      activeStreamingControllerRef.current = null;
+      currentStreamController = null;
+      currentAssistantMsgId = null;
+    };
 
     try {
       while (!hasFinalAnswer && !stopRequestedRef.current) {
@@ -666,7 +816,16 @@ export const ChatScreen = () => {
         }));
 
         const assistantMsgId = uuid.v4() as string;
-        addMessage(conversationId, { id: assistantMsgId, role: 'assistant', content: '' });
+        startStreamingMessage(conversationId, assistantMsgId);
+        currentAssistantMsgId = assistantMsgId;
+        currentStreamedContent = '';
+        currentStreamedReasoning = '';
+        currentStreamController = createStreamingController(conversationId, assistantMsgId);
+        activeStreamingControllerRef.current = {
+          conversationId,
+          flush: currentStreamController.flush,
+          dispose: currentStreamController.dispose,
+        };
 
         const finalSystemPrompt = buildEffectiveSystemPrompt({
           conversationPrompt: currentConv.systemPrompt,
@@ -702,7 +861,8 @@ export const ChatScreen = () => {
               (chunk) => {
                 if (!chunk) return;
                 streamedContent += chunk;
-                updateMessage(conversationId, assistantMsgId, streamedContent);
+                currentStreamedContent = streamedContent;
+                currentStreamController?.updateContent(streamedContent);
               },
               (fullContent, fullToolCalls) =>
                 resolve({ fullContent: fullContent ?? streamedContent, toolCalls: fullToolCalls }),
@@ -710,7 +870,8 @@ export const ChatScreen = () => {
               requestController.signal,
               (reasoningChunk) => {
                 streamedReasoning += reasoningChunk;
-                updateMessageReasoning(conversationId, assistantMsgId, streamedReasoning);
+                currentStreamedReasoning = streamedReasoning;
+                currentStreamController?.updateReasoning(streamedReasoning);
               }
             )
             .catch(reject);
@@ -719,10 +880,23 @@ export const ChatScreen = () => {
         activeRequestControllerRef.current = null;
         const apiElapsed = Date.now() - apiStartTime;
         console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
-        if (stopRequestedRef.current) break;
+        currentStreamController?.flush();
+
+        if (stopRequestedRef.current) {
+          const partialAssistantText = (result.fullContent || streamedContent || '').trim();
+          if (partialAssistantText || streamedReasoning.trim()) {
+            settleCurrentStream({
+              content: partialAssistantText,
+              reasoning: streamedReasoning,
+            });
+          } else {
+            settleCurrentStream({ clearOnly: true });
+          }
+          break;
+        }
 
         const assistantText = (result.fullContent || streamedContent || '').trim();
-        updateMessage(conversationId, assistantMsgId, assistantText);
+        let finalizedAssistantText = assistantText;
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
         let toolCalls = toolsEnabledForRequest
@@ -734,24 +908,29 @@ export const ChatScreen = () => {
           const xmlToolCalls = extractLegacyXmlToolCalls(assistantText, toolNameMap);
           if (xmlToolCalls.length > 0) {
             toolCalls = xmlToolCalls;
-            const cleanedAssistantText = stripLegacyStructuredToolCalls(assistantText);
-            updateMessage(conversationId, assistantMsgId, cleanedAssistantText);
+            finalizedAssistantText = stripLegacyStructuredToolCalls(assistantText);
           }
 
           if (toolCalls.length === 0) {
             const jsonToolCalls = extractLegacyJsonToolCalls(assistantText, toolNameMap);
             if (jsonToolCalls.length > 0) {
               toolCalls = jsonToolCalls;
-              const cleanedAssistantText = stripLegacyStructuredToolCalls(assistantText);
-              updateMessage(conversationId, assistantMsgId, cleanedAssistantText);
+              finalizedAssistantText = stripLegacyStructuredToolCalls(assistantText);
             }
           }
         }
 
+        if (toolCalls.length === 0 && finalizedAssistantText.length === 0) {
+          finalizedAssistantText = 'I received an empty response from the model.';
+        }
+
+        settleCurrentStream({
+          content: finalizedAssistantText,
+          reasoning: streamedReasoning,
+        });
+
         if (toolCalls.length === 0) {
-          if (assistantText.length === 0) {
-            updateMessage(conversationId, assistantMsgId, 'I received an empty response from the model.');
-          } else {
+          if (finalizedAssistantText.length > 0) {
             hasFinalAnswer = true;
           }
           break;
@@ -770,7 +949,11 @@ export const ChatScreen = () => {
         }
         if (loopDetected) {
           setChatError('Process stopped: AI got stuck in a repetitive loop.');
-          updateMessage(conversationId, assistantMsgId, 'I stopped processing because I got stuck repeating the exact same tool call.');
+          updateMessage(
+            conversationId,
+            assistantMsgId,
+            'I stopped processing because I got stuck repeating the exact same tool call.'
+          );
           break;
         }
         // --- END LOOP DETECTION ---
@@ -888,12 +1071,21 @@ export const ChatScreen = () => {
 
       }
     } catch (error: any) {
-      // Skip state updates if component is unmounted
+      if (currentAssistantMsgId) {
+        if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
+          settleCurrentStream({
+            content: currentStreamedContent.trim(),
+            reasoning: currentStreamedReasoning,
+          });
+        } else {
+          settleCurrentStream({ clearOnly: true });
+        }
+      }
+
       const mounted = isMountedRef.current;
-      
       const message = getErrorMessage(error);
       if (!stopRequestedRef.current) {
-        if (conversationId && mounted) {
+        if (conversationId) {
           addMessage(conversationId, {
             role: 'assistant',
             content: message,
@@ -904,12 +1096,20 @@ export const ChatScreen = () => {
         }
       }
     } finally {
-      // Skip state updates if component is unmounted
-      if (!isMountedRef.current) return;
-      
+      if (currentAssistantMsgId) {
+        if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
+          settleCurrentStream({
+            content: currentStreamedContent.trim(),
+            reasoning: currentStreamedReasoning,
+          });
+        } else {
+          settleCurrentStream({ clearOnly: true });
+        }
+      }
+
       activeRequestControllerRef.current = null;
       clearPendingToolApprovals(false);
-      setLoading(false);
+      finishRequest(conversationId);
 
       if (!stopRequestedRef.current && !hasFinalAnswer && absoluteIterationCount > 0 && conversationId) {
         const conversation = useChatStore.getState().conversations.find(c => c.id === conversationId);
@@ -925,6 +1125,27 @@ export const ChatScreen = () => {
   };
 
   const bannerMessage = noModelAvailableMessage || chatError;
+
+  const renderMessage = useCallback(({ item }: { item: Message }) => (
+    <MessageBubble
+      message={item}
+      onEdit={handleEdit}
+      isStreaming={isLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
+      pendingToolApprovalIds={pendingToolApprovalIds}
+      onToolApprovalDecision={resolveToolApproval}
+      onRetryAssistant={
+        item.role === 'assistant' && item.id === lastAssistantMessageId
+          ? handleRetryAssistant
+          : undefined
+      }
+    />
+  ), [
+    handleRetryAssistant,
+    isLoading,
+    lastAssistantMessageId,
+    pendingToolApprovalIds,
+    resolveToolApproval,
+  ]);
 
   const hasAnyProvider = useMemo(
     () => providers.some(p => p.enabled && (p.apiKey || '').trim().length > 0 && (p.baseUrl || '').trim().length > 0),
@@ -995,9 +1216,13 @@ export const ChatScreen = () => {
 
               <FlatList
                 ref={flatListRef}
-                data={activeConversation.messages}
+                data={displayedMessages}
                 keyExtractor={item => item.id}
                 extraData={{ lastAssistantMessageId, isLoading }}
+                initialNumToRender={10}
+                maxToRenderPerBatch={8}
+                updateCellsBatchingPeriod={50}
+                windowSize={7}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 scrollEventThrottle={16}
@@ -1019,22 +1244,7 @@ export const ChatScreen = () => {
                     userScrolledAwayRef.current = true;
                   }
                 }}
-                renderItem={({ item }) => (
-                  <MessageBubble
-                    message={item}
-                    onEdit={handleEdit}
-                    isStreaming={isLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
-                    pendingToolApprovalIds={pendingToolApprovalIds}
-                    onToolApprovalDecision={(toolCallId, approved) => {
-                      resolveToolApproval(toolCallId, approved);
-                    }}
-                    onRetryAssistant={
-                      item.role === 'assistant' && item.id === lastAssistantMessageId
-                        ? handleRetryAssistant
-                        : undefined
-                    }
-                  />
-                )}
+                renderItem={renderMessage}
                 ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {

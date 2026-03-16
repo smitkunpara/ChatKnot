@@ -80,7 +80,7 @@ const StreamingCursor = ({ color }: { color: string }) => {
 // MessageBubble
 // ---------------------------------------------------------------------------
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({
+const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   message,
   isStreaming,
   onEdit,
@@ -282,6 +282,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     </View>
   );
 };
+
+export const MessageBubble = React.memo(MessageBubbleComponent);
 
 const createStyles = (colors: any) =>
   StyleSheet.create({
