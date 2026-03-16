@@ -215,6 +215,7 @@ export const ChatScreen = () => {
   const [isExporting, setIsExporting] = useState(false);
   // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
   const userScrolledAwayRef = useRef(false);
+  const pendingInstantScrollConversationIdRef = useRef<string | null>(activeConversationId);
 
   const clearPendingToolApprovals = React.useCallback((
     defaultDecision: boolean = false,
@@ -348,18 +349,29 @@ export const ChatScreen = () => {
 
   const messageCount = displayedMessages.length;
   useEffect(() => {
-    // Only auto-scroll if the user hasn't manually scrolled away.
-    if (messageCount && !userScrolledAwayRef.current) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    if (!messageCount || userScrolledAwayRef.current || !isStreamingUiVisible) {
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messageCount]);
+
+    const shouldScrollInstantly =
+      !!activeConversationId &&
+      pendingInstantScrollConversationIdRef.current === activeConversationId;
+
+    if (shouldScrollInstantly) {
+      pendingInstantScrollConversationIdRef.current = null;
+    }
+
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated: !shouldScrollInstantly });
+    });
+  }, [activeConversationId, isStreamingUiVisible, messageCount]);
 
   useEffect(() => {
     setEditingMessageId(null);
     setEditingContent(undefined);
     // Reset scroll lock whenever the conversation changes.
     userScrolledAwayRef.current = false;
+    pendingInstantScrollConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
   useEffect(() => {
@@ -1291,8 +1303,20 @@ export const ChatScreen = () => {
                 ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
-                  if (isActiveConversationLoading && !userScrolledAwayRef.current) {
-                    flatListRef.current?.scrollToEnd({ animated: true });
+                  if (
+                    isActiveConversationLoading &&
+                    !userScrolledAwayRef.current &&
+                    isStreamingUiVisible
+                  ) {
+                    const shouldScrollInstantly =
+                      !!activeConversationId &&
+                      pendingInstantScrollConversationIdRef.current === activeConversationId;
+
+                    if (shouldScrollInstantly) {
+                      pendingInstantScrollConversationIdRef.current = null;
+                    }
+
+                    flatListRef.current?.scrollToEnd({ animated: !shouldScrollInstantly });
                   }
                 }}
               />

@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP Payload Flattening** — Resolved issues where MCP response objects were double-serialized, ensuring clean JSON for the AI.
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen`.
 - **Chat Scrolling Stability** — Resolved keyboard-triggered scrolling issues.
+- **Long-Chat Open/Drawer Scroll Jump** — Fixed chat opening behavior where long conversations briefly started at top and animated down; initial return-to-bottom now snaps instantly (including after opening/closing the sidebar).
 - **MCP Tool-Call Auto-Scroll** — Chat now scrolls to bottom immediately when MCP tool-call cards are created, instead of waiting for MCP execution to complete.
 - **Realtime Streaming Regression** — Restored immediate visible chunk updates in chat so streamed text appears progressively again.
 - **Cross-Chat Stop Button Leakage** — Fixed the composer showing a Stop button in other chats when only one conversation is actively generating.
