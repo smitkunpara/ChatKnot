@@ -11,6 +11,7 @@ export interface StreamingMessageSession {
 interface ChatRuntimeState {
   isLoading: boolean;
   activeRequestConversationId: string | null;
+  loadingConversationIds: Record<string, true>;
   streamingSessions: Record<string, StreamingMessageSession>;
   beginRequest: (conversationId: string) => void;
   finishRequest: (conversationId?: string | null) => void;
@@ -26,25 +27,45 @@ interface ChatRuntimeState {
 export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   isLoading: false,
   activeRequestConversationId: null,
+  loadingConversationIds: {},
   streamingSessions: {},
 
-  beginRequest: (conversationId) => set({
-    isLoading: true,
-    activeRequestConversationId: conversationId,
-  }),
-
-  finishRequest: (conversationId) => set((state) => {
-    if (
-      conversationId &&
-      state.activeRequestConversationId &&
-      state.activeRequestConversationId !== conversationId
-    ) {
+  beginRequest: (conversationId) => set((state) => {
+    if (state.loadingConversationIds[conversationId]) {
       return state;
     }
 
     return {
-      isLoading: false,
-      activeRequestConversationId: null,
+      loadingConversationIds: {
+        ...state.loadingConversationIds,
+        [conversationId]: true,
+      },
+      isLoading: true,
+      activeRequestConversationId: conversationId,
+    };
+  }),
+
+  finishRequest: (conversationId) => set((state) => {
+    if (!conversationId) {
+      return {
+        isLoading: false,
+        activeRequestConversationId: null,
+        loadingConversationIds: {},
+      };
+    }
+
+    if (!state.loadingConversationIds[conversationId]) {
+      return state;
+    }
+
+    const nextLoadingConversationIds = { ...state.loadingConversationIds };
+    delete nextLoadingConversationIds[conversationId];
+
+    const remainingConversationIds = Object.keys(nextLoadingConversationIds);
+    return {
+      loadingConversationIds: nextLoadingConversationIds,
+      isLoading: remainingConversationIds.length > 0,
+      activeRequestConversationId: remainingConversationIds[0] ?? null,
     };
   }),
 

@@ -38,6 +38,8 @@ This major release introduces the **Mode System**, a powerful way to organize yo
 - **No Partial Assistant Persistence**: Assistant chunk state stays in memory during generation and is saved only when the response completes or the user presses Stop.
 - **Background/Hidden Screen Behavior**: If the user leaves chat (e.g., opens Settings), streaming work continues in memory without repainting hidden chat UI; returning to chat shows the latest accumulated chunk instantly.
 - **Immediate MCP Auto-Scroll**: As soon as MCP tool-call UI cards are created, chat now jumps to the bottom immediately instead of waiting for MCP response completion.
+- **Per-Chat Stop/Loading State**: Stop button and loading indicators are now conversation-scoped, so switching to another chat no longer shows a false active generation state.
+- **Per-Chat Draft Persistence**: Composer drafts are saved per conversation and restored after chat switches, app backgrounding, and full app restart.
 
 ---
 

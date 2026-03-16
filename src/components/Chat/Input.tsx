@@ -36,6 +36,8 @@ interface InputProps {
   onSend: (text: string) => void;
   isLoading: boolean;
   onStop: () => void;
+  value?: string;
+  onChangeText?: (text: string) => void;
   initialValue?: string;
   onCancelEdit?: () => void;
   isEditing?: boolean;
@@ -54,6 +56,8 @@ export const Input: React.FC<InputProps> = ({
   onSend,
   isLoading,
   onStop,
+  value,
+  onChangeText,
   initialValue,
   onCancelEdit,
   isEditing,
@@ -75,6 +79,8 @@ export const Input: React.FC<InputProps> = ({
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const wasEditingRef = useRef(false);
+  const isControlled = value !== undefined;
+  const currentText = isControlled ? value : text;
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -92,13 +98,17 @@ export const Input: React.FC<InputProps> = ({
     wasEditingRef.current = !!isEditing;
   }, [isEditing]);
 
-  const canSend = (!!text.trim() || attachments.length > 0) && !isLoading;
+  const canSend = (!!currentText.trim() || attachments.length > 0) && !isLoading;
 
   const handleSend = () => {
-    if (!text.trim() && attachments.length === 0) return;
+    if (!currentText.trim() && attachments.length === 0) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSend(text.trim());
-    setText('');
+    onSend(currentText.trim());
+    if (isControlled) {
+      onChangeText?.('');
+    } else {
+      setText('');
+    }
   };
 
   const pickImage = async () => {
@@ -238,8 +248,14 @@ export const Input: React.FC<InputProps> = ({
             style={[styles.input, styles.inputStacked, isEditing && styles.editingInput]}
             placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
             placeholderTextColor={colors.placeholder}
-            value={text}
-            onChangeText={setText}
+            value={currentText}
+            onChangeText={(nextText) => {
+              if (isControlled) {
+                onChangeText?.(nextText);
+              } else {
+                setText(nextText);
+              }
+            }}
             multiline
             onFocus={onFocus}
             onContentSizeChange={onContentSizeChange}

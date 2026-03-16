@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mode Context in App System Prompt** — The app system prompt now includes the active mode name so the AI can adapt responses based on the current mode.
 - **Date/Time in App System Prompt** — The app system prompt now includes the current local date and time for time-aware responses.
 - **Chat Loop Debug Logging** — Added timing logs for payload preparation and API request phases to help diagnose response latency.
+- **Per-Conversation Draft Persistence** — Added encrypted per-chat draft storage so composer text is preserved when switching chats, backgrounding, or fully restarting the app.
 
 ### Changed
 - **Settings UI Toggles** — Moved enable/disable toggles for AI Providers and MCP Servers directly to the list view for faster access.
@@ -38,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Import Defaults to Hidden/Disabled** — On import, AI models and MCP tools not included in the export file are treated as hidden/disabled by default after the post-import health check.
 - **Streaming Visibility Rules** — Chunk-by-chunk rendering now updates only while the active chat screen is visible; hidden chat screens buffer in-memory state and render the latest chunk immediately when the user returns.
 - **Assistant Persistence Timing** — Assistant streaming chunks are no longer persisted incrementally; assistant messages are committed to storage only when the response completes or the user stops generation.
+- **Per-Conversation Runtime Loading State** — Streaming/loading state now tracks each conversation independently, enabling concurrent chat sessions without cross-chat loading UI bleed.
+- **Hidden-Screen Streaming Strategy** — Streaming continues for non-visible chats in runtime memory while UI rendering remains scoped to the currently visible chat screen for smoother navigation performance.
 
 ### Fixed
 - **Hiding UI During Tools** — Typing cursor and copy buttons are now intelligently hidden while the AI is executing tools.
@@ -47,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chat Scrolling Stability** — Resolved keyboard-triggered scrolling issues.
 - **MCP Tool-Call Auto-Scroll** — Chat now scrolls to bottom immediately when MCP tool-call cards are created, instead of waiting for MCP execution to complete.
 - **Realtime Streaming Regression** — Restored immediate visible chunk updates in chat so streamed text appears progressively again.
+- **Cross-Chat Stop Button Leakage** — Fixed the composer showing a Stop button in other chats when only one conversation is actively generating.
+- **Tool Approval Cross-Chat Interference** — Scoped pending inline tool approvals by conversation to avoid stop/cleanup side effects across simultaneous chat runs.
 
 ### Performance
 - **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments.

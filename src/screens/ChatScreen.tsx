@@ -19,6 +19,7 @@ import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
+import { useChatDraftStore } from '../store/useChatDraftStore';
 import { useChatRuntimeStore } from '../store/useChatRuntimeStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { ProviderFactory } from '../services/llm/ProviderFactory';
@@ -66,14 +67,9 @@ export const ChatScreen = () => {
   const drawerStatus = useDrawerStatus();
   const flatListRef = useRef<FlatList>(null);
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
-  const activeRequestControllerRef = useRef<AbortController | null>(null);
-  const stopRequestedRef = useRef(false);
+  const activeRequestControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const stopRequestedConversationIdsRef = useRef<Set<string>>(new Set());
   const isMountedRef = useRef(true);
-  const activeStreamingControllerRef = useRef<{
-    conversationId: string;
-    flush: () => void;
-    dispose: () => void;
-  } | null>(null);
 
   // ---- Auto-scroll tracking ----
   const { colors } = useAppTheme();
@@ -109,17 +105,28 @@ export const ChatScreen = () => {
   const updateToolCallStatus = useChatStore(state => state.updateToolCallStatus);
   const updateModelInConversation = useChatStore(state => state.updateModelInConversation);
   const updateModeInConversation = useChatStore(state => state.updateModeInConversation);
-  const isLoading = useChatRuntimeStore(state => state.isLoading);
   const beginRequest = useChatRuntimeStore(state => state.beginRequest);
   const finishRequest = useChatRuntimeStore(state => state.finishRequest);
   const startStreamingMessage = useChatRuntimeStore(state => state.startStreamingMessage);
   const updateStreamingMessage = useChatRuntimeStore(state => state.updateStreamingMessage);
   const clearStreamingMessage = useChatRuntimeStore(state => state.clearStreamingMessage);
-  const streamingSession = useChatRuntimeStore(
-    state => (activeConversationId ? state.streamingSessions[activeConversationId] ?? null : null)
-  );
   const isStreamingUiVisible = isScreenFocused && drawerStatus !== 'open';
-  const activeConversationIdRef = useRef(activeConversationId);
+  const isActiveConversationLoading = useChatRuntimeStore(
+    state => (activeConversationId ? !!state.loadingConversationIds[activeConversationId] : false)
+  );
+  const streamingSession = useChatRuntimeStore(
+    state => {
+      if (!activeConversationId || !isStreamingUiVisible) {
+        return null;
+      }
+      return state.streamingSessions[activeConversationId] ?? null;
+    }
+  );
+  const activeConversationDraft = useChatDraftStore(
+    state => (activeConversationId ? state.draftsByConversationId[activeConversationId] ?? '' : '')
+  );
+  const setConversationDraft = useChatDraftStore(state => state.setDraft);
+  const clearConversationDraft = useChatDraftStore(state => state.clearDraft);
   const providers = useSettingsStore(state => state.providers);
   const globalMcpServers = useSettingsStore(state => state.mcpServers);
   const modes = useSettingsStore(state => state.modes);
@@ -166,21 +173,7 @@ export const ChatScreen = () => {
       },
     ];
   }, [activeConversation, streamingSession]);
-  const isStreamingUiVisibleRef = useRef(isStreamingUiVisible);
-
-  useEffect(() => {
-    activeConversationIdRef.current = activeConversationId;
-  }, [activeConversationId]);
-
-  useEffect(() => {
-    isStreamingUiVisibleRef.current = isStreamingUiVisible;
-    activeStreamingControllerRef.current?.flush();
-  }, [activeConversationId, isStreamingUiVisible]);
-
-  const shouldRenderStreamingConversation = useCallback((conversationId: string) => (
-    isStreamingUiVisibleRef.current &&
-    activeConversationIdRef.current === conversationId
-  ), []);
+  const [newChatDraft, setNewChatDraft] = useState('');
 
   const activeMode = useMemo(() => {
     const convModeId = activeConversation?.modeId;
@@ -213,6 +206,7 @@ export const ChatScreen = () => {
   const [toolsWarningVisible, setToolsWarningVisible] = useState(false);
   const [enabledMcpToolsCount, setEnabledMcpToolsCount] = useState<number>(() => McpManager.getTools().length);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
+  const toolApprovalConversationIdsRef = useRef<Map<string, string>>(new Map());
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
   const [includeToolInput, setIncludeToolInput] = useState(false);
@@ -222,12 +216,43 @@ export const ChatScreen = () => {
   // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
   const userScrolledAwayRef = useRef(false);
 
-  const clearPendingToolApprovals = React.useCallback((defaultDecision: boolean = false) => {
-    approvalResolversRef.current.forEach((resolve) => {
+  const clearPendingToolApprovals = React.useCallback((
+    defaultDecision: boolean = false,
+    conversationId?: string
+  ) => {
+    const shouldClearAll = !conversationId;
+    const toolCallIdsToClear: string[] = [];
+
+    approvalResolversRef.current.forEach((resolve, toolCallId) => {
+      const ownerConversationId = toolApprovalConversationIdsRef.current.get(toolCallId);
+      if (!shouldClearAll && ownerConversationId !== conversationId) {
+        return;
+      }
+
       resolve(defaultDecision);
+      toolCallIdsToClear.push(toolCallId);
     });
-    approvalResolversRef.current.clear();
-    setPendingToolApprovalIds({});
+
+    if (toolCallIdsToClear.length === 0) {
+      return;
+    }
+
+    toolCallIdsToClear.forEach((toolCallId) => {
+      approvalResolversRef.current.delete(toolCallId);
+      toolApprovalConversationIdsRef.current.delete(toolCallId);
+    });
+
+    setPendingToolApprovalIds((prev) => {
+      if (shouldClearAll) {
+        return {};
+      }
+
+      const next = { ...prev };
+      toolCallIdsToClear.forEach((toolCallId) => {
+        delete next[toolCallId];
+      });
+      return next;
+    });
   }, []);
 
   const resolveToolApproval = React.useCallback((toolCallId: string, approved: boolean) => {
@@ -235,6 +260,7 @@ export const ChatScreen = () => {
     if (resolver) {
       resolver(approved);
       approvalResolversRef.current.delete(toolCallId);
+      toolApprovalConversationIdsRef.current.delete(toolCallId);
     }
 
     setPendingToolApprovalIds((prev) => {
@@ -248,7 +274,10 @@ export const ChatScreen = () => {
     });
   }, []);
 
-  const waitForInlineToolApproval = React.useCallback((toolCallId: string): Promise<boolean> => {
+  const waitForInlineToolApproval = React.useCallback((
+    toolCallId: string,
+    conversationId: string
+  ): Promise<boolean> => {
     setPendingToolApprovalIds((prev) => ({
       ...prev,
       [toolCallId]: true,
@@ -256,6 +285,7 @@ export const ChatScreen = () => {
 
     return new Promise((resolve) => {
       approvalResolversRef.current.set(toolCallId, resolve);
+      toolApprovalConversationIdsRef.current.set(toolCallId, conversationId);
     });
   }, []);
 
@@ -305,7 +335,7 @@ export const ChatScreen = () => {
     // If the last assistant message is empty AND not currently loading,
     // we prefer to attach the retry button to the PREVIOUS assistant message (if any).
     // This hides the empty last message and attaches the retry button to a meaningful one.
-    if (!isMeaningful && !isLoading) {
+    if (!isMeaningful && !isActiveConversationLoading) {
       for (let i = lastIdx - 1; i >= 0; i--) {
         if (messages[i].role === 'assistant') {
           return messages[i].id;
@@ -314,7 +344,7 @@ export const ChatScreen = () => {
     }
 
     return lastMessage.id;
-  }, [displayedMessages, isLoading]);
+  }, [displayedMessages, isActiveConversationLoading]);
 
   const messageCount = displayedMessages.length;
   useEffect(() => {
@@ -406,12 +436,28 @@ export const ChatScreen = () => {
     setEditingContent(content);
   }, [activeConversationId]);
 
+  const clearStopRequested = useCallback((conversationId: string) => {
+    stopRequestedConversationIdsRef.current.delete(conversationId);
+  }, []);
+
+  const markStopRequested = useCallback((conversationId: string) => {
+    stopRequestedConversationIdsRef.current.add(conversationId);
+  }, []);
+
+  const isStopRequested = useCallback(
+    (conversationId: string) => stopRequestedConversationIdsRef.current.has(conversationId),
+    []
+  );
+
   const handleStop = useCallback(() => {
-    stopRequestedRef.current = true;
-    clearPendingToolApprovals(false);
-    activeRequestControllerRef.current?.abort();
-    finishRequest(activeConversationId);
-  }, [activeConversationId, clearPendingToolApprovals, finishRequest]);
+    if (!activeConversationId) {
+      return;
+    }
+    markStopRequested(activeConversationId);
+    clearPendingToolApprovals(false, activeConversationId);
+    activeRequestControllersRef.current.get(activeConversationId)?.abort();
+    activeRequestControllersRef.current.delete(activeConversationId);
+  }, [activeConversationId, clearPendingToolApprovals, markStopRequested]);
 
   const handleInputFocus = useCallback(() => {
     // Intentionally left blank to prevent auto-scrolling when tapping the typebox.
@@ -419,7 +465,7 @@ export const ChatScreen = () => {
   }, []);
 
   const handleRetryAssistant = (assistantMessageId: string) => {
-    if (!activeConversation || !activeConversationId || isLoading) {
+    if (!activeConversation || !activeConversationId || isActiveConversationLoading) {
       return;
     }
 
@@ -432,7 +478,7 @@ export const ChatScreen = () => {
       const candidate = activeConversation.messages[i];
       if (candidate.role === 'user' && candidate.content?.trim()) {
         setChatError(null);
-        stopRequestedRef.current = false;
+        clearStopRequested(activeConversationId);
         editMessage(activeConversationId, candidate.id, candidate.content);
         userScrolledAwayRef.current = false;
         beginRequest(activeConversationId);
@@ -539,11 +585,7 @@ export const ChatScreen = () => {
     let latestContent = '';
     let latestReasoning = '';
 
-    const pushSnapshotToUi = () => {
-      if (!shouldRenderStreamingConversation(conversationId)) {
-        return;
-      }
-
+    const pushSnapshotToRuntime = () => {
       updateStreamingMessage(conversationId, messageId, {
         content: latestContent,
         reasoning: latestReasoning,
@@ -551,13 +593,12 @@ export const ChatScreen = () => {
     };
 
     const flush = () => {
-      pushSnapshotToUi();
+      pushSnapshotToRuntime();
     };
 
     const scheduleFlush = () => {
-      // Update the chat UI immediately on each chunk while the chat screen is visible.
-      // Persistence is still deferred until stop/complete.
-      pushSnapshotToUi();
+      // Keep latest chunk state per conversation. Rendering stays screen-aware.
+      pushSnapshotToRuntime();
     };
 
     return {
@@ -574,7 +615,7 @@ export const ChatScreen = () => {
         // No buffered frame/timer cleanup needed in immediate mode.
       },
     };
-  }, [shouldRenderStreamingConversation, updateStreamingMessage]);
+  }, [updateStreamingMessage]);
 
   const commitStreamingAssistant = useCallback((
     conversationId: string,
@@ -607,6 +648,7 @@ export const ChatScreen = () => {
   const handleSend = async (text: string) => {
     Keyboard.dismiss();
     let conversationId = activeConversationId;
+    const trimmedText = text.trim();
 
     if (!conversationId) {
       if (!modelResolution.selection) {
@@ -626,6 +668,8 @@ export const ChatScreen = () => {
         setChatError('Unable to initialize a new conversation.');
         return;
       }
+
+      setNewChatDraft('');
     }
 
     if (!modelResolution.selection) {
@@ -633,12 +677,13 @@ export const ChatScreen = () => {
       return;
     }
 
-    await doSend(text, conversationId);
+    await doSend(trimmedText, conversationId);
   };
 
   const doSend = async (text: string, conversationId: string) => {
     setChatError(null);
-    stopRequestedRef.current = false;
+    clearStopRequested(conversationId);
+    clearConversationDraft(conversationId);
 
     const filteredAttachments = attachments.filter((attachment) => {
       if (attachment.type === 'image') {
@@ -713,13 +758,12 @@ export const ChatScreen = () => {
       }
 
       currentStreamController?.dispose();
-      activeStreamingControllerRef.current = null;
       currentStreamController = null;
       currentAssistantMsgId = null;
     };
 
     try {
-      while (!hasFinalAnswer && !stopRequestedRef.current) {
+      while (!hasFinalAnswer && !isStopRequested(conversationId)) {
         absoluteIterationCount++;
         if (absoluteIterationCount > MAX_ABSOLUTE_ITERATIONS) {
           setChatError(`Stopped: Reached maximum safety limit of ${MAX_ABSOLUTE_ITERATIONS} tool iterations.`);
@@ -821,11 +865,6 @@ export const ChatScreen = () => {
         currentStreamedContent = '';
         currentStreamedReasoning = '';
         currentStreamController = createStreamingController(conversationId, assistantMsgId);
-        activeStreamingControllerRef.current = {
-          conversationId,
-          flush: currentStreamController.flush,
-          dispose: currentStreamController.dispose,
-        };
 
         const finalSystemPrompt = buildEffectiveSystemPrompt({
           conversationPrompt: currentConv.systemPrompt,
@@ -849,7 +888,7 @@ export const ChatScreen = () => {
         let streamedContent = '';
         let streamedReasoning = '';
         const requestController = new AbortController();
-        activeRequestControllerRef.current = requestController;
+        activeRequestControllersRef.current.set(conversationId, requestController);
 
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
           service
@@ -877,12 +916,14 @@ export const ChatScreen = () => {
             .catch(reject);
         });
 
-        activeRequestControllerRef.current = null;
+        if (activeRequestControllersRef.current.get(conversationId) === requestController) {
+          activeRequestControllersRef.current.delete(conversationId);
+        }
         const apiElapsed = Date.now() - apiStartTime;
         console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
         currentStreamController?.flush();
 
-        if (stopRequestedRef.current) {
+        if (isStopRequested(conversationId)) {
           const partialAssistantText = (result.fullContent || streamedContent || '').trim();
           if (partialAssistantText || streamedReasoning.trim()) {
             settleCurrentStream({
@@ -972,7 +1013,7 @@ export const ChatScreen = () => {
 
         // Execute captured tool calls strictly in sequence, then continue with next LLM turn.
         for (const call of toolQueue) {
-          if (stopRequestedRef.current) break;
+          if (isStopRequested(conversationId)) break;
 
           const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
           if (!toolPolicy.found) {
@@ -1018,7 +1059,7 @@ export const ChatScreen = () => {
           }
 
           if (!toolPolicy.autoAllow) {
-            const approved = await waitForInlineToolApproval(call.id);
+            const approved = await waitForInlineToolApproval(call.id, conversationId);
             if (!approved) {
               const deniedMessage = `User denied permission for tool \"${call.name}\".`;
               updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
@@ -1084,7 +1125,7 @@ export const ChatScreen = () => {
 
       const mounted = isMountedRef.current;
       const message = getErrorMessage(error);
-      if (!stopRequestedRef.current) {
+      if (!isStopRequested(conversationId)) {
         if (conversationId) {
           addMessage(conversationId, {
             role: 'assistant',
@@ -1107,11 +1148,11 @@ export const ChatScreen = () => {
         }
       }
 
-      activeRequestControllerRef.current = null;
-      clearPendingToolApprovals(false);
+      activeRequestControllersRef.current.delete(conversationId);
+      clearPendingToolApprovals(false, conversationId);
       finishRequest(conversationId);
 
-      if (!stopRequestedRef.current && !hasFinalAnswer && absoluteIterationCount > 0 && conversationId) {
+      if (!isStopRequested(conversationId) && !hasFinalAnswer && absoluteIterationCount > 0 && conversationId) {
         const conversation = useChatStore.getState().conversations.find(c => c.id === conversationId);
         const lastAssistant = [...(conversation?.messages || [])]
           .reverse()
@@ -1121,6 +1162,8 @@ export const ChatScreen = () => {
           updateMessage(conversationId, lastAssistant.id, FALLBACK_FINAL_TEXT);
         }
       }
+
+      clearStopRequested(conversationId);
     }
   };
 
@@ -1130,7 +1173,7 @@ export const ChatScreen = () => {
     <MessageBubble
       message={item}
       onEdit={handleEdit}
-      isStreaming={isLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
+      isStreaming={isActiveConversationLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
       pendingToolApprovalIds={pendingToolApprovalIds}
       onToolApprovalDecision={resolveToolApproval}
       onRetryAssistant={
@@ -1141,7 +1184,7 @@ export const ChatScreen = () => {
     />
   ), [
     handleRetryAssistant,
-    isLoading,
+    isActiveConversationLoading,
     lastAssistantMessageId,
     pendingToolApprovalIds,
     resolveToolApproval,
@@ -1218,7 +1261,7 @@ export const ChatScreen = () => {
                 ref={flatListRef}
                 data={displayedMessages}
                 keyExtractor={item => item.id}
-                extraData={{ lastAssistantMessageId, isLoading }}
+                extraData={{ lastAssistantMessageId, isLoading: isActiveConversationLoading }}
                 initialNumToRender={10}
                 maxToRenderPerBatch={8}
                 updateCellsBatchingPeriod={50}
@@ -1248,7 +1291,7 @@ export const ChatScreen = () => {
                 ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
-                  if (isLoading && !userScrolledAwayRef.current) {
+                  if (isActiveConversationLoading && !userScrolledAwayRef.current) {
                     flatListRef.current?.scrollToEnd({ animated: true });
                   }
                 }}
@@ -1267,8 +1310,23 @@ export const ChatScreen = () => {
         <View style={{ zIndex: 1 }}>
           <Input
             onSend={handleSend}
-            isLoading={isLoading}
+            isLoading={isActiveConversationLoading}
             onStop={handleStop}
+            value={editingMessageId
+              ? undefined
+              : activeConversationId
+                ? activeConversationDraft
+                : newChatDraft}
+            onChangeText={(nextText) => {
+              if (editingMessageId) {
+                return;
+              }
+              if (activeConversationId) {
+                setConversationDraft(activeConversationId, nextText);
+                return;
+              }
+              setNewChatDraft(nextText);
+            }}
             initialValue={editingContent}
             isEditing={!!editingMessageId}
             onCancelEdit={() => {

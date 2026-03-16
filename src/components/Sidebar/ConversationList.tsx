@@ -11,6 +11,7 @@ import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageSquare, PlusCircle, Search, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
 import { useChatStore } from '../../store/useChatStore';
+import { useChatDraftStore } from '../../store/useChatDraftStore';
 import { useAppTheme } from '../../theme/useAppTheme';
 import * as Haptics from 'expo-haptics';
 import {
@@ -67,6 +68,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const activeId = useChatStore(state => state.activeConversationId);
   const setActive = useChatStore(state => state.setActiveConversation);
   const deleteConversation = useChatStore(state => state.deleteConversation);
+  const clearConversationDraft = useChatDraftStore(state => state.clearDraft);
   const newChatLabel = getSidebarNewChatCtaLabel();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -96,6 +98,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
     e.stopPropagation();
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     deleteConversation(id);
+    clearConversationDraft(id);
   };
 
   return (
