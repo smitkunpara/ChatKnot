@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Hammer } from 'lucide-react-native';
 import { ToolCall as ToolCallType } from '../../types';
-import { useAppTheme } from '../../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 
 interface ToolCallProps {
   toolCall: ToolCallType;
@@ -118,7 +118,7 @@ export const ToolCall: React.FC<ToolCallProps> = ({
   );
 };
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       marginVertical: 4,

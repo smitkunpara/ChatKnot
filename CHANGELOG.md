@@ -5,7 +5,7 @@ All notable changes to ChatKnot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-03-15
+## [0.3.0] - 2026-03-17
 
 ### Added
 - **Mode System Foundation** — Added first-class Mode entities with store CRUD support, persistence, and migration coverage for existing installations.
@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Assistant Persistence Timing** — Assistant streaming chunks are no longer persisted incrementally; assistant messages are committed to storage only when the response completes or the user stops generation.
 - **Per-Conversation Runtime Loading State** — Streaming/loading state now tracks each conversation independently, enabling concurrent chat sessions without cross-chat loading UI bleed.
 - **Hidden-Screen Streaming Strategy** — Streaming continues for non-visible chats in runtime memory while UI rendering remains scoped to the currently visible chat screen for smoother navigation performance.
+- **Style System Refactor** — Migrated all component style creators to use the `AppPalette` type for unified theme token enforcement and better type safety.
+- **Settings Store Hardening** — Fixed `replaceAllSettings` and improved `partialize` logic in `useSettingsStore` to ensure safer state persistence and hydration.
+- **Provider Instance Management** — Added cache eviction to `ProviderFactory` (MAX_CACHE_SIZE = 20) to prevent memory leaks from long-running AI sessions.
 
 ### Fixed
 - **Hiding UI During Tools** — Typing cursor and copy buttons are now intelligently hidden while the AI is executing tools.
@@ -53,12 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Realtime Streaming Regression** — Restored immediate visible chunk updates in chat so streamed text appears progressively again.
 - **Cross-Chat Stop Button Leakage** — Fixed the composer showing a Stop button in other chats when only one conversation is actively generating.
 - **Tool Approval Cross-Chat Interference** — Scoped pending inline tool approvals by conversation to avoid stop/cleanup side effects across simultaneous chat runs.
+- **StreamingCursor Animation Leak** — Fixed a memory leak in `MessageBubble.tsx` by adding a mandatory cleanup function to the `StreamingCursor` loop.
+- **OpenAPI Parameter Pollution** — Refined `McpClient.ts` to correctly distinguish between path and body parameters, preventing path variables from leaking into request bodies.
+- **Legacy Conversation Timestamps** — Added migration logic to populate missing `createdAt` fields in existing conversations using their `updatedAt` or current time.
+- **Ineffective Sanitization Cache** — Removed a `WeakMap` cache in `requestMessageSanitizer.ts` that was prone to memory leaks and provided no performance benefit.
+- **Stale Settings References** — Removed redundant `saveModeEditorRef` assignment and cleaned up unused imports/styles in `Input.tsx` and `ConversationList.tsx`.
 
 ### Performance
 - **Base64 Hydration Caching** — Added an in-memory cache for base64-encoded attachments.
 - **Provider Instance Caching** — Optimized AI service instantiation.
 - **Runtime-Only Streaming State** — Moved live assistant streaming state to a non-persisted runtime store to avoid expensive per-chunk persistence writes.
 - **Cached MCP Tool Registry** — Optimized tool-calling overhead.
+- **App Startup Memoization** — Memoized `activeMode` and `activeMcpServers` in `App.tsx` to eliminate redundant MCP reconnections during UI state changes.
+- **Message List Memoization** — Optimized `displayedMessages` in `ChatScreen.tsx` to depend strictly on the message array, significantly reducing re-renders in long conversations.
 
 
 ## [0.2.3] - 2026-03-06

@@ -263,7 +263,9 @@ export async function runStartupHealthCheck(
   }
 
   // Phase 2: Check AI providers
-  const enabledProviders = providers.filter(p => p.enabled && p.apiKey);
+  const enabledProviders = providers.filter(
+    (p) => p.enabled && ((p.apiKey && p.apiKey.trim()) || p.apiKeyRef) && p.baseUrl?.trim()
+  );
   if (enabledProviders.length > 0) {
     onProgress('checking-ai', `Verifying ${enabledProviders.length} AI endpoint${enabledProviders.length > 1 ? 's' : ''}...`);
 
@@ -399,11 +401,17 @@ export function applyHealthCheckReport(
       [...prevModels].some(m => !currentModelSet.has(m));
 
     // Check if capabilities need updating
-    const hasNewCapabilities = aiResult.capabilities && Object.keys(aiResult.capabilities).length > 0;
-    const hadCapabilities = provider.modelCapabilities && Object.keys(provider.modelCapabilities).length > 0;
-    const needsCapabilityUpdate = hasNewCapabilities && !hadCapabilities;
+    const nextCapabilities = Object.fromEntries(
+      Object.entries({
+        ...(provider.modelCapabilities || {}),
+        ...(aiResult.capabilities || {}),
+      }).filter(([model]) => currentModelSet.has(model))
+    );
 
-    if (!hasModelChange && !needsCapabilityUpdate) continue;
+    const capabilityChanged =
+      JSON.stringify(provider.modelCapabilities || {}) !== JSON.stringify(nextCapabilities);
+
+    if (!hasModelChange && !capabilityChanged) continue;
 
     // New models are hidden by default (user must explicitly make them visible)
     const hiddenModels = new Set(provider.hiddenModels || []);
@@ -427,15 +435,13 @@ export function applyHealthCheckReport(
       }
     }
 
-    const mergedCapabilities = {
-      ...(provider.modelCapabilities || {}),
-      ...(aiResult.capabilities || {}),
-    };
+    const nextModelCapabilities =
+      Object.keys(nextCapabilities).length > 0 ? nextCapabilities : undefined;
 
     updateProvider({
       ...provider,
       availableModels: currentModels,
-      modelCapabilities: Object.keys(mergedCapabilities).length > 0 ? mergedCapabilities : provider.modelCapabilities,
+      modelCapabilities: nextModelCapabilities,
       hiddenModels: Array.from(hiddenModels),
     });
   }

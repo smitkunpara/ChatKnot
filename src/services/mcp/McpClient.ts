@@ -75,7 +75,9 @@ export class McpClient {
           headers: this.getAuthHeaders(),
         });
 
-        this.eventSource.addEventListener('open', () => { });
+        this.eventSource.addEventListener('open', () => {
+          // Connection established, waiting for endpoint event
+        });
 
         this.eventSource.addEventListener('endpoint' as any, (event: any) => {
           try {
@@ -232,10 +234,10 @@ export class McpClient {
   }
 
   private async callOpenApiTool(name: string, args: any): Promise<any> {
-    const tool = this.tools.find(t => t.name === name) as any;
+    const tool = this.tools.find(t => t.name === name);
     if (!tool || !tool._meta) throw new Error(`Tool ${name} not found or invalid`);
 
-    const { path, method, baseUrl, securityHeaders = [] } = tool._meta as OpenApiToolMeta;
+    const { path, method, baseUrl, securityHeaders = [] } = tool._meta;
     const missingHeaders = securityHeaders.filter((headerName: string) => !this.hasConfiguredHeader(headerName));
     if (missingHeaders.length > 0) {
       throw new Error(
@@ -262,8 +264,16 @@ export class McpClient {
       }
     };
 
+    const bodyArgs = { ...args };
+
     if (method.toLowerCase() !== 'get') {
-      options.body = JSON.stringify(args);
+      // Remove path params from body
+      Object.keys(args).forEach(key => {
+        if (path.includes(`{${key}}`)) {
+          delete bodyArgs[key];
+        }
+      });
+      options.body = JSON.stringify(bodyArgs);
     } else {
       // Add remaining args as query params for GET
       const query = new URLSearchParams();

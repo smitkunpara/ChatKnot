@@ -1,5 +1,5 @@
 const NON_TEXT_ID_PATTERN =
-  /(embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator|vision-preview|image)/i;
+  /^(embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator)/i;
 
 const toStringArray = (value: any): string[] => {
   if (!Array.isArray(value)) return [];

@@ -3,6 +3,7 @@ import { OpenAiService } from './OpenAiService';
 
 export class ProviderFactory {
   private static instanceCache = new Map<string, OpenAiService>();
+  private static readonly MAX_CACHE_SIZE = 20;
 
   static create(config: LlmProviderConfig): OpenAiService {
     // Generate a cache key based on the provider configuration
@@ -10,6 +11,12 @@ export class ProviderFactory {
     
     if (this.instanceCache.has(cacheKey)) {
       return this.instanceCache.get(cacheKey)!;
+    }
+
+    // Evict oldest entries if cache grows too large
+    if (this.instanceCache.size >= this.MAX_CACHE_SIZE) {
+      const firstKey = this.instanceCache.keys().next().value;
+      if (firstKey) this.instanceCache.delete(firstKey);
     }
 
     let service: OpenAiService;

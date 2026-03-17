@@ -30,8 +30,17 @@ This major release introduces the **Mode System**, a powerful way to organize yo
 - **Import** treats anything not in the exported file (models/tools discovered afterwards) as hidden/disabled by default, matching the safe-defaults behaviour above.
 
 ### 🔒 Security & Performance
-- **Caching**: Added base64 hydration and provider instance caching to reduce latency.
-- **Stream Throttling**: Smoother rendering during high-speed AI output.
+- **App Startup Optimization**: Memoized core state (modes and MCP overrides) in the root `App` component to eliminate redundant service reconnections and re-initializations during navigation.
+- **Enhanced Caching**: 
+    - Added base64 hydration and provider instance caching to reduce UI jitter and latency.
+    - Implemented a smart cache eviction policy in the `ProviderFactory` to manage memory usage during long-running sessions.
+- **Efficient Message Rendering**: Optimized internal message list memoization, ensuring the chat UI remains responsive even in conversations with hundreds of messages.
+- **Resource Cleanup**: Removed ineffective background caches and fixed animation leaks in the streaming UI to ensure long-term stability and battery efficiency.
+
+### 🛠️ Architecture & Type Safety
+- **Type-Safe Styles**: Migrated the entire UI style system to use `AppPalette`, ensuring theme consistency and preventing common runtime styling errors.
+- **Improved Persistence**: Refined the settings storage logic for better reliability and added migration support to ensure old conversations gain modern features like precise creation timestamps.
+- **Robust MCP Integration**: Fixed OpenAPI parameter handling to prevent request payload pollution and added detailed SSE connection state handling.
 
 ### 💬 Streaming & MCP UX Refinements
 - **Realtime Visible Streaming Restored**: When the user is on the active chat screen, chunks now render immediately as they arrive for true progressive typing feedback.

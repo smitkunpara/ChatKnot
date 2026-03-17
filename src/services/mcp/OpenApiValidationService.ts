@@ -162,8 +162,8 @@ export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
         name,
         description: operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
         inputSchema,
-        _meta: { path, method, baseUrl: spec?.servers?.[0]?.url, securityHeaders } as OpenApiToolMeta,
-      } as any);
+        _meta: { path, method, baseUrl: spec?.servers?.[0]?.url, securityHeaders },
+      });
     });
   });
 

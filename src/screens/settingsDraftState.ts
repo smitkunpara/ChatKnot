@@ -26,6 +26,7 @@ export interface McpServerDraft {
   allowedTools: string[];
   autoApprovedTools: string[];
   headers: McpServerHeaderDraft[];
+  token?: string;
 }
 
 export interface McpServerHeaderDraft {
@@ -133,6 +134,7 @@ export const beginServerDraft = (
       allowedTools: [...(server.allowedTools || [])],
       autoApprovedTools: [...(server.autoApprovedTools || [])],
       headers: getHeaderDrafts(server.headers),
+      token: server.token,
     },
   };
 };
@@ -183,28 +185,6 @@ const draftToHeaders = (draft: McpServerDraft): Record<string, string> => {
   return headers;
 };
 
-export const saveServerDraft = (
-  drafts: McpServerDraftMap,
-  server: McpServerConfig,
-  commit: (server: McpServerConfig) => void
-): McpServerDraftMap => {
-  const draft = drafts[server.id];
-  if (!draft) {
-    return drafts;
-  }
-
-  commit({
-    ...server,
-    name: draft.name,
-    url: draft.url,
-    enabled: draft.enabled,
-    allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
-    autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
-    headers: draftToHeaders(draft),
-  });
-
-  return discardServerDraft(drafts, server.id);
-};
 
 export interface SaveServerDraftWithValidationInput {
   drafts: McpServerDraftMap;
@@ -244,6 +224,7 @@ export const saveServerDraftWithValidation = async (
     allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
     autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
     headers: draftToHeaders(draft),
+    token: draft.token,
   };
 
   if (!nextServer.enabled) {
@@ -282,13 +263,6 @@ export const saveServerDraftWithValidation = async (
   };
 };
 
-export const clearAllDrafts = <TDraft extends Record<string, unknown>>(drafts: TDraft): TDraft => {
-  if (Object.keys(drafts).length === 0) {
-    return drafts;
-  }
-
-  return {} as TDraft;
-};
 
 export interface ModeDraft {
   name: string;

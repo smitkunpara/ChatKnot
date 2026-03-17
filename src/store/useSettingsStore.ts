@@ -335,17 +335,19 @@ export const useSettingsStore = create<SettingsState>()(
 
           const nextLastUsedModel =
             settings.lastUsedModel &&
-              typeof settings.lastUsedModel.providerId === 'string' &&
-              typeof settings.lastUsedModel.model === 'string'
+            typeof settings.lastUsedModel.providerId === 'string' &&
+            typeof settings.lastUsedModel.model === 'string'
               ? settings.lastUsedModel
               : null;
 
           const nextModes = Array.isArray(settings.modes)
-            ? sortModes(settings.modes.map((m: Mode) => ({
-                ...m,
-                name: m.name.slice(0, MAX_MODE_NAME_LENGTH),
-                mcpServerOverrides: m.mcpServerOverrides ?? {},
-              })))
+            ? sortModes(
+                settings.modes.map((m: Mode) => ({
+                  ...m,
+                  name: m.name.slice(0, MAX_MODE_NAME_LENGTH),
+                  mcpServerOverrides: m.mcpServerOverrides ?? {},
+                }))
+              )
             : [];
 
           const nextMcpServers = Array.isArray(settings.mcpServers)
@@ -370,6 +372,14 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'settings-storage',
       storage: createJSONStorage(() => settingsPersistStorage),
+      partialize: (state) => ({
+        providers: state.providers,
+        mcpServers: state.mcpServers,
+        modes: state.modes,
+        lastUsedModeId: state.lastUsedModeId,
+        theme: state.theme,
+        lastUsedModel: state.lastUsedModel,
+      }),
     }
   )
 );

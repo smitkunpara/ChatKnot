@@ -41,7 +41,7 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       conversations: [],
       activeConversationId: null,
 
@@ -196,6 +196,7 @@ export const useChatStore = create<ChatState>()(
                 }
                 return m;
               }),
+              updatedAt: Date.now(),
             };
           }
           return c;
@@ -225,6 +226,7 @@ export const useChatStore = create<ChatState>()(
                 }
                 return m;
               }),
+              updatedAt: Date.now(),
             };
           }
           return c;
@@ -251,6 +253,7 @@ export const useChatStore = create<ChatState>()(
           ? persistedState.conversations.map((c: any) => ({
             ...c,
             modeId: c.modeId || '', // UI will handle defaulting to active mode if empty
+            createdAt: c.createdAt || c.updatedAt || Date.now(),
           }))
           : [];
 

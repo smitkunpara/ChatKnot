@@ -44,7 +44,7 @@ export interface Conversation {
   modeId: string;
   modelOverride?: string;
   systemPrompt: string;
-  createdAt?: number;
+  createdAt: number;
   updatedAt: number;
 }
 
@@ -71,6 +71,12 @@ export interface McpToolSchema {
   name: string;
   description?: string;
   inputSchema: any;
+  _meta?: {
+    path: string;
+    method: string;
+    baseUrl?: string;
+    securityHeaders?: string[];
+  };
 }
 
 export type OpenApiValidationField = 'url' | 'headers' | 'spec' | 'network';

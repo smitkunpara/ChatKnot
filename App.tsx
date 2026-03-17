@@ -1,10 +1,12 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { useSettingsStore } from './src/store/useSettingsStore';
+import { useChatStore } from './src/store/useChatStore';
+import { useChatDraftStore } from './src/store/useChatDraftStore';
 import { useChatRuntimeStore } from './src/store/useChatRuntimeStore';
 import { McpManager } from './src/services/mcp/McpManager';
 import { useAppTheme } from './src/theme/useAppTheme';
@@ -14,7 +16,6 @@ import { ChatBackgroundTask } from './src/services/chat/ChatBackgroundTask';
 import {
   runStartupHealthCheck,
   applyHealthCheckReport,
-  HealthCheckPhase,
 } from './src/services/startup/StartupHealthCheck';
 import { mergeServersWithOverrides } from './src/utils/mcpMerge';
 
@@ -22,8 +23,14 @@ export default function App() {
   const modes = useSettingsStore(state => state.modes);
   const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
   const globalMcpServers = useSettingsStore(state => state.mcpServers);
-  const activeMode = modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
-  const activeMcpServers = mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {});
+  const activeMode = useMemo(
+    () => modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null,
+    [modes, lastUsedModeId]
+  );
+  const activeMcpServers = useMemo(
+    () => mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {}),
+    [globalMcpServers, activeMode?.mcpServerOverrides]
+  );
   const { isDark, colors } = useAppTheme();
   const isChatStreaming = useChatRuntimeStore(state => state.isLoading);
   const [isReady, setReady] = useState(false);
@@ -33,13 +40,6 @@ export default function App() {
   const [healthCheckDone, setHealthCheckDone] = useState(false);
   const backgroundTaskIdRef = useRef<number | null>(null);
 
-  const onHealthProgress = useCallback(
-    (phase: HealthCheckPhase, message: string, progress?: number) => {
-      setLoadingStatus(message);
-      if (progress != null) setLoadingProgress(progress);
-    },
-    []
-  );
 
   useEffect(() => {
     let isMounted = true;
@@ -58,9 +58,13 @@ export default function App() {
       }
 
       try {
-        await useSettingsStore.persist.rehydrate();
+        await Promise.allSettled([
+          useSettingsStore.persist.rehydrate(),
+          useChatStore.persist.rehydrate(),
+          useChatDraftStore.persist.rehydrate(),
+        ]);
       } catch (error) {
-        console.warn('Settings rehydration after bootstrap failed. Continuing app startup.', error);
+        console.warn('Store rehydration after bootstrap failed. Continuing app startup.', error);
       }
 
       if (!isMounted) return;
@@ -86,7 +90,7 @@ export default function App() {
           // Apply MCP results back to global servers
           applyHealthCheckReport(
             report,
-            servers,
+            bootGlobalServers,
             providers,
             updateMcpServer,
             updateProvider,

@@ -49,18 +49,10 @@ export const resolveModelCapabilities = (
   };
 };
 
-const sanitizationCache = new WeakMap<Message[], { capsHash: string; result: Message[] }>();
-
 export const sanitizeMessagesForRequest = (
   messages: Message[],
   capabilities: ResolvedModelCapabilities
 ): Message[] => {
-  const capsHash = `${capabilities.vision}:${capabilities.fileInput}:${capabilities.tools}`;
-  
-  const cached = sanitizationCache.get(messages);
-  if (cached && cached.capsHash === capsHash) {
-    return cached.result;
-  }
 
   const baseMessages = capabilities.tools
     ? messages
@@ -106,6 +98,5 @@ export const sanitizeMessagesForRequest = (
     return changed ? nextMessage : message;
   });
 
-  sanitizationCache.set(messages, { capsHash, result });
   return result;
 };

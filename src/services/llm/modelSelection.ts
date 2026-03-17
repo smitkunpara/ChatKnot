@@ -26,7 +26,10 @@ export const CHAT_NO_MODEL_AVAILABLE_MESSAGE =
 const normalize = (value: string | undefined | null): string => (value || '').trim();
 
 const hasProviderSetup = (provider: LlmProviderConfig): boolean => {
-  return provider.enabled && normalize(provider.apiKey).length > 0 && normalize(provider.baseUrl).length > 0;
+  const hasApiCredential =
+    normalize(provider.apiKey).length > 0 || !!provider.apiKeyRef;
+
+  return provider.enabled && hasApiCredential && normalize(provider.baseUrl).length > 0;
 };
 
 const getProviderModelCandidates = (provider: LlmProviderConfig): string[] => {
@@ -34,7 +37,7 @@ const getProviderModelCandidates = (provider: LlmProviderConfig): string[] => {
     return provider.availableModels;
   }
 
-  return [];
+  return provider.model ? [provider.model] : [];
 };
 
 export const getProviderVisibleModels = (provider: LlmProviderConfig): string[] => {

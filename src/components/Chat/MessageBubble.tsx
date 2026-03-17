@@ -5,7 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Copy, Edit2, FileText, RotateCcw } from 'lucide-react-native';
 import { Message } from '../../types';
-import { useAppTheme } from '../../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
 import { ThinkingBlock } from './ThinkingBlock';
 
@@ -65,12 +65,14 @@ const StreamingCursor = ({ color }: { color: string }) => {
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, { toValue: 0, duration: 420, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 1, duration: 420, useNativeDriver: true }),
       ])
-    ).start();
+    );
+    animation.start();
+    return () => animation.stop();
   }, [opacity]);
 
   return <Animated.View style={[baseStyles.cursor, { opacity, backgroundColor: color }]} />;
@@ -149,7 +151,6 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   );
 
   // Derive whether there's any visible text content (non-think) to display
-  const hasVisibleText = contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0);
   const showCopyAction = !isStreaming && hasText;
   const showRetryAction = !isUser && !isStreaming && !!onRetryAssistant;
   const showEditAction = isUser && !!onEdit;
@@ -298,7 +299,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
 
 export const MessageBubble = React.memo(MessageBubbleComponent);
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       marginVertical: 6,
@@ -433,7 +434,7 @@ const baseStyles = StyleSheet.create({
   },
 });
 
-export const createMarkdownStyles = (colors: any) => ({
+export const createMarkdownStyles = (colors: AppPalette) => ({
   body: {
     color: colors.text,
     fontSize: 15,
@@ -523,7 +524,7 @@ export const createMarkdownStyles = (colors: any) => ({
   },
 });
 
-export const createTableRenderRules = (colors: any) => ({
+export const createTableRenderRules = (colors: AppPalette) => ({
   table: (node: any, children: any) => (
     <ScrollView
       key={node.key}

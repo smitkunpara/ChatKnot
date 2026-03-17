@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageSquare, PlusCircle, Search, Settings as SettingsIcon, Trash2 } from 'lucide-react-native';
 import { useChatStore } from '../../store/useChatStore';
 import { useChatDraftStore } from '../../store/useChatDraftStore';
-import { useAppTheme } from '../../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import * as Haptics from 'expo-haptics';
 import {
   getSidebarConversationLabel,
@@ -94,8 +94,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
     props.navigation.closeDrawer();
   };
 
-  const handleDelete = (id: string, e: any) => {
-    e.stopPropagation();
+  const handleDelete = (id: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     deleteConversation(id);
     clearConversationDraft(id);
@@ -153,7 +152,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
                 {getSidebarConversationLabel(item)}
               </Text>
             </View>
-            <TouchableOpacity onPress={(e) => handleDelete(item.id, e)} style={styles.deleteBtn} accessibilityLabel="Delete conversation" accessibilityRole="button">
+            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteBtn} accessibilityLabel="Delete conversation" accessibilityRole="button">
               <Trash2 size={15} color={colors.textTertiary} />
             </TouchableOpacity>
           </TouchableOpacity>
@@ -170,7 +169,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   );
 };
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       flex: 1,

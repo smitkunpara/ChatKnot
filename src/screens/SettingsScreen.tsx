@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eye, EyeOff, Pencil, Plus, Save, Search, Trash, X } from 'lucide-react-native';
+import { Trash2, Plus, Info, ChevronRight, X, Eye, EyeOff, Check, AlertCircle } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -25,7 +25,7 @@ import { LlmProviderConfig, McpServerConfig, Mode, ModelCapabilities } from '../
 import { OpenAiService } from '../services/llm/OpenAiService';
 import { DEFAULT_OPENAI_BASE_URL } from '../constants/api';
 import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
-import { useAppTheme } from '../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
 import { McpManager, McpServerRuntimeState } from '../services/mcp/McpManager';
 import { getProviderVisibleModels } from '../services/llm/modelSelection';
@@ -114,6 +114,7 @@ export const SettingsScreen = () => {
     setDefaultMode,
     setTheme,
     replaceAllSettings,
+    setModelVisibility,
   } = useSettingsStore();
 
   const [serverValidationErrors, setServerValidationErrors] = useState<Record<string, string>>({});
@@ -148,8 +149,15 @@ export const SettingsScreen = () => {
   } | null>(null);
   // Tracks which MCP servers are expanded in the mode editor
   const [expandedMcpInMode, setExpandedMcpInMode] = useState<Record<string, boolean>>({});
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
 
-  const closeAllEditModes = React.useCallback(() => {
+
+  const closeAllEditModes = useCallback(() => {
+    setEditingProviderId(null);
+    setEditingServerId(null);
+    setEditingModeId(null);
     setEditingProviders({});
     setEditingServers({});
     setProviderDrafts({});
@@ -161,6 +169,8 @@ export const SettingsScreen = () => {
     setModelSearch('');
     setModeDrafts({});
     setExpandedMcpInMode({});
+    setServerError(null);
+    setFetchError(null);
   }, []);
 
   useEffect(() => {
@@ -263,89 +273,36 @@ export const SettingsScreen = () => {
     });
   };
 
-  const fetchModels = async (
-    provider: LlmProviderConfig,
-    options: {
-      persistProvider?: boolean;
-    } = {}
-  ) => {
-    if (!provider.apiKey || !provider.baseUrl) return;
+  const fetchProviderModels = useCallback(async (providerId: string) => {
+    const provider = providers.find((p) => p.id === providerId);
+    if (!provider) return;
 
-    const persistProvider = options.persistProvider ?? false;
-    setIsFetchingModels(provider.id);
+    setLoadingModels(true);
+    setFetchError(null);
+
     try {
+      // Use clean provider config (without potentially buggy draft edits) for model fetch
       const service = new OpenAiService(provider);
       const { models, capabilities } = await service.listModelsWithCapabilities();
-      setDraftAvailableModels(prev => ({
-        ...prev,
-        [provider.id]: models,
-      }));
-
-      // Always store capabilities in draft state so they're available in the model picker
-      if (Object.keys(capabilities).length > 0) {
-        setDraftModelCapabilities(prev => ({
-          ...prev,
-          [provider.id]: capabilities,
-        }));
-      }
-
-      // Always persist capabilities to the provider in the store,
-      // even when persistProvider is false (capabilities are metadata, not user prefs)
-      const mergedCapabilities = {
-        ...(provider.modelCapabilities || {}),
-        ...capabilities,
+      
+      const nextProvider = {
+        ...provider,
+        availableModels: models,
+        modelCapabilities: capabilities,
       };
-      if (Object.keys(mergedCapabilities).length > 0) {
-        updateProvider({
-          ...provider,
-          modelCapabilities: mergedCapabilities,
-        });
+      updateProvider(nextProvider);
+      
+      // Update draft if it exists to include new available models
+      if (providerDrafts[providerId]) {
+        // No-op update to trigger re-render of model list in picker
+        setProviderDrafts(prev => ({ ...prev }));
       }
-
-      if (models.length > 0) {
-        if (persistProvider) {
-          const normalizedHidden = (provider.hiddenModels || []).filter(modelId => models.includes(modelId));
-          const hiddenModels =
-            normalizedHidden.length > 0 || !!provider.model
-              ? normalizedHidden
-              : [...models];
-
-          const nextProvider = {
-            ...provider,
-            availableModels: models,
-            modelCapabilities: mergedCapabilities,
-            hiddenModels,
-          };
-          const visibleModels = getProviderVisibleModels(nextProvider);
-          const selectedModel =
-            provider.model && visibleModels.includes(provider.model)
-              ? provider.model
-              : visibleModels[0] || '';
-          updateProvider({
-            ...nextProvider,
-            model: selectedModel,
-          });
-        }
-      } else {
-        if (persistProvider) {
-          updateProvider({
-            ...provider,
-            availableModels: [],
-            model: '',
-          });
-        }
-
-        Alert.alert(
-          'No Text Models Found',
-          'No text-output models were found for this provider. Verify the endpoint and model availability.'
-        );
-      }
-    } catch (e: any) {
-      Alert.alert('Model fetch failed', e.message || 'Unable to fetch models for this provider.');
+    } catch (err: any) {
+      setFetchError(err.message || 'Failed to fetch models');
     } finally {
-      setIsFetchingModels(null);
+      setLoadingModels(false);
     }
-  };
+  }, [providers, updateProvider, providerDrafts]);
 
   const activeProviderForPicker = useMemo(
     () => providers.find((provider) => provider.id === activeProviderIdForPicker) || null,
@@ -365,8 +322,8 @@ export const SettingsScreen = () => {
       return [];
     }
 
-    return draftAvailableModels[activeProviderForPicker.id] || activeProviderForPicker.availableModels || [];
-  }, [activeProviderForPicker, draftAvailableModels]);
+    return activeProviderForPicker.availableModels || [];
+  }, [activeProviderForPicker]);
 
   const beginProviderEdit = (provider: LlmProviderConfig) => {
     setProviderDrafts(prev => beginProviderDraft(prev, provider));
@@ -601,7 +558,7 @@ export const SettingsScreen = () => {
     setModelPickerVisible(true);
 
     // Always fetch fresh data when the model picker opens
-    fetchModels(provider, { persistProvider: false });
+    void fetchProviderModels(provider.id);
   };
 
   // ─── Mode helpers ───────────────────────────
@@ -668,7 +625,6 @@ export const SettingsScreen = () => {
     setIsCreatingNew(false);
     setActiveView('modes');
   };
-  saveModeEditorRef.current = saveModeEditor;
 
   const cancelModeEditor = () => {
     if (editingModeId) {
@@ -682,11 +638,12 @@ export const SettingsScreen = () => {
     setActiveView('modes');
   };
 
-  const hasModeUnsavedChanges = (): boolean => {
+  const hasModeUnsavedChanges = useCallback((): boolean => {
     if (!editingMode || !editingModeDraft) return false;
     return editingModeDraft.name !== editingMode.name ||
-           editingModeDraft.systemPrompt !== editingMode.systemPrompt;
-  };
+           editingModeDraft.systemPrompt !== editingMode.systemPrompt ||
+           JSON.stringify(editingModeDraft.mcpServerOverrides) !== JSON.stringify(editingMode.mcpServerOverrides);
+  }, [editingMode, editingModeDraft]);
 
   const promptModeUnsavedChanges = () => {
     if (!hasModeUnsavedChanges() && !isCreatingNew) {
@@ -717,8 +674,10 @@ export const SettingsScreen = () => {
   };
 
   const saveProviderEditor = () => {
-    if (editingProvider) {
-      saveProviderEdit(editingProvider);
+    if (editingProviderId && providerDrafts[editingProviderId]) {
+      setProviderDrafts((prev) =>
+        saveProviderDraft(prev, providers.find((p) => p.id === editingProviderId)!, updateProvider)
+      );
     }
     setEditingProviderId(null);
     setIsCreatingNew(false);
@@ -737,17 +696,26 @@ export const SettingsScreen = () => {
     setActiveView('providers');
   };
 
-  const hasProviderUnsavedChanges = (): boolean => {
-    if (!editingProvider || !editingProviderDraft) return false;
-    return editingProviderDraft.name !== editingProvider.name ||
-           editingProviderDraft.baseUrl !== editingProvider.baseUrl ||
-           editingProviderDraft.apiKey !== editingProvider.apiKey ||
-           editingProviderDraft.model !== editingProvider.model ||
-           editingProviderDraft.enabled !== editingProvider.enabled;
-  };
+  const hasProviderUnsavedChanges = useCallback(
+    (providerId: string) => {
+      const draft = providerDrafts[providerId];
+      const original = providers.find((p) => p.id === providerId);
+      if (!draft || !original) return false;
+
+      return (
+        draft.name !== original.name ||
+        draft.baseUrl !== original.baseUrl ||
+        draft.apiKey !== original.apiKey ||
+        draft.model !== original.model ||
+        draft.enabled !== original.enabled ||
+        JSON.stringify(draft.hiddenModels || []) !== JSON.stringify(original.hiddenModels || [])
+      );
+    },
+    [providerDrafts, providers]
+  );
 
   const promptProviderUnsavedChanges = () => {
-    if (!hasProviderUnsavedChanges() && !isCreatingNew) {
+    if (!editingProviderId || (!hasProviderUnsavedChanges(editingProviderId) && !isCreatingNew)) {
       cancelProviderEditor();
       return;
     }
@@ -761,6 +729,7 @@ export const SettingsScreen = () => {
       ],
     });
   };
+  saveProviderEditorRef.current = promptProviderUnsavedChanges;
 
   // ─── MCP Server editor helpers ───────────────────────────
   const editingServer = editingServerId ? mcpServers.find(s => s.id === editingServerId) ?? null : null;
@@ -816,10 +785,10 @@ export const SettingsScreen = () => {
   };
 
   const saveServerEditor = async () => {
-    if (editingServer) {
-      await saveServerEditGlobal(editingServer);
+    if (editingServerId && serverDrafts[editingServerId]) {
+      await saveServerEditGlobal(mcpServers.find((s) => s.id === editingServerId)!);
       // If validation failed, stay on editor
-      if (serverValidationErrors[editingServer.id]) return;
+      if (serverError) return;
     }
     setEditingServerId(null);
     setIsCreatingNew(false);
@@ -838,13 +807,27 @@ export const SettingsScreen = () => {
     setActiveView('mcpServers');
   };
 
-  const hasServerUnsavedChanges = (): boolean => {
-    if (!editingServer || !editingServerDraft) return false;
-    return editingServerDraft.url !== editingServer.url;
-  };
+  const hasServerUnsavedChanges = useCallback(
+    (serverId: string): boolean => {
+      const draft = serverDrafts[serverId];
+      const original = mcpServers.find((s) => s.id === serverId);
+      if (!draft || !original) return false;
+
+      const originalHeaders = original.headers ? Object.entries(original.headers).map(([key, value]) => ({ id: uuid.v4() as string, key, value })) : [];
+
+      return (
+        draft.name !== original.name ||
+        draft.url !== original.url ||
+        draft.enabled !== original.enabled ||
+        draft.token !== original.token ||
+        JSON.stringify(draft.headers) !== JSON.stringify(originalHeaders)
+      );
+    },
+    [serverDrafts, mcpServers]
+  );
 
   const promptServerUnsavedChanges = () => {
-    if (!hasServerUnsavedChanges() && !isCreatingNew) {
+    if (!editingServerId || (!hasServerUnsavedChanges(editingServerId) && !isCreatingNew)) {
       cancelServerEditor();
       return;
     }
@@ -858,7 +841,6 @@ export const SettingsScreen = () => {
       ],
     });
   };
-  saveProviderEditorRef.current = promptProviderUnsavedChanges;
   saveServerEditorRef.current = promptServerUnsavedChanges;
 
   const handleAddMcpGlobal = () => {
@@ -882,9 +864,10 @@ export const SettingsScreen = () => {
     removeMcpServer(serverId);
   };
 
-  const saveServerEditGlobal = async (server: McpServerConfig) => {
+  const saveServerEditGlobal = useCallback(async (server: McpServerConfig) => {
     setValidatingServerId(server.id);
     clearServerValidationError(server.id);
+    setServerError(null);
 
     const result = await saveServerDraftWithValidation({
       drafts: serverDrafts,
@@ -892,23 +875,16 @@ export const SettingsScreen = () => {
       commit: updateMcpServer,
     });
 
-    const err = result.error;
-    if (err || result.errorMessage) {
-      setServerValidationErrors(prev => ({
-        ...prev,
-        [server.id]: result.errorMessage || (err ? formatOpenApiValidationError(err) : 'Unknown validation error'),
-      }));
-      setValidatingServerId(null);
-      return;
+    if (result.error) {
+      setServerError(result.errorMessage || (result.error ? formatOpenApiValidationError(result.error) : 'Unknown validation error'));
+    } else {
+      setServerDrafts(result.drafts);
+      setServerError(null);
+      setActiveView('mcpServers');
+      setEditingServerId(null);
     }
-
-    setServerDrafts(result.drafts);
-    setEditingServers(prev => ({
-      ...prev,
-      [server.id]: false,
-    }));
     setValidatingServerId(null);
-  };
+  }, [serverDrafts, updateMcpServer]);
 
   const activeCategory = SETTINGS_CATEGORIES.find(category => category.key === activeView);
   const inCategoryView = activeView !== 'index';
@@ -1141,7 +1117,7 @@ export const SettingsScreen = () => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topHeader}>
         <TouchableOpacity onPress={handleHeaderBack} style={styles.backBtn}>
-          <ChevronLeft color={colors.text} size={22} />
+          <ChevronRight color={colors.text} size={22} style={{ transform: [{ rotate: '180deg' }] }} />
           <Text style={styles.title}>{headerTitle}</Text>
         </TouchableOpacity>
       </View>
@@ -1415,9 +1391,9 @@ export const SettingsScreen = () => {
                         onPress={() => setExpandedMcpInMode(prev => ({ ...prev, [server.id]: !isExpanded }))}
                       >
                         {isExpanded ? (
-                          <ChevronUp size={16} color={colors.textTertiary} />
+                          <ChevronRight size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '270deg' }] }} />
                         ) : (
-                          <ChevronDown size={16} color={colors.textTertiary} />
+                          <ChevronRight size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '90deg' }] }} />
                         )}
                       </TouchableOpacity>
                       <Switch
@@ -1484,7 +1460,7 @@ export const SettingsScreen = () => {
 
             <View style={styles.modeEditorActions}>
               <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={saveModeEditor}>
-                <Save size={16} color={colors.onPrimary} />
+                <Plus size={16} color={colors.onPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
                 <Text style={styles.primaryButtonText}>Save</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={cancelModeEditor}>
@@ -1495,7 +1471,7 @@ export const SettingsScreen = () => {
 
             {!editingMode.isDefault ? (
               <TouchableOpacity style={styles.dangerButton} onPress={() => handleRemoveMode(editingMode)}>
-                <Trash size={16} color={colors.danger} />
+                <Trash2 size={16} color={colors.danger} />
                 <Text style={styles.dangerButtonText}>Delete Mode</Text>
               </TouchableOpacity>
             ) : null}
@@ -1566,6 +1542,10 @@ export const SettingsScreen = () => {
                   ? 'Disabled'
                   : 'Connecting...';
 
+          const updateServerDraftLocal = (patch: any) => {
+            setServerDrafts(prev => updateServerDraft(prev, editingServer.id, patch));
+          };
+
           return (
             <>
               <View style={styles.sectionCard}>
@@ -1574,7 +1554,7 @@ export const SettingsScreen = () => {
                   style={styles.input}
                   value={serverDraft?.name ?? editingServer.name}
                   onChangeText={name =>
-                    setServerDrafts(prev => updateServerDraft(prev, editingServer.id, { name }))
+                    updateServerDraftLocal({ name })
                   }
                   placeholder="Server Name"
                   placeholderTextColor={colors.placeholder}
@@ -1588,10 +1568,23 @@ export const SettingsScreen = () => {
                   value={serverDraft?.url ?? editingServer.url}
                   onChangeText={url => {
                     clearServerValidationError(editingServer.id);
-                    setServerDrafts(prev => updateServerDraft(prev, editingServer.id, { url }));
+                    updateServerDraftLocal({ url });
                   }}
                   placeholder="Server URL"
                   placeholderTextColor={colors.placeholder}
+                />
+              </View>
+
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>Secure Token (Optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={serverDraft?.token || ''}
+                  onChangeText={(token) => updateServerDraftLocal({ token })}
+                  placeholder="Bearer token or API key"
+                  placeholderTextColor={colors.placeholder}
+                  secureTextEntry
+                  autoCapitalize="none"
                 />
               </View>
 
@@ -1627,7 +1620,7 @@ export const SettingsScreen = () => {
                       }}
                       style={styles.headerRemoveButton}
                     >
-                      <Trash size={15} color={colors.danger} />
+                      <Trash2 size={15} color={colors.danger} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -1669,8 +1662,8 @@ export const SettingsScreen = () => {
                 </View>
               ) : null}
 
-              {serverValidationErrors[editingServer.id] ? (
-                <Text style={styles.warningText}>{serverValidationErrors[editingServer.id]}</Text>
+              {serverError ? (
+                <Text style={styles.warningText}>{serverError}</Text>
               ) : null}
 
               <View style={styles.modeEditorActions}>
@@ -1682,7 +1675,7 @@ export const SettingsScreen = () => {
                   {validatingServerId === editingServer.id ? (
                     <ActivityIndicator size="small" color={colors.onPrimary} />
                   ) : (
-                    <Save size={16} color={colors.onPrimary} />
+                    <Plus size={16} color={colors.onPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
                   )}
                   <Text style={styles.primaryButtonText}>Save</Text>
                 </TouchableOpacity>
@@ -1711,7 +1704,7 @@ export const SettingsScreen = () => {
                   ],
                 });
               }}>
-                <Trash size={16} color={colors.danger} />
+                <Trash2 size={16} color={colors.danger} />
                 <Text style={styles.dangerButtonText}>Delete Server</Text>
               </TouchableOpacity>
             </>
@@ -1764,7 +1757,6 @@ export const SettingsScreen = () => {
 
         {activeView === 'providerEditor' && editingProvider ? (() => {
           const draft = providerDrafts[editingProvider.id];
-          const draftModels = draftAvailableModels[editingProvider.id];
           const effectiveProvider = draft
             ? {
               ...editingProvider,
@@ -1774,9 +1766,28 @@ export const SettingsScreen = () => {
               model: draft.model,
               hiddenModels: draft.hiddenModels,
               enabled: draft.enabled,
-              availableModels: draftModels || editingProvider.availableModels,
             }
             : editingProvider;
+
+          const updateProviderDraftLocal = (patch: Partial<LlmProviderConfig>) => {
+            setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, patch));
+          };
+
+          const toggleModelVisibilityLocal = (modelId: string) => {
+            if (!draft) return;
+            const hiddenModels = new Set(draft.hiddenModels || []);
+            if (hiddenModels.has(modelId)) {
+              hiddenModels.delete(modelId);
+            } else {
+              hiddenModels.add(modelId);
+            }
+            const nextHidden = Array.from(hiddenModels);
+            const modelCleared = nextHidden.includes(draft.model);
+            updateProviderDraftLocal({
+              hiddenModels: nextHidden,
+              ...(modelCleared ? { model: '' } : {}),
+            });
+          };
 
           return (
             <>
@@ -1786,7 +1797,7 @@ export const SettingsScreen = () => {
                   style={styles.input}
                   value={effectiveProvider.name}
                   onChangeText={value =>
-                    setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, { name: value }))
+                    updateProviderDraftLocal({ name: value })
                   }
                   placeholder="Provider Name"
                   placeholderTextColor={colors.placeholder}
@@ -1801,7 +1812,7 @@ export const SettingsScreen = () => {
                   style={styles.input}
                   value={effectiveProvider.baseUrl}
                   onChangeText={value =>
-                    setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, { baseUrl: value }))
+                    updateProviderDraftLocal({ baseUrl: value })
                   }
                   placeholder="Base URL"
                   placeholderTextColor={colors.placeholder}
@@ -1814,7 +1825,7 @@ export const SettingsScreen = () => {
                   style={styles.input}
                   value={effectiveProvider.apiKey}
                   onChangeText={value =>
-                    setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, { apiKey: value }))
+                    updateProviderDraftLocal({ apiKey: value })
                   }
                   placeholder="API Key"
                   placeholderTextColor={colors.placeholder}
@@ -1839,13 +1850,13 @@ export const SettingsScreen = () => {
                 {isFetchingModels === editingProvider.id ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <ChevronDown size={18} color={colors.textTertiary} />
+                  <ChevronRight size={18} color={colors.textTertiary} style={{ transform: [{ rotate: '90deg' }] }} />
                 )}
               </TouchableOpacity>
 
               <View style={styles.modeEditorActions}>
                 <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={saveProviderEditor}>
-                  <Save size={16} color={colors.onPrimary} />
+                  <Plus size={16} color={colors.onPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
                   <Text style={styles.primaryButtonText}>Save</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={cancelProviderEditor}>
@@ -1873,7 +1884,7 @@ export const SettingsScreen = () => {
                   ],
                 });
               }}>
-                <Trash size={16} color={colors.danger} />
+                <Trash2 size={16} color={colors.danger} />
                 <Text style={styles.dangerButtonText}>Delete Provider</Text>
               </TouchableOpacity>
             </>
@@ -1912,7 +1923,7 @@ export const SettingsScreen = () => {
               </View>
 
               <View style={styles.searchBar}>
-                <Search size={16} color={colors.textTertiary} />
+                <Plus size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '45deg' }] }} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search models..."
@@ -1982,72 +1993,80 @@ export const SettingsScreen = () => {
                   .filter(model => isModelIdLikelyTextOutput(model))
                   .filter(model => model.toLowerCase().includes(modelSearch.toLowerCase()))}
                 keyExtractor={item => item}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.modelRow}
-                    onPress={() => {
-                      if (!activeProviderForPicker || !activeProviderDraftForPicker) return;
+                renderItem={({ item: model }) => {
+                  const isHidden = (activeProviderDraftForPicker?.hiddenModels || []).includes(model);
+                  const draftCaps = draftModelCapabilities[activeProviderForPicker?.id || '']?.[model];
+                  const storedCaps = activeProviderForPicker?.modelCapabilities?.[model];
+                  const tags = getCapabilityTags(draftCaps || storedCaps);
 
-                      const hiddenModels = new Set(activeProviderDraftForPicker.hiddenModels || []);
-                      if (hiddenModels.has(item)) {
-                        hiddenModels.delete(item);
-                      } else {
-                        hiddenModels.add(item);
-                      }
+                  const updateProviderDraftLocal = (patch: Partial<LlmProviderConfig>) => {
+                    if (!activeProviderForPicker) return;
+                    setProviderDrafts(prev => updateProviderDraft(prev, activeProviderForPicker.id, patch));
+                  };
 
-                      const nextHidden = Array.from(hiddenModels);
-                      const modelCleared = nextHidden.includes(activeProviderDraftForPicker.model);
-                      setProviderDrafts(prev =>
-                        updateProviderDraft(prev, activeProviderForPicker.id, {
-                          hiddenModels: nextHidden,
-                          ...(modelCleared ? { model: '' } : {}),
-                        })
-                      );
-                    }}
-                  >
-                    <View style={styles.modelRowTextWrap}>
-                      <Text style={styles.modelRowText}>{item}</Text>
-                      {(() => {
-                        const draftCaps = draftModelCapabilities[activeProviderForPicker?.id || '']?.[item];
-                        const storedCaps = activeProviderForPicker?.modelCapabilities?.[item];
-                        const tags = getCapabilityTags(draftCaps || storedCaps);
-                        return tags.length > 0 ? (
+                  const toggleModelVisibilityLocal = (modelId: string) => {
+                    if (!activeProviderDraftForPicker || !activeProviderForPicker) return;
+
+                    const hiddenModels = new Set(activeProviderDraftForPicker.hiddenModels || []);
+                    if (hiddenModels.has(modelId)) {
+                      hiddenModels.delete(modelId);
+                    } else {
+                      hiddenModels.add(modelId);
+                    }
+
+                    const nextHidden = Array.from(hiddenModels);
+                    const modelCleared = nextHidden.includes(activeProviderDraftForPicker.model);
+                    updateProviderDraftLocal({
+                      hiddenModels: nextHidden,
+                      ...(modelCleared ? { model: '' } : {}),
+                    });
+                  };
+
+                  return (
+                    <TouchableOpacity
+                      style={styles.modelItem}
+                      onPress={() => updateProviderDraftLocal({ model })}
+                    >
+                      <View style={styles.modelItemMain}>
+                        <Text style={[
+                          styles.modelName,
+                          activeProviderDraftForPicker?.model === model && styles.modelNameSelected
+                        ]}>{model}</Text>
+                        {activeProviderDraftForPicker?.model === model && (
+                          <Check size={16} color={colors.primary} />
+                        )}
+                        {tags.length > 0 ? (
                           <Text style={styles.modelRowCaps}>
                             ({tags.join(', ')})
                           </Text>
-                        ) : null;
-                      })()}
-                    </View>
-                    <View style={styles.modelRowActions}>
+                        ) : null}
+                      </View>
                       <TouchableOpacity
-                        style={styles.modelEyeButton}
-                        onPress={() => {
-                          if (!activeProviderForPicker || !activeProviderDraftForPicker) return;
-
-                          const hiddenModels = new Set(activeProviderDraftForPicker.hiddenModels || []);
-                          if (hiddenModels.has(item)) {
-                            hiddenModels.delete(item);
-                          } else {
-                            hiddenModels.add(item);
-                          }
-
-                          setProviderDrafts(prev =>
-                            updateProviderDraft(prev, activeProviderForPicker.id, {
-                              hiddenModels: Array.from(hiddenModels),
-                            })
-                          );
-                        }}
+                        style={styles.eyeButton}
+                        onPress={() => toggleModelVisibilityLocal(model)}
                       >
-                        {(activeProviderDraftForPicker?.hiddenModels || []).includes(item) ? (
-                          <EyeOff size={18} color={colors.textTertiary} />
+                        {isHidden ? (
+                          <EyeOff size={20} color={colors.textTertiary} />
                         ) : (
-                          <Eye size={18} color={colors.primary} />
+                          <Eye size={20} color={colors.primary} />
                         )}
                       </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                )}
+                    </TouchableOpacity>
+                  );
+                }}
               />
+              {loadingModels && (
+                <View style={styles.loadingOverlay}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingText}>Fetching models...</Text>
+                </View>
+              )}
+              {fetchError && (
+                <View style={styles.errorContainer}>
+                  <AlertCircle size={20} color={colors.danger} />
+                  <Text style={styles.errorText}>{fetchError}</Text>
+                </View>
+              )}
             </View>
           </KeyboardAvoidingView>
         </View>
@@ -2080,7 +2099,7 @@ export const SettingsScreen = () => {
               />
 
               <TouchableOpacity style={styles.primaryButton} onPress={handleImportSettings}>
-                <Save size={16} color={colors.onPrimary} />
+                <Plus size={16} color={colors.onPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
                 <Text style={styles.primaryButtonText}>Import Settings</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -2126,7 +2145,7 @@ export const SettingsScreen = () => {
   );
 };
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -2832,5 +2851,62 @@ const createStyles = (colors: any) =>
     },
     confirmBtnTextCancel: {
       color: colors.textSecondary,
+    },
+    // Model Picker Styles
+    modelItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modelItemMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    modelName: {
+      color: colors.text,
+      fontSize: 14,
+    },
+    modelNameSelected: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    eyeButton: {
+      padding: 8,
+    },
+    loadingOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: 16,
+    },
+    loadingText: {
+      color: colors.text,
+      marginTop: 8,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    errorContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.dangerSoft,
+      padding: 12,
+      borderRadius: 10,
+      marginTop: 10,
+      gap: 8,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 13,
+      flex: 1,
     },
   });

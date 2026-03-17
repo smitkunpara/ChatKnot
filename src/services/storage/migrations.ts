@@ -147,7 +147,10 @@ const parsePersistedState = <TState>(rawValue: string): ParsedPersistedState<TSt
       hasEnvelope: false,
     };
   } catch {
-    return null;
+    return {
+      rawValue,
+      errors: ['Persisted settings payload is invalid JSON. Migration skipped.'],
+    } as any;
   }
 };
 
@@ -687,6 +690,7 @@ export const executeStorageHardeningBootstrap = async (
           state.conversations = state.conversations.map((c: any) => ({
             ...c,
             modeId: c.modeId || '',
+            createdAt: c.createdAt || c.updatedAt || Date.now(),
           }));
           migratedChatRaw = JSON.stringify(parsed.state ? parsed : { state });
         }

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  ActionSheetIOS,
   Alert,
   Image,
   Platform,
@@ -9,7 +8,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
   Modal,
 } from 'react-native';
@@ -18,7 +16,7 @@ import { ChevronDown, FileText, ImageIcon, Plus, Send, StopCircle, X } from 'luc
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { useAppTheme } from '../../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
 
@@ -170,7 +168,6 @@ export const Input: React.FC<InputProps> = ({
     setShowAttachmentMenu(true);
   };
 
-  const onContentSizeChange = useCallback(() => { }, []);
 
   // Plus button
   const plusBtn = (
@@ -245,7 +242,7 @@ export const Input: React.FC<InputProps> = ({
         <View style={styles.inputContainer}>
           <TextInput
             ref={inputRef}
-            style={[styles.input, styles.inputStacked, isEditing && styles.editingInput]}
+            style={[styles.input, styles.inputStacked]}
             placeholder={isEditing ? 'Edit message...' : 'Ask anything...'}
             placeholderTextColor={colors.placeholder}
             value={currentText}
@@ -258,7 +255,6 @@ export const Input: React.FC<InputProps> = ({
             }}
             multiline
             onFocus={onFocus}
-            onContentSizeChange={onContentSizeChange}
             textAlignVertical="top"
           />
           <View style={styles.bottomRow}>
@@ -317,7 +313,7 @@ export const Input: React.FC<InputProps> = ({
   );
 };
 
-const createStyles = (colors: any, insetBottom: number, isKeyboardVisible: boolean) =>
+const createStyles = (colors: AppPalette, insetBottom: number, isKeyboardVisible: boolean) =>
   StyleSheet.create({
     outerWrap: {
       backgroundColor: 'transparent',
@@ -359,7 +355,6 @@ const createStyles = (colors: any, insetBottom: number, isKeyboardVisible: boole
       overflow: 'hidden',
     },
 
-    inlineRow: { flexDirection: 'row', alignItems: 'center' },
     bottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: -2 },
 
     modeToggle: {
@@ -397,18 +392,12 @@ const createStyles = (colors: any, insetBottom: number, isKeyboardVisible: boole
       paddingBottom: 5,
       maxHeight: MAX_INPUT_HEIGHT,
     },
-    inputInline: {
-      flex: 1,
-      paddingHorizontal: 4,
-      flexShrink: 1,
-    },
     inputStacked: {
       width: '100%',
       paddingHorizontal: 6,
       marginBottom: 0,
       flexShrink: 1,
     },
-    editingInput: {},
 
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: Math.max(insetBottom, 20) },

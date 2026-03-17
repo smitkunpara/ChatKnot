@@ -2,7 +2,7 @@ import React, { forwardRef, useImperativeHandle, useMemo, useState } from 'react
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Brain, Check, ChevronDown, Search } from 'lucide-react-native';
 import { useSettingsStore } from '../../store/useSettingsStore';
-import { useAppTheme } from '../../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { ModelCapabilities } from '../../types';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -187,7 +187,7 @@ export const ModelSelector = forwardRef<ModelSelectorHandle, ModelSelectorProps>
   );
 });
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       paddingHorizontal: 4,

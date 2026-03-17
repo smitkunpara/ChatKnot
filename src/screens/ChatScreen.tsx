@@ -28,7 +28,7 @@ import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
 import { ToolCall, Attachment, Message } from '../types';
-import { useAppTheme } from '../theme/useAppTheme';
+import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
   resolveModelSelection,
@@ -96,6 +96,9 @@ export const ChatScreen = () => {
   const activeConversation = useChatStore(
     state => state.conversations.find(c => c.id === state.activeConversationId) ?? null
   );
+  const activeConversationMessages = useChatStore(
+    state => state.conversations.find(c => c.id === state.activeConversationId)?.messages ?? null
+  );
   const createConversation = useChatStore(state => state.createConversation);
   const addMessage = useChatStore(state => state.addMessage);
   const updateMessage = useChatStore(state => state.updateMessage);
@@ -136,16 +139,17 @@ export const ChatScreen = () => {
   const setLastUsedModel = useSettingsStore(state => state.setLastUsedModel);
 
   const displayedMessages = useMemo(() => {
-    if (!activeConversation) {
+    if (!activeConversationMessages) {
       return [];
     }
+    const currentMessages = activeConversationMessages;
 
     if (!streamingSession) {
-      return activeConversation.messages;
+      return currentMessages;
     }
 
     let didApplyStreamingOverlay = false;
-    const nextMessages = activeConversation.messages.map((message) => {
+    const nextMessages = currentMessages.map((message) => {
       if (message.id !== streamingSession.messageId) {
         return message;
       }
@@ -163,7 +167,7 @@ export const ChatScreen = () => {
     }
 
     return [
-      ...activeConversation.messages,
+      ...currentMessages,
       {
         id: streamingSession.messageId,
         role: 'assistant' as const,
@@ -172,13 +176,14 @@ export const ChatScreen = () => {
         timestamp: streamingSession.updatedAt,
       },
     ];
-  }, [activeConversation, streamingSession]);
+  }, [activeConversationMessages, streamingSession]);
   const [newChatDraft, setNewChatDraft] = useState('');
 
   const activeMode = useMemo(() => {
-    const convModeId = activeConversation?.modeId;
-    if (convModeId) {
-      const mode = modes.find(m => m.id === convModeId);
+    if (activeConversationId) {
+      const currentConv = useChatStore.getState().conversations.find(c => c.id === activeConversationId);
+      const modeId = currentConv?.modeId || lastUsedModeId || modes[0]?.id;
+      const mode = modes.find(m => m.id === modeId) || modes[0];
       if (mode) return mode;
     }
     return modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
@@ -395,7 +400,9 @@ export const ChatScreen = () => {
       setLastUsedModel(nextProviderId, nextModel);
     }
   }, [
-    activeConversation,
+    activeConversation?.id,
+    activeConversation?.providerId,
+    activeConversation?.modelOverride,
     modelResolution.selection,
     updateModelInConversation,
     lastUsedModel?.providerId,
@@ -437,9 +444,10 @@ export const ChatScreen = () => {
     return unsubscribe;
   }, []);
 
-  // Re-initialize MCP tools when active mode changes
+  // Re-initialize MCP tools
   useEffect(() => {
-    McpManager.reinitialize(activeMcpServers).catch(console.error);
+    // Reinitialization is handled globally in App.tsx
+    // McpManager.reinitialize(servers, modes, lastUsedModeId);
   }, [activeMcpServers]);
 
   const handleEdit = useCallback((messageId: string, content: string) => {
@@ -476,29 +484,33 @@ export const ChatScreen = () => {
     // The chat list should stay at the current scroll position.
   }, []);
 
-  const handleRetryAssistant = (assistantMessageId: string) => {
-    if (!activeConversation || !activeConversationId || isActiveConversationLoading) {
+  const handleRetryAssistant = useCallback((assistantMessageId: string) => {
+    const conversation = useChatStore.getState().conversations.find(
+      c => c.id === useChatStore.getState().activeConversationId
+    );
+    const conversationId = useChatStore.getState().activeConversationId;
+    if (!conversation || !conversationId || useChatRuntimeStore.getState().loadingConversationIds[conversationId]) {
       return;
     }
 
-    const assistantIndex = activeConversation.messages.findIndex(message => message.id === assistantMessageId);
+    const assistantIndex = conversation.messages.findIndex(message => message.id === assistantMessageId);
     if (assistantIndex < 0) {
       return;
     }
 
     for (let i = assistantIndex - 1; i >= 0; i -= 1) {
-      const candidate = activeConversation.messages[i];
+      const candidate = conversation.messages[i];
       if (candidate.role === 'user' && candidate.content?.trim()) {
         setChatError(null);
-        clearStopRequested(activeConversationId);
-        editMessage(activeConversationId, candidate.id, candidate.content);
+        clearStopRequested(conversationId);
+        editMessage(conversationId, candidate.id, candidate.content);
         userScrolledAwayRef.current = false;
-        beginRequest(activeConversationId);
-        void runChatLoop(activeConversationId);
+        beginRequest(conversationId);
+        void runChatLoop(conversationId);
         return;
       }
     }
-  };
+  }, [beginRequest, clearStopRequested, editMessage]);
 
   const currentModelCapabilities = useMemo(() => {
     if (!modelResolution.selection) {
@@ -782,6 +794,9 @@ export const ChatScreen = () => {
           break;
         }
 
+        if (__DEV__) {
+          console.log('[ChatScreen] Prompting with context from mode:', activeMode.name);
+        }
         console.log(`[ChatKnot Debug] ⏳ Preparing payload — collecting context from storage (iteration ${absoluteIterationCount})...`);
         const payloadStartTime = Date.now();
 
@@ -894,7 +909,9 @@ export const ChatScreen = () => {
 
         const payloadElapsed = Date.now() - payloadStartTime;
         console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — messages: ${hydratedMessages.length}, tools: ${openAiTools.length}, model: ${settingsState.lastUsedModel?.model ?? 'unknown'}`);
-        console.log(`[ChatKnot Debug] 🚀 Making API request...`);
+        if (__DEV__) {
+          console.log('[ChatScreen] Starting API request...');
+        }
         const apiStartTime = Date.now();
 
         let streamedContent = '';
@@ -1195,6 +1212,7 @@ export const ChatScreen = () => {
       }
     />
   ), [
+    handleEdit,
     handleRetryAssistant,
     isActiveConversationLoading,
     lastAssistantMessageId,
@@ -1202,10 +1220,11 @@ export const ChatScreen = () => {
     resolveToolApproval,
   ]);
 
-  const hasAnyProvider = useMemo(
-    () => providers.some(p => p.enabled && (p.apiKey || '').trim().length > 0 && (p.baseUrl || '').trim().length > 0),
-    [providers]
-  );
+  const hasAnyProvider = useMemo(() => {
+    return providers.some(
+      (p) => p.enabled && (p.apiKey || p.apiKeyRef) && p.baseUrl
+    );
+  }, [providers]);
 
   const chatHasMessages = !!activeConversation?.messages.some(m => m.role === 'user' || m.role === 'assistant');
 
@@ -1289,10 +1308,10 @@ export const ChatScreen = () => {
                   const scrollY = contentOffset.y;
 
                   const distanceFromBottom = contentHeight - viewportHeight - scrollY;
+                  // Buffer of 50px to account for small bounces or near-bottom state
+                  const isAtBottom = distanceFromBottom <= 50;
 
-                  // A buffer of 120px allows fast incoming chunks to bump the size
-                  // momentarily without tricking the logic into thinking the user scrolled away.
-                  if (distanceFromBottom <= 50) {
+                  if (isAtBottom) {
                     userScrolledAwayRef.current = false;
                   } else if (distanceFromBottom > 50) {
                     // Start pausing auto-scroll when they are more than a chunk's height away
@@ -1620,7 +1639,7 @@ export const ChatScreen = () => {
   );
 };
 
-const createStyles = (colors: any, insetsTop: number) =>
+const createStyles = (colors: AppPalette, insetsTop: number) =>
   StyleSheet.create({
     container: {
       flex: 1,
