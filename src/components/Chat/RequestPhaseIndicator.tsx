@@ -7,13 +7,13 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { ChevronDown, ChevronUp, Loader, Zap } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Loader, Zap, Check } from 'lucide-react-native';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { RequestPhase } from '../../store/useChatRuntimeStore';
 import { ApiRequestDetails } from '../../types';
 
 interface RequestPhaseIndicatorProps {
-    phase: RequestPhase;
+    phase?: RequestPhase | null;
     /** Live API request details — populated when phase is 'api_request'. */
     apiRequestDetails: ApiRequestDetails | null;
 }
@@ -115,7 +115,7 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
 
     // Auto-collapse when phase changes away from api_request
     useEffect(() => {
-        if (phase !== 'api_request') {
+        if (phase !== 'api_request' && phase !== 'generating_query') {
             setExpanded(false);
         }
         // Reset elapsed when entering api_request
@@ -124,7 +124,7 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
         }
     }, [phase]);
 
-    if (!phase || phase === 'thinking') return null;
+    if (!phase && !apiRequestDetails) return null;
 
     if (phase === 'generating_query') {
         return (
@@ -137,7 +137,9 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
         );
     }
 
-    // api_request phase
+    if (!apiRequestDetails) return null;
+
+    const isActive = phase === 'api_request';
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
     const elapsedText = formatElapsed(elapsedMs);
 
@@ -150,10 +152,14 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
                 accessibilityRole="button"
                 accessibilityLabel={expanded ? 'Collapse API request details' : 'Expand API request details'}
             >
-                <Animated.View style={[styles.rowInner, { opacity: shimmerAnim }]}>
-                    <Zap size={13} color={colors.primary} />
+                <Animated.View style={[styles.rowInner, isActive ? { opacity: shimmerAnim } : {}]}>
+                    {isActive ? (
+                        <Zap size={13} color={colors.primary} />
+                    ) : (
+                        <Check size={13} color={colors.success} />
+                    )}
                     <Text style={styles.labelText}>API Request</Text>
-                    <Text style={styles.elapsedText}>{elapsedText}</Text>
+                    {isActive && <Text style={styles.elapsedText}>{elapsedText}</Text>}
                 </Animated.View>
                 <ChevronIcon size={13} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -162,22 +168,6 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
                 <View style={styles.detailsContainer}>
                     <DetailRow label="Model" value={apiRequestDetails.model} colors={colors} />
                     <DetailRow label="Provider" value={apiRequestDetails.providerUrl} colors={colors} />
-                    {apiRequestDetails.responseStatus !== undefined && (
-                        <DetailRow
-                            label="Status"
-                            value={String(apiRequestDetails.responseStatus)}
-                            colors={colors}
-                            isStatus
-                            statusOk={(apiRequestDetails.responseStatus ?? 0) < 400}
-                        />
-                    )}
-                    {apiRequestDetails.firstChunkAt !== undefined && (
-                        <DetailRow
-                            label="First chunk"
-                            value={formatElapsed(apiRequestDetails.firstChunkAt - apiRequestDetails.requestedAt)}
-                            colors={colors}
-                        />
-                    )}
                 </View>
             )}
         </View>

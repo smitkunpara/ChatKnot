@@ -228,6 +228,14 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                 </View>
               ) : (
                 <>
+                  {/* Phase indicator: stays permanently if we have apiRequestDetails, or actively streaming query phase */}
+                  {(requestPhase || message.apiRequestDetails || apiRequestDetails) && (
+                    <RequestPhaseIndicator
+                      phase={requestPhase}
+                      apiRequestDetails={apiRequestDetails ?? message.apiRequestDetails ?? null}
+                    />
+                  )}
+
                   {contentBlocks.map((block, idx) => {
                     if (block.type === 'think') {
                       const isThisBlockStreaming = isStreaming === true && idx === contentBlocks.length - 1 && isStreamingThinking;
@@ -250,14 +258,6 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                       </View>
                     );
                   })}
-
-                  {/* Phase indicator: shown while generating_query or api_request */}
-                  {isStreaming && requestPhase && requestPhase !== 'thinking' && (
-                    <RequestPhaseIndicator
-                      phase={requestPhase}
-                      apiRequestDetails={apiRequestDetails ?? null}
-                    />
-                  )}
                 </>
               )}
 

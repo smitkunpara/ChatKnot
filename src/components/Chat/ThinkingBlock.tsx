@@ -137,7 +137,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                 {/* Only the left side shimmers — chevron stays fully opaque always */}
                 <Animated.View style={[styles.headerInner, { opacity: shimmerAnim }]}>
                     <Brain size={14} color={colors.primary} />
-                    <Text style={[styles.headerText, isStreaming && styles.headerTextStreaming]}>
+                    <Text style={styles.headerText}>
                         {headerLabel}
                     </Text>
                 </Animated.View>
@@ -183,13 +183,9 @@ const createStyles = (colors: AppPalette) =>
             flex: 1,
         },
         headerText: {
-            color: colors.textSecondary,
+            color: colors.text,
             fontSize: 13,
             fontWeight: '600',
-        },
-        /** Brighter label while actively streaming so it reads clearly against the background. */
-        headerTextStreaming: {
-            color: colors.text,
         },
         body: {
             paddingHorizontal: 12,
