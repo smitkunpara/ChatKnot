@@ -581,11 +581,6 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
           // Capture token usage from the API response
           if (json.usage && onUsage) {
             const usage = json.usage;
-            debug.log('processSsePayload', 'usage data received', {
-              promptTokens: usage.prompt_tokens,
-              completionTokens: usage.completion_tokens,
-              totalTokens: usage.total_tokens,
-            });
             onUsage({
               promptTokens: usage.prompt_tokens ?? 0,
               completionTokens: usage.completion_tokens ?? 0,

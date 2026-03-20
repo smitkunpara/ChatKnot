@@ -1,10 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
-import { createDebugLogger } from '../utils/debugLogger';
 
-const debug = createDebugLogger('store/useContextUsageStore');
-debug.moduleLoaded();
 
 export interface TokenUsage {
   promptTokens: number;
@@ -41,13 +38,6 @@ export const useContextUsageStore = create<ContextUsageState>()(
       usageByConversation: {},
 
       updateUsage: (data) => {
-        debug.log('updateUsage', 'updating context usage', {
-          conversationId: data.conversationId,
-          model: data.model,
-          promptTokens: data.lastUsage.promptTokens,
-          totalTokens: data.lastUsage.totalTokens,
-          contextLimit: data.contextLimit,
-        });
         set((state) => ({
           usageByConversation: {
             ...state.usageByConversation,
@@ -57,7 +47,6 @@ export const useContextUsageStore = create<ContextUsageState>()(
       },
 
       clearUsage: (conversationId) => {
-        debug.log('clearUsage', 'clearing context usage', { conversationId });
         set((state) => {
           const next = { ...state.usageByConversation };
           delete next[conversationId];
