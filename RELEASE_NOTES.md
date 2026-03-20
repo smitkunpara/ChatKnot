@@ -6,7 +6,12 @@
 - Fixed sidebar-open behavior during streaming so the active thinking block does not re-expand unexpectedly.
 - Fixed the small scroll drift that could happen when opening the sidebar while a normal response was still streaming.
 - Improved initial chat anchoring so existing conversations open at the latest messages more reliably.
-- Fixed regenerate / retry scrolling so the list stays anchored to the active response instead of jumping upward.
+- **Retry Scroll Anchoring** — Fixed regenerate / retry scrolling so the list stays anchored to the active response instead of jumping upward.
+- **Shiny Thinking Effect** — High-end "shining" text animation for active reasoning.
+- **Precision Millisecond Tracking** — Millisecond-accurate timing for both Thinking and API request phases.
+- **Improved Request Persistence** — API request details (Mode, Model, Provider, Duration) are permanently saved with messages for historical review.
+- **Refined Processing Labels** — Simplified "Thinking/Thought [Time]" labels and standardized icon/padding across all AI processing states.
+- **Historical Content Fallback** — Added "N/A" time labels for older chat data.
 
 # ChatKnot v0.3.0 Release Notes
 

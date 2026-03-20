@@ -25,6 +25,7 @@ export interface Attachment {
 
 export interface ApiRequestDetails {
   model: string;
+  modeName?: string;
   providerUrl: string;
   requestedAt: number;
   /** HTTP response status code — set when first chunk / response arrives. */

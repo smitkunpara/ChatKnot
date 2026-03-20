@@ -9,8 +9,9 @@ import {
     View,
 } from 'react-native';
 import { ChevronDown, ChevronUp, Brain } from 'lucide-react-native';
-import Markdown from 'react-native-markdown-display';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
+import Markdown from 'react-native-markdown-display';
+import { ShinyText } from '../Common/ShinyText';
 import {
     createMarkdownStyles,
     createTableRenderRules,
@@ -24,15 +25,17 @@ interface ThinkingBlockProps {
     isStreaming: boolean;
 }
 
-/** Format elapsed seconds into a human-readable duration, e.g. "3s", "1m 23s". */
-const formatDuration = (totalSeconds: number): string => {
-    if (totalSeconds < 1) return '';
+/** Format elapsed milliseconds into a clean string like "0.4s" or "32.1s" */
+const formatDuration = (totalMs: number): string => {
+    if (totalMs === 0) return '';
+    if (totalMs < 1000) return `${totalMs}ms`;
+    const totalSeconds = totalMs / 1000;
+    if (totalSeconds < 60) {
+        return `${Math.max(0, totalSeconds).toFixed(1)}s`;
+    }
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-    }
-    return `${seconds}s`;
+    return `${minutes}m ${Math.floor(seconds)}s`;
 };
 
 /**
@@ -73,16 +76,16 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     }, [isStreaming]);
 
     // ---- Elapsed time tracking ----
-    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [elapsedMs, setElapsedMs] = useState(0);
     const startTimeRef = useRef<number>(Date.now());
 
     useEffect(() => {
         if (isStreaming) {
             startTimeRef.current = Date.now();
-            setElapsedSeconds(0);
+            setElapsedMs(0);
             const interval = setInterval(() => {
-                setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000));
-            }, 1000);
+                setElapsedMs(Date.now() - startTimeRef.current);
+            }, 100);
             return () => clearInterval(interval);
         }
     }, [isStreaming]);
@@ -118,7 +121,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     }, [isStreaming, shimmerAnim]);
 
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
-    const durationText = formatDuration(elapsedSeconds);
+    const durationText = formatDuration(elapsedMs);
 
     // Header label: while streaming show "Thinking…" or "Thinking for Xs"; when done "Thought for Xs"
     const headerLabel = isStreaming
@@ -134,12 +137,27 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                 accessibilityRole="button"
                 accessibilityLabel={expanded ? 'Collapse thinking' : 'Expand thinking'}
             >
-                {/* Only the left side shimmers — chevron stays fully opaque always */}
-                <Animated.View style={[styles.headerInner, { opacity: shimmerAnim }]}>
+                {/* Left side shimmers/shines — chevron stays fully opaque always */}
+                <Animated.View style={[styles.headerInner, isStreaming ? { opacity: shimmerAnim } : {}]}>
                     <Brain size={14} color={colors.primary} />
-                    <Text style={styles.headerText}>
-                        {headerLabel}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        {isStreaming ? (
+                            <ShinyText
+                                text={durationText ? `Thinking ${durationText}` : 'Thinking…'}
+                                color={colors.textSecondary}
+                                shineColor={colors.text}
+                                style={styles.headerText}
+                                speed={1.5}
+                            />
+                        ) : (
+                            <>
+                                <Text style={styles.headerText}>Thought</Text>
+                                <Text style={styles.durationText}>
+                                    {durationText || 'N/A'}
+                                </Text>
+                            </>
+                        )}
+                    </View>
                 </Animated.View>
                 {/* Chevron: always opaque, always visible */}
                 <ChevronIcon size={14} color={colors.textSecondary} />
@@ -186,6 +204,11 @@ const createStyles = (colors: AppPalette) =>
             color: colors.text,
             fontSize: 13,
             fontWeight: '600',
+        },
+        durationText: {
+            color: colors.textTertiary,
+            fontSize: 12,
+            marginLeft: 0,
         },
         body: {
             paddingHorizontal: 12,

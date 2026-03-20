@@ -1015,6 +1015,7 @@ export const ChatScreen = () => {
         // Phase 2: API request in-flight — capture request metadata now that apiStartTime is known
         const apiRequestMeta = {
           model: selectedModel,
+          modeName: loopMode?.name,
           providerUrl: effectiveConfig.baseUrl,
           requestedAt: apiStartTime,
         };
@@ -1040,10 +1041,12 @@ export const ChatScreen = () => {
                 if (!receivedFirstChunk) {
                   receivedFirstChunk = true;
                   // Phase transition: first content chunk → clear phase (text streaming)
-                  setRequestPhase(conversationId, null, {
+                  const updatedMeta = {
                     ...apiRequestMeta,
                     firstChunkAt: Date.now(),
-                  });
+                  };
+                  currentApiRequestDetails = updatedMeta;
+                  setRequestPhase(conversationId, null, updatedMeta);
                 }
                 streamedContent += chunk;
                 currentStreamedContent = streamedContent;
@@ -1057,10 +1060,12 @@ export const ChatScreen = () => {
                 if (!receivedFirstChunk) {
                   receivedFirstChunk = true;
                   // Phase transition: first reasoning chunk → thinking phase
-                  setRequestPhase(conversationId, 'thinking', {
+                  const updatedMeta = {
                     ...apiRequestMeta,
                     firstChunkAt: Date.now(),
-                  });
+                  };
+                  currentApiRequestDetails = updatedMeta;
+                  setRequestPhase(conversationId, 'thinking', updatedMeta);
                 }
                 streamedReasoning += reasoningChunk;
                 currentStreamedReasoning = streamedReasoning;

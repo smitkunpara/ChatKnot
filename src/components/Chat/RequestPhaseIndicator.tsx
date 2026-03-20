@@ -11,6 +11,7 @@ import { ChevronDown, ChevronUp, Loader, Zap, Check } from 'lucide-react-native'
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { RequestPhase } from '../../store/useChatRuntimeStore';
 import { ApiRequestDetails } from '../../types';
+import { ShinyText } from '../Common/ShinyText';
 
 interface RequestPhaseIndicatorProps {
     phase?: RequestPhase | null;
@@ -68,33 +69,6 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
     const { colors } = useAppTheme();
     const styles = useMemo(() => createStyles(colors), [colors]);
 
-    // ---- Shimmer animation (opacity pulse) while any phase is active ----
-    const shimmerAnim = useRef(new Animated.Value(0.5)).current;
-    useEffect(() => {
-        if (phase) {
-            const loop = Animated.loop(
-                Animated.sequence([
-                    Animated.timing(shimmerAnim, {
-                        toValue: 1,
-                        duration: 750,
-                        easing: Easing.inOut(Easing.ease),
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(shimmerAnim, {
-                        toValue: 0.5,
-                        duration: 750,
-                        easing: Easing.inOut(Easing.ease),
-                        useNativeDriver: true,
-                    }),
-                ])
-            );
-            loop.start();
-            return () => loop.stop();
-        } else {
-            shimmerAnim.setValue(1);
-        }
-    }, [phase, shimmerAnim]);
-
     // ---- Elapsed timer for api_request phase ----
     const [elapsedMs, setElapsedMs] = useState(0);
     const timerStartRef = useRef<number>(0);
@@ -129,10 +103,12 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
     if (phase === 'generating_query') {
         return (
             <View style={styles.container}>
-                <Animated.View style={[styles.row, { opacity: shimmerAnim }]}>
-                    <SpinnerIcon color={colors.primary} size={13} />
-                    <Text style={styles.labelText}>Generating query…</Text>
-                </Animated.View>
+                <View style={styles.row}>
+                    <View style={styles.rowInner}>
+                        <SpinnerIcon color={colors.primary} size={14} />
+                        <Text style={styles.labelText}>Generating query…</Text>
+                    </View>
+                </View>
             </View>
         );
     }
@@ -141,7 +117,14 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
 
     const isActive = phase === 'api_request';
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
-    const elapsedText = formatElapsed(elapsedMs);
+
+    // Show live timer if active, otherwise show final duration if we have firstChunkAt
+    let displayTime = '';
+    if (isActive) {
+        displayTime = formatElapsed(elapsedMs);
+    } else if (apiRequestDetails.firstChunkAt) {
+        displayTime = formatElapsed(apiRequestDetails.firstChunkAt - apiRequestDetails.requestedAt);
+    }
 
     return (
         <View style={styles.container}>
@@ -152,21 +135,28 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
                 accessibilityRole="button"
                 accessibilityLabel={expanded ? 'Collapse API request details' : 'Expand API request details'}
             >
-                <Animated.View style={[styles.rowInner, isActive ? { opacity: shimmerAnim } : {}]}>
+                <View style={styles.rowInner}>
                     {isActive ? (
-                        <Zap size={13} color={colors.primary} />
+                        <SpinnerIcon color={colors.primary} size={14} />
                     ) : (
-                        <Check size={13} color={colors.success} />
+                        <Check size={14} color={colors.success} />
                     )}
-                    <Text style={styles.labelText}>API Request</Text>
-                    {isActive && <Text style={styles.elapsedText}>{elapsedText}</Text>}
-                </Animated.View>
-                <ChevronIcon size={13} color={colors.textTertiary} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={styles.labelText}>API Request</Text>
+                        <Text style={[styles.elapsedText, !isActive && { opacity: 0.5 }]}>
+                            {displayTime || (isActive ? '' : 'N/A')}
+                        </Text>
+                    </View>
+                </View>
+                <ChevronIcon size={14} color={colors.textTertiary} />
             </TouchableOpacity>
 
             {expanded && apiRequestDetails && (
                 <View style={styles.detailsContainer}>
                     <DetailRow label="Model" value={apiRequestDetails.model} colors={colors} />
+                    {apiRequestDetails.modeName && (
+                        <DetailRow label="Mode" value={apiRequestDetails.modeName} colors={colors} />
+                    )}
                     <DetailRow label="Provider" value={apiRequestDetails.providerUrl} colors={colors} />
                 </View>
             )}
@@ -201,18 +191,18 @@ const createStyles = (colors: AppPalette) =>
     StyleSheet.create({
         container: {
             marginBottom: 8,
-            borderRadius: 8,
+            borderRadius: 10,
             borderWidth: 1,
             borderColor: colors.border,
             backgroundColor: colors.surfaceAlt,
             overflow: 'hidden',
-            paddingHorizontal: 10,
-            paddingVertical: 7,
         },
         row: {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
+            paddingHorizontal: 10,
+            paddingVertical: 8,
         },
         rowInner: {
             flexDirection: 'row',
@@ -222,17 +212,19 @@ const createStyles = (colors: AppPalette) =>
         },
         labelText: {
             color: colors.text,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: '600',
         },
         elapsedText: {
             color: colors.textTertiary,
-            fontSize: 11,
-            marginLeft: 4,
+            fontSize: 12,
+            marginLeft: 0,
         },
         detailsContainer: {
             marginTop: 8,
             paddingTop: 8,
+            paddingHorizontal: 10,
+            paddingBottom: 8,
             borderTopWidth: 1,
             borderTopColor: colors.border,
         },

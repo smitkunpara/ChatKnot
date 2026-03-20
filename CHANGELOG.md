@@ -11,12 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
 - **Release Notes Refresh** — Reworked `RELEASE_NOTES.md` so the current release notes cover the full `v0.3.0` release while keeping the latest chat fixes grouped under an unreleased section.
 
+### Added
+- **Shiny Thinking Effect** — Introduced a moving "shining" text effect (sweeping gradient) for the active thinking phase to provide high-end visual feedback.
+- **Precision AI Timing** — Added millisecond-accurate tracking for both the AI thinking phase and the API request phase.
+- **Persistent Request Metadata** — API request details (Mode, Model, Provider, and Duration) are now permanently stored with each assistant message for post-completion analysis and historical review.
+
 ### Fixed
 - **Markdown Table Rendering** — Fixed chat table rendering so cells no longer create extra nested blocks and wide tables scroll horizontally more cleanly.
 - **Sidebar/Streaming Stability** — Opening the navigation drawer no longer toggles streaming visibility state, preventing the active thinking block from re-expanding unexpectedly mid-response.
 - **Sidebar Scroll Drift** — Fixed the slight chat scroll movement that could happen when opening the sidebar during a normal streaming response with the blinking cursor visible.
 - **Initial Bottom Anchoring** — Existing conversations now reliably open at the latest messages instead of occasionally starting at the top of long chats.
 - **Retry Scroll Anchoring** — Regenerate / retry now keeps the conversation anchored to the active response instead of jumping the list upward.
+- **Thinking UI Refined** — Simplified thinking labels to a cleaner "Thinking/Thought [Time]" format (removed "for") and aligned icon/text padding with the API request block.
+- **API Request Phase UI** — Replaced the lightning icon with a rotating spinner during active requests and enabled a "settled" (dimmed) duration display once the first response chunk arrives.
+- **Historical Timing Fallback** — Added "N/A" indicators for thoughts and requests from older app versions where precision timing was not yet supported.
 
 ## [0.3.0] - 2026-03-17
 
