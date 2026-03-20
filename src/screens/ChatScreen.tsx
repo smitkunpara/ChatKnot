@@ -13,7 +13,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DrawerNavigationProp, useDrawerStatus } from '@react-navigation/drawer';
+import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
@@ -71,7 +71,6 @@ export const ChatScreen = () => {
   });
   const navigation = useNavigation<DrawerNavigationProp<any>>();
   const isScreenFocused = useIsFocused();
-  const drawerStatus = useDrawerStatus();
   const flatListRef = useRef<FlatList>(null);
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
   const activeRequestControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -120,7 +119,7 @@ export const ChatScreen = () => {
   const startStreamingMessage = useChatRuntimeStore(state => state.startStreamingMessage);
   const updateStreamingMessage = useChatRuntimeStore(state => state.updateStreamingMessage);
   const clearStreamingMessage = useChatRuntimeStore(state => state.clearStreamingMessage);
-  const isStreamingUiVisible = isScreenFocused && drawerStatus !== 'open';
+  const isStreamingUiVisible = isScreenFocused;
   const isActiveConversationLoading = useChatRuntimeStore(
     state => (activeConversationId ? !!state.loadingConversationIds[activeConversationId] : false)
   );
@@ -228,6 +227,7 @@ export const ChatScreen = () => {
   // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
   const userScrolledAwayRef = useRef(false);
   const pendingInstantScrollConversationIdRef = useRef<string | null>(activeConversationId);
+  const hasPerformedInitialScrollRef = useRef<Record<string, true>>({});
 
   const clearPendingToolApprovals = React.useCallback((
     defaultDecision: boolean = false,
@@ -360,6 +360,12 @@ export const ChatScreen = () => {
   }, [displayedMessages, isActiveConversationLoading]);
 
   const messageCount = displayedMessages.length;
+  const scrollToBottom = useCallback((animated: boolean) => {
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
   useEffect(() => {
     if (!messageCount || userScrolledAwayRef.current || !isStreamingUiVisible) {
       return;
@@ -373,10 +379,8 @@ export const ChatScreen = () => {
       pendingInstantScrollConversationIdRef.current = null;
     }
 
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToEnd({ animated: !shouldScrollInstantly });
-    });
-  }, [activeConversationId, isStreamingUiVisible, messageCount]);
+    scrollToBottom(!shouldScrollInstantly);
+  }, [activeConversationId, isStreamingUiVisible, messageCount, scrollToBottom]);
 
   useEffect(() => {
     setEditingMessageId(null);
@@ -512,6 +516,7 @@ export const ChatScreen = () => {
         clearStopRequested(conversationId);
         editMessage(conversationId, candidate.id, candidate.content);
         userScrolledAwayRef.current = false;
+        pendingInstantScrollConversationIdRef.current = conversationId;
         beginRequest(conversationId);
         void runChatLoop(conversationId);
         return;
@@ -1402,6 +1407,7 @@ export const ChatScreen = () => {
                 data={displayedMessages}
                 keyExtractor={item => item.id}
                 extraData={{ lastAssistantMessageId, isLoading: isActiveConversationLoading }}
+                maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                 initialNumToRender={10}
                 maxToRenderPerBatch={8}
                 updateCellsBatchingPeriod={50}
@@ -1431,8 +1437,21 @@ export const ChatScreen = () => {
                 ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
+                  const shouldDoInitialBottomScroll =
+                    !!activeConversationId &&
+                    !hasPerformedInitialScrollRef.current[activeConversationId];
+
+                  if (shouldDoInitialBottomScroll) {
+                    hasPerformedInitialScrollRef.current[activeConversationId] = true;
+                    pendingInstantScrollConversationIdRef.current = null;
+                    scrollToBottom(false);
+                    return;
+                  }
+
                   if (
-                    isActiveConversationLoading &&
+                    (isActiveConversationLoading ||
+                      (!!activeConversationId &&
+                        pendingInstantScrollConversationIdRef.current === activeConversationId)) &&
                     !userScrolledAwayRef.current &&
                     isStreamingUiVisible
                   ) {
@@ -1444,7 +1463,7 @@ export const ChatScreen = () => {
                       pendingInstantScrollConversationIdRef.current = null;
                     }
 
-                    flatListRef.current?.scrollToEnd({ animated: !shouldScrollInstantly });
+                    scrollToBottom(!shouldScrollInstantly);
                   }
                 }}
               />

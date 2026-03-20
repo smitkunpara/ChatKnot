@@ -5,12 +5,17 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
+    useWindowDimensions,
     View,
 } from 'react-native';
 import { ChevronDown, ChevronUp, Brain } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
-import { createMarkdownStyles, createTableRenderRules } from './MessageBubble';
+import {
+    createMarkdownStyles,
+    createTableRenderRules,
+    getTableColumnWidth,
+} from './MessageBubble';
 
 interface ThinkingBlockProps {
     /** The raw thinking text (content between <think> tags). */
@@ -38,8 +43,13 @@ const formatDuration = (totalSeconds: number): string => {
  */
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreaming }) => {
     const { colors } = useAppTheme();
+    const { width: viewportWidth } = useWindowDimensions();
     const styles = useMemo(() => createStyles(colors), [colors]);
-    const markdownStyles = useMemo(() => createMarkdownStyles(colors), [colors]);
+    const markdownStyles = useMemo(() => createMarkdownStyles(colors) as any, [colors]);
+    const tableRenderRules = useMemo(
+        () => createTableRenderRules(colors, getTableColumnWidth(viewportWidth)),
+        [colors, viewportWidth]
+    );
 
     // Auto-expand while streaming, auto-collapse once done.
     const [expanded, setExpanded] = useState(isStreaming);
@@ -131,7 +141,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                 <View style={styles.body}>
                     <Markdown
                         style={markdownStyles}
-                        rules={createTableRenderRules(colors)}
+                        rules={tableRenderRules}
                     >
                         {content}
                     </Markdown>

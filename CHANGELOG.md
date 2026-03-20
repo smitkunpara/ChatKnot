@@ -5,6 +5,19 @@ All notable changes to ChatKnot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
+- **Release Notes Refresh** — Reworked `RELEASE_NOTES.md` so the current release notes cover the full `v0.3.0` release while keeping the latest chat fixes grouped under an unreleased section.
+
+### Fixed
+- **Markdown Table Rendering** — Fixed chat table rendering so cells no longer create extra nested blocks and wide tables scroll horizontally more cleanly.
+- **Sidebar/Streaming Stability** — Opening the navigation drawer no longer toggles streaming visibility state, preventing the active thinking block from re-expanding unexpectedly mid-response.
+- **Sidebar Scroll Drift** — Fixed the slight chat scroll movement that could happen when opening the sidebar during a normal streaming response with the blinking cursor visible.
+- **Initial Bottom Anchoring** — Existing conversations now reliably open at the latest messages instead of occasionally starting at the top of long chats.
+- **Retry Scroll Anchoring** — Regenerate / retry now keeps the conversation anchored to the active response instead of jumping the list upward.
+
 ## [0.3.0] - 2026-03-17
 
 ### Added
