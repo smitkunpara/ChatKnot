@@ -16,6 +16,7 @@ This major release introduces the **Mode System**, a powerful way to organize yo
 - **Quick Toggles**: Enable or disable AI Providers and MCP Servers directly from the list view—no more digging into sub-menus for simple changes.
 - **Full-Page Editors**: Providers and MCP servers now use clean, focused full-page editors with explicit Save/Discard/Delete controls.
 - **Targeted Refreshes**: Models and tools are refreshed only when needed — opening the Model Picker fetches models and capabilities; opening an MCP server editor silently refreshes that server's tools, avoiding unnecessary background refreshes.
+- **Model Picker Polish**: Provider settings now show compact model selection counts, and the Manage Models picker has been refined to better match the chat model selector layout.
 
 ### 🎯 Smarter Startup Warnings
 - Warnings now only appear for changes that matter to you: a hidden AI model being removed or a disabled tool being removed will no longer trigger a notification.
@@ -35,12 +36,7 @@ This major release introduces the **Mode System**, a powerful way to organize yo
     - Added base64 hydration and provider instance caching to reduce UI jitter and latency.
     - Implemented a smart cache eviction policy in the `ProviderFactory` to manage memory usage during long-running sessions.
 - **Efficient Message Rendering**: Optimized internal message list memoization, ensuring the chat UI remains responsive even in conversations with hundreds of messages.
-- **Resource Cleanup**: Removed ineffective background caches and fixed animation leaks in the streaming UI to ensure long-term stability and battery efficiency.
-
-### 🛠️ Architecture & Type Safety
-- **Type-Safe Styles**: Migrated the entire UI style system to use `AppPalette`, ensuring theme consistency and preventing common runtime styling errors.
-- **Improved Persistence**: Refined the settings storage logic for better reliability and added migration support to ensure old conversations gain modern features like precise creation timestamps.
-- **Robust MCP Integration**: Fixed OpenAPI parameter handling to prevent request payload pollution and added detailed SSE connection state handling.
+- **Resource Cleanup**: Removed ineffective background caches and fixed animation leaks in the streaming UI to ensure long-term stability and battery efficiency
 
 ### 💬 Streaming & MCP UX Refinements
 - **Realtime Visible Streaming Restored**: When the user is on the active chat screen, chunks now render immediately as they arrive for true progressive typing feedback.

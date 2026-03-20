@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mode Editor UX** — Added explicit Save and Discard buttons to the mode editor. Added a Delete Mode button for non-default modes.
 - **Provider Editor UX** — Converted provider editing from inline cards to full-page editors.
 - **Model Picker UX** — Renamed modal title to "Manage Models" and optimized visibility toggling.
+- **Provider Model Selection Summary** — AI Provider settings now show model visibility as a compact `x/y selected` summary instead of a single-model placeholder label.
+- **Settings Model Picker Layout** — Updated the provider-side Manage Models modal to align more closely with the chat model selector layout, with a centered floating card and improved internal list sizing.
 - **Settings refresh refined** — Removed the broad background refresh performed on every Settings open. Refreshes are now targeted: opening an MCP server editor silently validates and refreshes that server's tools; opening the model picker always fetches fresh model lists and capabilities. This reduces unnecessary network activity and avoids overwriting local visibility/approval decisions.
 - **Mode editor MCP UX** — Per-mode MCP entries default to disabled; enabling a server in a mode auto-expands its tool controls and triggers a silent tool refresh. Tool controls are collapsed when disabled to reduce clutter. Server rows now show a compact summary like "5/12 tools enabled" and the chevron flips upward when expanded; layout stability improvements prevent content shift.
 - **Export/Import sanitization** — Exports now include only visible models and enabled tools (hidden models and disabled tools omitted). Imports drop incoming `hiddenModels` lists; MCP `autoApprovedTools` entries are filtered to only include enabled tools. A post-import health check reconciles new models/tools, defaulting newly discovered models to hidden and newly discovered tools to disabled by default.
@@ -52,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Raw Tool Error Pass-through** — Failed tool execution results now pass the complete JSON error payload to the AI for smarter self-correction.
 - **MCP Payload Flattening** — Resolved issues where MCP response objects were double-serialized, ensuring clean JSON for the AI.
 - **Settings Layout Stability** — Fixed a JSX nesting issue in `SettingsScreen`.
+- **Settings Model Picker Search UI** — Removed the stray left-side icon from the Manage Models search field in provider settings.
+- **Settings Model Picker List Clipping** — Fixed provider-side model results overflowing the visible picker card by constraining the list viewport and clipping overflow correctly.
 - **Chat Scrolling Stability** — Resolved keyboard-triggered scrolling issues.
 - **Long-Chat Open/Drawer Scroll Jump** — Fixed chat opening behavior where long conversations briefly started at top and animated down; initial return-to-bottom now snaps instantly (including after opening/closing the sidebar).
 - **MCP Tool-Call Auto-Scroll** — Chat now scrolls to bottom immediately when MCP tool-call cards are created, instead of waiting for MCP execution to complete.
