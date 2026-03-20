@@ -19,6 +19,7 @@
 - **Improved Request Persistence** — API request details (Mode, Model, Provider, Duration) are permanently saved with messages for historical review.
 - **Refined Processing Labels** — Simplified "Thinking/Thought [Time]" labels and standardized icon/padding across all AI processing states.
 - **Historical Content Fallback** — Added "N/A" time labels for older chat data.
+- **Improved Thinking Visibility** — Fixed thinking duration visibility during the transition to text generation and ensured full persistence across app restarts.
 
 # ChatKnot v0.3.0 Release Notes
 

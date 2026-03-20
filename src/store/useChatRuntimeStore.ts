@@ -18,6 +18,8 @@ export interface StreamingMessageSession {
   requestPhase: RequestPhase;
   /** Live API request details shown in the indicator while phase is 'api_request'. */
   apiRequestDetails: ApiRequestDetails | null;
+  /** Final duration of the thinking phase in ms — populated as soon as thinking finishes. */
+  thoughtDurationMs?: number;
 }
 
 interface ChatRuntimeState {
@@ -31,7 +33,7 @@ interface ChatRuntimeState {
   updateStreamingMessage: (
     conversationId: string,
     messageId: string,
-    payload: { content?: string; reasoning?: string }
+    payload: { content?: string; reasoning?: string; thoughtDurationMs?: number }
   ) => void;
   clearStreamingMessage: (conversationId: string, messageId?: string) => void;
   setRequestPhase: (
@@ -129,6 +131,7 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
           ...session,
           content: payload.content ?? session.content,
           reasoning: payload.reasoning ?? session.reasoning,
+          thoughtDurationMs: payload.thoughtDurationMs ?? session.thoughtDurationMs,
           updatedAt: Date.now(),
         },
       },

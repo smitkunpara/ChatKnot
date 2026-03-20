@@ -244,6 +244,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                           key={`think-${idx}`}
                           content={block.content}
                           isStreaming={isThisBlockStreaming}
+                          durationMs={message.thoughtDurationMs}
                         />
                       );
                     }

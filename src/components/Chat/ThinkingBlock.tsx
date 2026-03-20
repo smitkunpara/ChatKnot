@@ -23,6 +23,8 @@ interface ThinkingBlockProps {
     content: string;
     /** True while the model is still streaming this thinking block. */
     isStreaming: boolean;
+    /** Persisted duration in milliseconds for finished thoughts. */
+    durationMs?: number;
 }
 
 /** Format elapsed milliseconds into a clean string like "0.4s" or "32.1s" */
@@ -51,7 +53,11 @@ const formatDuration = (totalMs: number): string => {
  *  - User can tap to expand/collapse
  *  - No shimmer animation
  */
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreaming }) => {
+export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
+    content,
+    isStreaming,
+    durationMs,
+}) => {
     const { colors } = useAppTheme();
     const { width: viewportWidth } = useWindowDimensions();
     const styles = useMemo(() => createStyles(colors), [colors]);
@@ -121,7 +127,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     }, [isStreaming, shimmerAnim]);
 
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
-    const durationText = formatDuration(elapsedMs);
+    const durationText = formatDuration(isStreaming ? elapsedMs : (durationMs ?? 0));
 
     // Header label: while streaming show "Thinking…" or "Thinking for Xs"; when done "Thought for Xs"
     const headerLabel = isStreaming

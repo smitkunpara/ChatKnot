@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Thinking UI Refined** — Simplified thinking labels to a cleaner "Thinking/Thought [Time]" format (removed "for") and aligned icon/text padding with the API request block.
 - **API Request Phase UI** — Replaced the lightning icon with a rotating spinner during active requests and enabled a "settled" (dimmed) duration display once the first response chunk arrives.
 - **Historical Timing Fallback** — Added "N/A" indicators for thoughts and requests from older app versions where precision timing was not yet supported.
+- **Streaming Thinking Visibility** — Fixed an issue where the thinking duration would temporarily show "N/A" while the AI transitioned from reasoning to text answering.
+- **Thinking Time Persistence** — Thinking durations are now permanently saved with messages, ensuring correct timing is displayed after app restarts or chat reloads.
 
 ## [0.3.0] - 2026-03-17
 

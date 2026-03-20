@@ -180,6 +180,7 @@ export const ChatScreen = () => {
         ...message,
         content: streamingSession.content,
         reasoning: streamingSession.reasoning,
+        thoughtDurationMs: streamingSession.thoughtDurationMs,
       };
     });
 
@@ -194,6 +195,7 @@ export const ChatScreen = () => {
         role: 'assistant' as const,
         content: streamingSession.content,
         reasoning: streamingSession.reasoning,
+        thoughtDurationMs: streamingSession.thoughtDurationMs,
         timestamp: streamingSession.updatedAt,
       },
     ];
@@ -682,6 +684,7 @@ export const ChatScreen = () => {
     content: string,
     reasoning: string,
     apiRequestDetails?: import('../types').ApiRequestDetails | null,
+    thoughtDurationMs?: number,
   ) => {
     debug.log('commitStreamingAssistant', 'committing assistant stream', {
       conversationId,
@@ -699,6 +702,7 @@ export const ChatScreen = () => {
         content,
         reasoning,
         ...(apiRequestDetails ? { apiRequestDetails } : {}),
+        ...(thoughtDurationMs !== undefined ? { thoughtDurationMs } : {}),
       });
     } else {
       addMessage(conversationId, {
@@ -707,6 +711,7 @@ export const ChatScreen = () => {
         content,
         reasoning,
         ...(apiRequestDetails ? { apiRequestDetails } : {}),
+        ...(thoughtDurationMs !== undefined ? { thoughtDurationMs } : {}),
       });
     }
 
@@ -811,10 +816,13 @@ export const ChatScreen = () => {
     let currentStreamedReasoning = '';
     let currentStreamController: ReturnType<typeof createStreamingController> | null = null;
     let currentApiRequestDetails: import('../types').ApiRequestDetails | null = null;
+    let thoughtStartedAt: number | null = null;
+    let finalThoughtDurationMs: number | undefined;
 
     const settleCurrentStream = (options?: {
       content?: string;
       reasoning?: string;
+      thoughtDurationMs?: number;
       clearOnly?: boolean;
     }) => {
       debug.log('settleCurrentStream', 'settling current stream', {
@@ -843,6 +851,7 @@ export const ChatScreen = () => {
           nextContent,
           nextReasoning,
           currentApiRequestDetails,
+          options?.thoughtDurationMs ?? finalThoughtDurationMs,
         );
       }
 
@@ -1050,6 +1059,13 @@ export const ChatScreen = () => {
                   currentApiRequestDetails = updatedMeta;
                   setRequestPhase(conversationId, null, updatedMeta);
                 }
+                if (thoughtStartedAt && finalThoughtDurationMs === undefined) {
+                  finalThoughtDurationMs = Date.now() - thoughtStartedAt;
+                  updateStreamingMessage(conversationId, assistantMsgId, {
+                    content: streamedContent,
+                    thoughtDurationMs: finalThoughtDurationMs,
+                  });
+                }
                 streamedContent += chunk;
                 currentStreamedContent = streamedContent;
                 currentStreamController?.updateContent(streamedContent);
@@ -1067,6 +1083,7 @@ export const ChatScreen = () => {
                     firstChunkAt: Date.now(),
                   };
                   currentApiRequestDetails = updatedMeta;
+                  thoughtStartedAt = Date.now();
                   setRequestPhase(conversationId, 'thinking', updatedMeta);
                 }
                 streamedReasoning += reasoningChunk;
