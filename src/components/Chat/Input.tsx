@@ -19,10 +19,6 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
-import { createDebugLogger } from '../../utils/debugLogger';
-
-const debug = createDebugLogger('components/Chat/Input');
-debug.moduleLoaded();
 
 // Slimmer, strictly calculated UI properties (The Formula)
 const BUTTON_SIZE = 30;
@@ -73,14 +69,7 @@ export const Input: React.FC<InputProps> = ({
   showModeSelector = false,
   onModePress,
 }) => {
-  debug.enter('Input', {
-    isLoading,
-    isEditing,
-    attachmentsCount: attachments.length,
-    modeName,
-    showModeSelector,
-  });
-  const { colors } = useAppTheme();
+const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.bottom, isKeyboardVisible), [colors, insets.bottom, isKeyboardVisible]);
 
@@ -110,12 +99,7 @@ export const Input: React.FC<InputProps> = ({
   const canSend = (!!currentText.trim() || attachments.length > 0) && !isLoading;
 
   const handleSend = () => {
-    debug.log('handleSend', 'input send pressed', {
-      textLength: currentText.trim().length,
-      attachmentsCount: attachments.length,
-      isControlled,
-    });
-    if (!currentText.trim() && attachments.length === 0) return;
+if (!currentText.trim() && attachments.length === 0) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(currentText.trim());
     if (isControlled) {
@@ -126,8 +110,7 @@ export const Input: React.FC<InputProps> = ({
   };
 
   const pickImage = async () => {
-    debug.log('pickImage', 'image picker opened');
-    try {
+try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant access to your photo library to attach images.');
@@ -159,8 +142,7 @@ export const Input: React.FC<InputProps> = ({
   };
 
   const pickFile = async () => {
-    debug.log('pickFile', 'file picker opened');
-    try {
+try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'text/*', 'application/json'],
         copyToCacheDirectory: true,
@@ -182,11 +164,9 @@ export const Input: React.FC<InputProps> = ({
   };
 
   const showAttachmentOptions = () => {
-    debug.log('showAttachmentOptions', 'attachment menu opened');
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowAttachmentMenu(true);
   };
-
 
   // Plus button
   const plusBtn = (

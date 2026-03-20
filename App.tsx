@@ -18,15 +18,8 @@ import {
   applyHealthCheckReport,
 } from './src/services/startup/StartupHealthCheck';
 import { mergeServersWithOverrides } from './src/utils/mcpMerge';
-import { createDebugLogger } from './src/utils/debugLogger';
-
-const debug = createDebugLogger('App');
-debug.moduleLoaded();
 
 export default function App() {
-  debug.enter('App', {
-    modesCount: useSettingsStore.getState().modes.length,
-  });
   const modes = useSettingsStore(state => state.modes);
   const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
   const globalMcpServers = useSettingsStore(state => state.mcpServers);
@@ -47,26 +40,20 @@ export default function App() {
   const [healthCheckDone, setHealthCheckDone] = useState(false);
   const backgroundTaskIdRef = useRef<number | null>(null);
 
-
   useEffect(() => {
     let isMounted = true;
 
     const bootApp = async () => {
-      debug.log('bootApp', 'startup sequence began');
-      // Step 1: Storage bootstrap
+// Step 1: Storage bootstrap
       setLoadingStatus('Loading data...');
       setLoadingProgress(5);
       try {
         const result = await executeStorageHardeningBootstrap({});
-        debug.log('bootApp', 'storage bootstrap completed', {
-          warningsCount: result.errors.length,
-        });
-        if (result.errors.length > 0) {
+if (result.errors.length > 0) {
           console.warn('Storage hardening bootstrap completed with recoverable warnings.', result.errors);
         }
       } catch (error) {
-        debug.warn('bootApp', 'storage bootstrap failed', { error });
-        console.warn('Storage hardening bootstrap failed. Continuing with compatibility path.', error);
+console.warn('Storage hardening bootstrap failed. Continuing with compatibility path.', error);
       }
 
       try {
@@ -75,10 +62,8 @@ export default function App() {
           useChatStore.persist.rehydrate(),
           useChatDraftStore.persist.rehydrate(),
         ]);
-        debug.log('bootApp', 'stores rehydrated');
-      } catch (error) {
-        debug.warn('bootApp', 'store rehydration failed', { error });
-        console.warn('Store rehydration after bootstrap failed. Continuing app startup.', error);
+} catch (error) {
+console.warn('Store rehydration after bootstrap failed. Continuing app startup.', error);
       }
 
       if (!isMounted) return;
@@ -93,21 +78,12 @@ export default function App() {
 
       try {
         const report = await runStartupHealthCheck(servers, providers, (phase, msg, pct) => {
-          debug.log('bootApp.healthCheckProgress', 'startup health check progress', {
-            phase,
-            message: msg,
-            progress: pct,
-          });
-          if (isMounted) {
+if (isMounted) {
             setLoadingStatus(msg);
             if (pct != null) setLoadingProgress(pct);
           }
         });
-        debug.log('bootApp', 'startup health check completed', {
-          warningsCount: report.warnings.length,
-        });
-
-        if (isMounted) {
+if (isMounted) {
           // Step 3: Reconcile — only update settings that changed
           // Apply MCP results back to global servers
           applyHealthCheckReport(
@@ -124,8 +100,7 @@ export default function App() {
           }
         }
       } catch (error) {
-        debug.warn('bootApp', 'startup health check failed', { error });
-        console.warn('Startup health check failed; continuing without reconciliation.', error);
+console.warn('Startup health check failed; continuing without reconciliation.', error);
       }
 
       if (!isMounted) return;
@@ -136,15 +111,13 @@ export default function App() {
       await new Promise(resolve => setTimeout(resolve, 300));
 
       if (isMounted) {
-        debug.log('bootApp', 'app marked ready');
-        setHealthCheckDone(true);
+setHealthCheckDone(true);
         setReady(true);
       }
     };
 
     bootApp().catch(error => {
-      debug.error('bootApp', 'unexpected boot failure', { error });
-      console.error('Unexpected boot failure. Continuing app startup.', error);
+console.error('Unexpected boot failure. Continuing app startup.', error);
       if (isMounted) {
         setHealthCheckDone(true);
         setReady(true);
@@ -159,10 +132,7 @@ export default function App() {
   // Re-initialize MCP manager when active mode's servers change (after boot)
   useEffect(() => {
     if (!healthCheckDone) return;
-    debug.log('useEffect.reinitializeMcp', 'reinitializing MCP', {
-      activeServersCount: activeMcpServers.length,
-    });
-    McpManager.reinitialize(activeMcpServers).catch(console.error);
+McpManager.reinitialize(activeMcpServers).catch(console.error);
   }, [activeMcpServers, healthCheckDone]);
 
   useEffect(() => {
@@ -176,17 +146,10 @@ export default function App() {
     };
 
     const handleAppStateChange = async (nextState: AppStateStatus) => {
-      debug.log('handleAppStateChange', 'app state changed', {
-        nextState,
-        isChatStreaming,
-      });
-      if (nextState === 'background' && isChatStreaming) {
+if (nextState === 'background' && isChatStreaming) {
         if (backgroundTaskIdRef.current == null) {
           backgroundTaskIdRef.current = await ChatBackgroundTask.begin();
-          debug.log('handleAppStateChange', 'background task started', {
-            taskId: backgroundTaskIdRef.current,
-          });
-        }
+}
         return;
       }
 
@@ -210,11 +173,7 @@ export default function App() {
   }, [isChatStreaming]);
 
   if (!isReady) {
-    debug.log('App', 'render loading screen', {
-      loadingStatus,
-      loadingProgress,
-    });
-    return (
+return (
       <SafeAreaProvider>
         <StatusBar
           style={isDark ? 'light' : 'dark'}

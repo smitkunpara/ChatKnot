@@ -1,9 +1,5 @@
 import { McpClient } from './McpClient';
 import { McpServerConfig, McpToolSchema } from '../../types';
-import { createDebugLogger } from '../../utils/debugLogger';
-
-const debug = createDebugLogger('services/mcp/McpManager');
-debug.moduleLoaded();
 
 export interface McpToolExecutionPolicy {
   found: boolean;
@@ -150,11 +146,7 @@ class McpManagerService {
   }
 
   async initialize(configs: McpServerConfig[]) {
-    debug.log('initialize', 'initializing MCP manager', {
-      configsCount: configs.length,
-      enabledCount: configs.filter(config => config.enabled).length,
-    });
-    // Clear existing (or handle updates more gracefully)
+// Clear existing (or handle updates more gracefully)
     // For MVP, we'll disconnect all and reconnect
     const clients = Array.from(this.clients.values());
     for (const client of clients) {
@@ -188,11 +180,7 @@ class McpManagerService {
       if (!config.enabled) continue;
 
       try {
-        debug.log('initialize', 'connecting server', {
-          serverId: config.id,
-          serverName: config.name,
-        });
-        const client = new McpClient(config);
+const client = new McpClient(config);
         await client.connect();
         this.clients.set(config.id, client);
 
@@ -217,12 +205,7 @@ class McpManagerService {
         });
         this.rebuildToolRegistry();
       } catch (error) {
-        debug.warn('initialize', 'server connection failed', {
-          serverId: config.id,
-          serverName: config.name,
-          error,
-        });
-        this.connectedToolsByServer.delete(config.id);
+this.connectedToolsByServer.delete(config.id);
         this.runtimeStates.set(config.id, {
           serverId: config.id,
           serverName: config.name,
@@ -240,11 +223,7 @@ class McpManagerService {
   }
 
   getTools(): McpToolSchema[] {
-    debug.log('getTools', 'building tools snapshot', {
-      cached: !!this.cachedTools,
-      registrySize: this.tools.size,
-    });
-    if (this.cachedTools) {
+if (this.cachedTools) {
       return this.cachedTools;
     }
 
@@ -256,10 +235,7 @@ class McpManagerService {
   }
 
   async executeTool(name: string, args: any): Promise<any> {
-    debug.log('executeTool', 'executing tool via manager', {
-      name,
-    });
-    const policy = this.getToolExecutionPolicy(name);
+const policy = this.getToolExecutionPolicy(name);
     if (!policy.found) {
       throw new Error(`Tool ${name} not found`);
     }
@@ -317,10 +293,7 @@ class McpManagerService {
   }
 
   async reinitialize(configs: McpServerConfig[]) {
-    debug.log('reinitialize', 'reinitializing MCP manager', {
-      configsCount: configs.length,
-    });
-    await this.initialize(configs);
+await this.initialize(configs);
   }
 }
 

@@ -4,10 +4,6 @@ import { Message, Conversation, ToolCall } from '../types';
 import uuid from 'react-native-uuid';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import { generateConversationTitle, isPlaceholderTitle } from '../utils/conversationHelpers';
-import { createDebugLogger } from '../utils/debugLogger';
-
-const debug = createDebugLogger('store/useChatStore');
-debug.moduleLoaded();
 
 const chatPersistStorage = createEncryptedStateStorage({
   id: 'chat-storage',
@@ -50,12 +46,7 @@ export const useChatStore = create<ChatState>()(
       activeConversationId: null,
 
       createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
-        debug.log('createConversation', 'creating conversation', {
-          providerId,
-          modeId,
-          modelOverride,
-        });
-        const now = Date.now();
+const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
@@ -74,24 +65,18 @@ export const useChatStore = create<ChatState>()(
       },
 
       setActiveConversation: (id) => {
-        debug.log('setActiveConversation', 'setting active conversation', { id });
-        set({ activeConversationId: id });
+set({ activeConversationId: id });
       },
 
       deleteConversation: (id) => set((state) => {
-        debug.log('deleteConversation', 'deleting conversation', { id });
-        return {
+return {
           conversations: state.conversations.filter((c) => c.id !== id),
           activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
         };
       }),
 
       updateProviderInConversation: (conversationId, providerId) => set((state) => {
-        debug.log('updateProviderInConversation', 'updating provider', {
-          conversationId,
-          providerId,
-        });
-        return {
+return {
           conversations: state.conversations.map((c) =>
             c.id === conversationId ? { ...c, providerId } : c
           ),
@@ -99,12 +84,7 @@ export const useChatStore = create<ChatState>()(
       }),
 
       updateModelInConversation: (conversationId, providerId, model) => set((state) => {
-        debug.log('updateModelInConversation', 'updating model', {
-          conversationId,
-          providerId,
-          model,
-        });
-        return {
+return {
           conversations: state.conversations.map((c) => {
             if (c.id === conversationId) {
               return { ...c, providerId, modelOverride: model };
@@ -115,11 +95,7 @@ export const useChatStore = create<ChatState>()(
       }),
 
       updateModeInConversation: (conversationId, modeId) => set((state) => {
-        debug.log('updateModeInConversation', 'updating mode', {
-          conversationId,
-          modeId,
-        });
-        return {
+return {
           conversations: state.conversations.map((c) =>
             c.id === conversationId ? { ...c, modeId } : c
           ),
@@ -127,14 +103,7 @@ export const useChatStore = create<ChatState>()(
       }),
 
       addMessage: (conversationId, message) => set((state) => {
-        debug.log('addMessage', 'adding message', {
-          conversationId,
-          role: message.role,
-          contentLength: message.content?.length ?? 0,
-          attachmentsCount: message.attachments?.length ?? 0,
-          isError: message.isError === true,
-        });
-        return {
+return {
           conversations: state.conversations.map((c) => {
             if (c.id === conversationId) {
               const newMessage = {

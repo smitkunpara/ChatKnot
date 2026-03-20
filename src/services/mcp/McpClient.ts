@@ -4,10 +4,6 @@ import uuid from 'react-native-uuid';
 import { validateOpenApiEndpoint } from './OpenApiValidationService';
 import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
 import { MCP_PROTOCOL_VERSION, MCP_CLIENT_VERSION } from '../../constants/api';
-import { createDebugLogger } from '../../utils/debugLogger';
-
-const debug = createDebugLogger('services/mcp/McpClient');
-debug.moduleLoaded();
 
 export class McpClient {
   private config: McpServerConfig;
@@ -25,13 +21,7 @@ export class McpClient {
       ...config,
       url: this.normalizedBaseUrl,
     };
-    debug.log('constructor', 'client created', {
-      serverId: config.id,
-      serverName: config.name,
-      url: this.normalizedBaseUrl,
-      enabled: config.enabled,
-    });
-  }
+}
 
   private hasConfiguredHeader(headerName: string): boolean {
     const target = headerName.toLowerCase();
@@ -60,23 +50,14 @@ export class McpClient {
   }
 
   async connect(): Promise<void> {
-    debug.log('connect', 'connecting to MCP server', {
-      serverId: this.config.id,
-      url: this.config.url,
-    });
-    const openApiValidation = await validateOpenApiEndpoint({
+const openApiValidation = await validateOpenApiEndpoint({
       url: this.config.url,
       headers: this.config.headers || {},
       token: this.config.token,
     });
 
     if (openApiValidation.ok) {
-      debug.log('connect', 'openapi validation succeeded', {
-        serverId: this.config.id,
-        toolsCount: openApiValidation.tools.length,
-        resolvedBaseUrl: openApiValidation.resolvedBaseUrl,
-      });
-      this.openapiSpec = openApiValidation.spec;
+this.openapiSpec = openApiValidation.spec;
       this.isOpenApi = true;
       this.tools = openApiValidation.tools;
       this.normalizedBaseUrl = openApiValidation.resolvedBaseUrl;
@@ -95,19 +76,12 @@ export class McpClient {
         });
 
         this.eventSource.addEventListener('open', () => {
-          debug.log('connect', 'SSE connection opened', {
-            serverId: this.config.id,
-          });
-          // Connection established, waiting for endpoint event
+// Connection established, waiting for endpoint event
         });
 
         this.eventSource.addEventListener('endpoint' as any, (event: any) => {
           try {
-            debug.log('connect', 'endpoint event received', {
-              serverId: this.config.id,
-              data: event.data,
-            });
-            // The server sends the POST endpoint relative or absolute
+// The server sends the POST endpoint relative or absolute
             const data = event.data; // might be just the URL string or JSON
             // MCP spec: event: endpoint, data: /mcp/messages
             // Check if data is absolute or relative
@@ -133,11 +107,7 @@ export class McpClient {
         });
 
         this.eventSource.addEventListener('error', (event: any) => {
-          debug.warn('connect', 'SSE error event received', {
-            serverId: this.config.id,
-            event,
-          });
-          console.error('MCP SSE Error:', event);
+console.error('MCP SSE Error:', event);
           if (!this.isConnected) {
             reject(new Error('Failed to connect to MCP server'));
           } else {
@@ -153,12 +123,7 @@ export class McpClient {
   }
 
   private async post(method: string, params: any = {}) {
-    debug.log('post', 'posting MCP request', {
-      serverId: this.config.id,
-      method,
-      hasPostUrl: !!this.postUrl,
-    });
-    if (!this.postUrl) throw new Error('MCP Client not connected (no POST URL)');
+if (!this.postUrl) throw new Error('MCP Client not connected (no POST URL)');
 
     const response = await fetch(this.postUrl, {
       method: 'POST',
@@ -216,10 +181,7 @@ export class McpClient {
   }
 
   async initialize() {
-    debug.log('initialize', 'initializing MCP client', {
-      serverId: this.config.id,
-    });
-    // Send initialize
+// Send initialize
     await this.post('initialize', {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {
@@ -239,8 +201,7 @@ export class McpClient {
   }
 
   async refreshTools(): Promise<McpToolSchema[]> {
-    debug.log('refreshTools', 'refreshing tools', { serverId: this.config.id });
-    const result = await this.post('tools/list');
+const result = await this.post('tools/list');
     this.tools = result.tools || [];
     return this.tools;
   }
@@ -250,11 +211,7 @@ export class McpClient {
   }
 
   async callTool(name: string, args: any): Promise<any> {
-    debug.log('callTool', 'calling tool', {
-      serverId: this.config.id,
-      name,
-    });
-    if (this.isOpenApi) {
+if (this.isOpenApi) {
       return this.callOpenApiTool(name, args);
     }
     const result = await this.post('tools/call', {

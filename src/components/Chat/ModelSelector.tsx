@@ -10,10 +10,6 @@ import {
   resolveModelSelection,
 } from '../../services/llm/modelSelection';
 import { isModelOptionActive } from './modelSelectorState';
-import { createDebugLogger } from '../../utils/debugLogger';
-
-const debug = createDebugLogger('components/Chat/ModelSelector');
-debug.moduleLoaded();
 
 export interface ModelSelectorHandle {
   open: () => void;
@@ -39,11 +35,7 @@ export const ModelSelector = forwardRef<ModelSelectorHandle, ModelSelectorProps>
   activeModel,
   onSelect,
 }, ref) => {
-  debug.enter('ModelSelector', {
-    activeProviderId,
-    activeModel,
-  });
-  const { colors } = useAppTheme();
+const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState('');
@@ -99,8 +91,7 @@ export const ModelSelector = forwardRef<ModelSelectorHandle, ModelSelectorProps>
   );
 
   const closeModal = () => {
-    debug.log('closeModal', 'closing model selector modal');
-    setModalVisible(false);
+setModalVisible(false);
     setSearch('');
   };
 

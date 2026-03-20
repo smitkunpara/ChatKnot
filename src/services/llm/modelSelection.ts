@@ -1,9 +1,5 @@
 import { LlmProviderConfig, LastUsedModelPreference } from '../../types';
 import { isModelIdLikelyTextOutput } from './modelFilter';
-import { createDebugLogger } from '../../utils/debugLogger';
-
-const debug = createDebugLogger('services/llm/modelSelection');
-debug.moduleLoaded();
 
 export interface ChatModelOption {
   providerId: string;
@@ -45,14 +41,7 @@ const getProviderModelCandidates = (provider: LlmProviderConfig): string[] => {
 };
 
 export const getProviderVisibleModels = (provider: LlmProviderConfig): string[] => {
-  debug.log('getProviderVisibleModels', 'evaluating provider models', {
-    providerId: provider.id,
-    providerName: provider.name,
-    enabled: provider.enabled,
-    availableModelsCount: provider.availableModels?.length ?? 0,
-    hiddenModelsCount: provider.hiddenModels?.length ?? 0,
-  });
-  if (!hasProviderSetup(provider)) {
+if (!hasProviderSetup(provider)) {
     return [];
   }
 
@@ -76,10 +65,7 @@ export const getProviderVisibleModels = (provider: LlmProviderConfig): string[] 
 };
 
 export const getChatAvailableModels = (providers: LlmProviderConfig[]): ChatModelOption[] => {
-  debug.log('getChatAvailableModels', 'building chat model options', {
-    providersCount: providers.length,
-  });
-  if (!Array.isArray(providers)) {
+if (!Array.isArray(providers)) {
     return [];
   }
 
@@ -119,14 +105,7 @@ const findOption = (
 export const resolveModelSelection = (
   args: ResolveModelSelectionArgs
 ): ResolveModelSelectionResult => {
-  debug.log('resolveModelSelection', 'resolving model selection', {
-    selectedProviderId: args.selectedProviderId,
-    selectedModel: args.selectedModel,
-    lastUsedProviderId: args.lastUsedModel?.providerId,
-    lastUsedModel: args.lastUsedModel?.model,
-    providersCount: args.providers?.length ?? 0,
-  });
-  const availableModels = getChatAvailableModels(args.providers || []);
+const availableModels = getChatAvailableModels(args.providers || []);
 
   const fromSelection = findOption(
     availableModels,

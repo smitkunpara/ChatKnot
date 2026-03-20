@@ -1,8 +1,4 @@
 import { create } from 'zustand';
-import { createDebugLogger } from '../utils/debugLogger';
-
-const debug = createDebugLogger('store/useChatRuntimeStore');
-debug.moduleLoaded();
 
 export interface StreamingMessageSession {
   conversationId: string;
@@ -35,8 +31,7 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   streamingSessions: {},
 
   beginRequest: (conversationId) => set((state) => {
-    debug.log('beginRequest', 'begin request called', { conversationId });
-    if (state.loadingConversationIds[conversationId]) {
+if (state.loadingConversationIds[conversationId]) {
       return state;
     }
 
@@ -51,8 +46,7 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   }),
 
   finishRequest: (conversationId) => set((state) => {
-    debug.log('finishRequest', 'finish request called', { conversationId });
-    if (!conversationId) {
+if (!conversationId) {
       return {
         isLoading: false,
         activeRequestConversationId: null,
@@ -77,11 +71,7 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
 
   startStreamingMessage: (conversationId, messageId) => set((state) => ({
     ...(() => {
-      debug.log('startStreamingMessage', 'starting streaming session', {
-        conversationId,
-        messageId,
-      });
-      return {};
+return {};
     })(),
     streamingSessions: {
       ...state.streamingSessions,
@@ -96,13 +86,7 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   })),
 
   updateStreamingMessage: (conversationId, messageId, payload) => set((state) => {
-    debug.log('updateStreamingMessage', 'updating streaming session', {
-      conversationId,
-      messageId,
-      contentLength: payload.content?.length,
-      reasoningLength: payload.reasoning?.length,
-    });
-    const session = state.streamingSessions[conversationId];
+const session = state.streamingSessions[conversationId];
     if (!session || session.messageId !== messageId) {
       return state;
     }
@@ -121,11 +105,7 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   }),
 
   clearStreamingMessage: (conversationId, messageId) => set((state) => {
-    debug.log('clearStreamingMessage', 'clearing streaming session', {
-      conversationId,
-      messageId,
-    });
-    const session = state.streamingSessions[conversationId];
+const session = state.streamingSessions[conversationId];
     if (!session) {
       return state;
     }

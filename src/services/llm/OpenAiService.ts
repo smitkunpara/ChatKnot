@@ -2,10 +2,6 @@ import { LlmProviderConfig, Message, ModelCapabilities } from '../../types';
 import { filterModelsForTextOutput } from './modelFilter';
 
 import { DEFAULT_OPENAI_BASE_URL } from '../../constants/api';
-import { createDebugLogger } from '../../utils/debugLogger';
-
-const debug = createDebugLogger('services/llm/OpenAiService');
-debug.moduleLoaded();
 
 export interface ModelsWithCapabilities {
   models: string[];
@@ -17,13 +13,7 @@ export class OpenAiService {
 
   constructor(config: LlmProviderConfig) {
     this.config = config;
-    debug.log('constructor', 'service instantiated', {
-      providerId: config.id,
-      type: config.type,
-      model: config.model,
-      baseUrl: config.baseUrl,
-    });
-  }
+}
 
   private getBaseUrl(): string {
     const configuredBaseUrl = (this.config.baseUrl || '').trim();
@@ -100,18 +90,14 @@ export class OpenAiService {
 
   private async fetchModelsPayload(): Promise<any> {
     const endpointCandidates = this.getModelEndpointCandidates();
-    debug.log('fetchModelsPayload', 'fetching model endpoints', {
-      endpointCandidates,
-    });
-    let lastError: Error | null = null;
+let lastError: Error | null = null;
 
     for (let index = 0; index < endpointCandidates.length; index += 1) {
       const endpoint = endpointCandidates[index];
       const hasFallback = index < endpointCandidates.length - 1;
 
       try {
-        debug.log('fetchModelsPayload', 'requesting model endpoint', { endpoint });
-        const response = await fetch(endpoint, {
+const response = await fetch(endpoint, {
           method: 'GET',
           headers: this.getHeaders(),
         });
@@ -135,11 +121,7 @@ export class OpenAiService {
 
         return await response.json();
       } catch (error) {
-        debug.warn('fetchModelsPayload', 'model endpoint failed', {
-          endpoint,
-          error,
-        });
-        if (error instanceof Error) {
+if (error instanceof Error) {
           lastError = error;
         } else {
           lastError = new Error(String(error));
@@ -365,11 +347,7 @@ export class OpenAiService {
 
   async listModelsWithCapabilities(): Promise<ModelsWithCapabilities> {
     try {
-      debug.log('listModelsWithCapabilities', 'listing models with capabilities', {
-        providerId: this.config.id,
-        model: this.config.model,
-      });
-      const data = await this.fetchModelsPayload();
+const data = await this.fetchModelsPayload();
       const rawModels = OpenAiService.extractModelList(data);
       const supportedModels = filterModelsForTextOutput(rawModels);
 
@@ -386,8 +364,7 @@ export class OpenAiService {
 
       return { models: supportedModels, capabilities };
     } catch (error) {
-      debug.error('listModelsWithCapabilities', 'failed to list models', { error });
-      console.error('Error fetching models:', error);
+console.error('Error fetching models:', error);
       if (error instanceof Error) {
         throw new Error(`Unable to fetch models: ${error.message}`);
       }
@@ -408,15 +385,7 @@ export class OpenAiService {
     onReasoning?: (reasoningChunk: string) => void
   ) {
     try {
-      debug.log('sendChatCompletion', 'sending chat completion', {
-        providerId: this.config.id,
-        model: this.config.model,
-        messagesCount: messages.length,
-        toolsCount: tools.length,
-        userSystemPromptLength: userSystemPrompt.length,
-        appSystemPromptLength: appSystemPrompt?.length ?? 0,
-      });
-      const systemMessages = [userSystemPrompt, appSystemPrompt]
+const systemMessages = [userSystemPrompt, appSystemPrompt]
         .map((prompt) => (prompt || '').trim())
         .filter(Boolean)
         .map((prompt) => ({ role: 'system', content: prompt }));
@@ -506,13 +475,7 @@ export class OpenAiService {
         // @ts-ignore
         reactNative: { textStreaming: true },
       });
-      debug.log('sendChatCompletion', 'chat completion response received', {
-        ok: response.ok,
-        status: (response as any).status,
-        hasReader: typeof (response as any).body?.getReader === 'function',
-      });
-
-      if (!response.ok) {
+if (!response.ok) {
         const text = await response.text();
         throw new Error(`API Error: ${response.status} - ${text}`);
       }
@@ -567,11 +530,7 @@ export class OpenAiService {
           throw new Error('Request cancelled by user');
         }
         fullContent += contentChunk;
-        debug.log('emitContentChunk', 'content chunk received', {
-          chunkLength: contentChunk.length,
-          fullContentLength: fullContent.length,
-        });
-        onChunk(contentChunk, undefined);
+onChunk(contentChunk, undefined);
       };
 
       const processDelta = (delta: any): boolean => {
@@ -582,11 +541,7 @@ export class OpenAiService {
         const reasoningChunk = delta.reasoning_content || delta.reasoning || '';
         if (reasoningChunk && onReasoning) {
           fullReasoning += reasoningChunk;
-          debug.log('processDelta', 'reasoning chunk received', {
-            chunkLength: reasoningChunk.length,
-            fullReasoningLength: fullReasoning.length,
-          });
-          onReasoning(reasoningChunk);
+onReasoning(reasoningChunk);
           emitted = true;
         }
         if (delta.content) {
@@ -594,16 +549,12 @@ export class OpenAiService {
           emitted = true;
         }
         if (delta.tool_calls) {
-          debug.log('processDelta', 'tool call chunk received', {
-            toolCallsCount: delta.tool_calls.length,
-          });
-          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
+toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
           onChunk('', toolCallsBuffer);
           emitted = true;
         }
         if (delta.function_call) {
-          debug.log('processDelta', 'legacy function_call chunk received');
-          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
+toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
             {
               index: 0,
               id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
@@ -743,11 +694,7 @@ export class OpenAiService {
 
           if (done) break;
           pendingBuffer += decoder.decode(value, { stream: true });
-          debug.log('sendChatCompletion.stream', 'reader chunk received', {
-            chunkLength: typeof value?.length === 'number' ? value.length : undefined,
-            pendingBufferLength: pendingBuffer.length,
-          });
-          const { events, pending } = splitSseEvents(pendingBuffer);
+const { events, pending } = splitSseEvents(pendingBuffer);
           pendingBuffer = pending;
 
           for (const event of events) {
@@ -832,8 +779,7 @@ export class OpenAiService {
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
       }
     } catch (error) {
-      debug.error('sendChatCompletion', 'chat completion failed', { error });
-      if ((error as any)?.name === 'AbortError') {
+if ((error as any)?.name === 'AbortError') {
         onError(new Error('Request cancelled by user'));
         return;
       }

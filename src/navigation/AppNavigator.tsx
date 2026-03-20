@@ -7,11 +7,8 @@ import { Sidebar } from '../components/Sidebar/ConversationList';
 import { getNavigationTheme, useAppTheme } from '../theme/useAppTheme';
 import { StartupWarningBanner } from '../components/Common/StartupWarningBanner';
 import { View } from 'react-native';
-import { createDebugLogger } from '../utils/debugLogger';
 
 const Drawer = createDrawerNavigator();
-const debug = createDebugLogger('navigation/AppNavigator');
-debug.moduleLoaded();
 
 interface AppNavigatorProps {
   startupWarnings?: string[];
@@ -22,10 +19,7 @@ export const AppNavigator: React.FC<AppNavigatorProps> = ({
   startupWarnings = [],
   onDismissWarnings = () => { },
 }) => {
-  debug.enter('AppNavigator', {
-    startupWarningsCount: startupWarnings.length,
-  });
-  const { colors } = useAppTheme();
+const { colors } = useAppTheme();
 
   return (
     <NavigationContainer theme={getNavigationTheme(colors)}>
