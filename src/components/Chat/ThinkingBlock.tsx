@@ -37,9 +37,16 @@ const formatDuration = (totalSeconds: number): string => {
 
 /**
  * Renders a collapsible "Thinking" section.
- * While streaming it shows a shimmering "Thinking" label, auto-expands,
- * and counts the elapsed thinking time. Once done it collapses by default,
- * shows "Thought for Xm Ys", and the user can tap to expand.
+ *
+ * While streaming:
+ *  - Shows a shimmering "Thinking…" / "Thinking for Xs" label (left side only – chevron is stable)
+ *  - Auto-expands so the user can watch reasoning appear
+ *  - Counts elapsed thinking time
+ *
+ * Once done:
+ *  - Collapses, shows "Thought for Xs"
+ *  - User can tap to expand/collapse
+ *  - No shimmer animation
  */
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreaming }) => {
     const { colors } = useAppTheme();
@@ -56,11 +63,9 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     const prevStreamingRef = useRef(isStreaming);
 
     useEffect(() => {
-        // When streaming starts, expand
         if (isStreaming && !prevStreamingRef.current) {
             setExpanded(true);
         }
-        // Went from streaming → done → collapse.
         if (prevStreamingRef.current && !isStreaming) {
             setExpanded(false);
         }
@@ -80,14 +85,15 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
             }, 1000);
             return () => clearInterval(interval);
         }
-        // When streaming stops, freeze the elapsed time
     }, [isStreaming]);
 
-    // ---- Shimmer animation (opacity pulse) while streaming ----
-    const shimmerAnim = useRef(new Animated.Value(0.4)).current;
+    // ---- Shimmer animation (opacity pulse) only while streaming ----
+    // Applied only to the label + brain icon (left side), NOT to the chevron.
+    const shimmerAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
         if (isStreaming) {
+            shimmerAnim.setValue(0.55);
             const loop = Animated.loop(
                 Animated.sequence([
                     Animated.timing(shimmerAnim, {
@@ -97,7 +103,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                         useNativeDriver: true,
                     }),
                     Animated.timing(shimmerAnim, {
-                        toValue: 0.4,
+                        toValue: 0.55,
                         duration: 800,
                         easing: Easing.inOut(Easing.ease),
                         useNativeDriver: true,
@@ -114,7 +120,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
     const durationText = formatDuration(elapsedSeconds);
 
-    // Build the header label
+    // Header label: while streaming show "Thinking…" or "Thinking for Xs"; when done "Thought for Xs"
     const headerLabel = isStreaming
         ? `Thinking${durationText ? ` for ${durationText}` : '…'}`
         : `Thought${durationText ? ` for ${durationText}` : ''}`;
@@ -128,13 +134,15 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                 accessibilityRole="button"
                 accessibilityLabel={expanded ? 'Collapse thinking' : 'Expand thinking'}
             >
-                <Animated.View style={[styles.headerInner, { opacity: isStreaming ? shimmerAnim : 1 }]}>
+                {/* Only the left side shimmers — chevron stays fully opaque always */}
+                <Animated.View style={[styles.headerInner, { opacity: shimmerAnim }]}>
                     <Brain size={14} color={colors.primary} />
-                    <Text style={styles.headerText}>
+                    <Text style={[styles.headerText, isStreaming && styles.headerTextStreaming]}>
                         {headerLabel}
                     </Text>
                 </Animated.View>
-                <ChevronIcon size={14} color={colors.textTertiary} />
+                {/* Chevron: always opaque, always visible */}
+                <ChevronIcon size={14} color={colors.textSecondary} />
             </TouchableOpacity>
 
             {expanded && content.trim().length > 0 && (
@@ -172,11 +180,16 @@ const createStyles = (colors: AppPalette) =>
             flexDirection: 'row',
             alignItems: 'center',
             gap: 6,
+            flex: 1,
         },
         headerText: {
             color: colors.textSecondary,
             fontSize: 13,
             fontWeight: '600',
+        },
+        /** Brighter label while actively streaming so it reads clearly against the background. */
+        headerTextStreaming: {
+            color: colors.text,
         },
         body: {
             paddingHorizontal: 12,
