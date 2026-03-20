@@ -29,6 +29,12 @@ A privacy-focused, high-performance React Native mobile application for chatting
 ## 📝 For In-Depth Info
 For a complete list of version-specific changes, technical refactors, and recently shipped features, please check our [**Changelog**](CHANGELOG.md).
 
+## 🆕 0.3.0 Update Notes
+- **Mode-aware chat workflows**: `0.3.0` adds first-class Modes, per-conversation mode persistence, mode-aware MCP overrides, and targeted Settings refresh behavior.
+- **Streaming compatibility improvements**: OpenAI-compatible streaming now handles more SSE response variants, and non-OpenAI-compatible providers receive legacy `functions` fallback fields when tool calling is enabled.
+- **Developer diagnostics**: Dev builds now include centralized structured debug logs across app boot, chat flow, stores, provider requests, and MCP runtime.
+- **Composer polish**: The chat mode chip now sizes to the mode label instead of stretching across the entire composer row.
+
 ---
 
 ## 🛠️ Getting Started

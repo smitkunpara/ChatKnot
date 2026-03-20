@@ -49,6 +49,12 @@ This major release introduces the **Mode System**, a powerful way to organize yo
 - **Immediate MCP Auto-Scroll**: As soon as MCP tool-call UI cards are created, chat now jumps to the bottom immediately instead of waiting for MCP response completion.
 - **Per-Chat Stop/Loading State**: Stop button and loading indicators are now conversation-scoped, so switching to another chat no longer shows a false active generation state.
 - **Per-Chat Draft Persistence**: Composer drafts are saved per conversation and restored after chat switches, app backgrounding, and full app restart.
+- **Broader Provider Stream Compatibility**: OpenAI-compatible streaming now handles more SSE variants correctly, including CRLF-delimited frames and providers that send final streamed content via `message` payloads.
+- **Legacy Tool-Calling Fallback Restored**: Non-OpenAI-compatible endpoints once again receive `functions` / `function_call` fallback fields in addition to modern `tools`, improving compatibility with older OpenAI-style providers.
+- **Composer Mode Chip Sizing**: The mode selector in the composer now uses only the width needed for the mode name instead of spanning the full input row.
+
+### 🧪 Debugging Improvements
+- **Structured Dev Logs**: Added centralized dev-only debug logging with file and function labels across app startup, chat state, provider requests, and MCP runtime to make runtime tracing much easier during development.
 
 ---
 

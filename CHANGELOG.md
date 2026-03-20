@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Date/Time in App System Prompt** — The app system prompt now includes the current local date and time for time-aware responses.
 - **Chat Loop Debug Logging** — Added timing logs for payload preparation and API request phases to help diagnose response latency.
 - **Per-Conversation Draft Persistence** — Added encrypted per-chat draft storage so composer text is preserved when switching chats, backgrounding, or fully restarting the app.
+- **Centralized Dev Debug Logger** — Added a dev-only structured debug logger with file/function labels across app boot, chat flow, stores, provider requests, and MCP runtime so terminal traces can pinpoint runtime regressions without affecting release builds.
 
 ### Changed
 - **Settings UI Toggles** — Moved enable/disable toggles for AI Providers and MCP Servers directly to the list view for faster access.
@@ -41,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Assistant Persistence Timing** — Assistant streaming chunks are no longer persisted incrementally; assistant messages are committed to storage only when the response completes or the user stops generation.
 - **Per-Conversation Runtime Loading State** — Streaming/loading state now tracks each conversation independently, enabling concurrent chat sessions without cross-chat loading UI bleed.
 - **Hidden-Screen Streaming Strategy** — Streaming continues for non-visible chats in runtime memory while UI rendering remains scoped to the currently visible chat screen for smoother navigation performance.
+- **Composer Mode Chip Layout** — The in-composer mode selector now sizes to its label instead of stretching across the full bottom row width.
 - **Style System Refactor** — Migrated all component style creators to use the `AppPalette` type for unified theme token enforcement and better type safety.
 - **Settings Store Hardening** — Fixed `replaceAllSettings` and improved `partialize` logic in `useSettingsStore` to ensure safer state persistence and hydration.
 - **Provider Instance Management** — Added cache eviction to `ProviderFactory` (MAX_CACHE_SIZE = 20) to prevent memory leaks from long-running AI sessions.
@@ -54,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Long-Chat Open/Drawer Scroll Jump** — Fixed chat opening behavior where long conversations briefly started at top and animated down; initial return-to-bottom now snaps instantly (including after opening/closing the sidebar).
 - **MCP Tool-Call Auto-Scroll** — Chat now scrolls to bottom immediately when MCP tool-call cards are created, instead of waiting for MCP execution to complete.
 - **Realtime Streaming Regression** — Restored immediate visible chunk updates in chat so streamed text appears progressively again.
+- **SSE Stream Compatibility** — Hardened OpenAI-compatible stream parsing to correctly handle CRLF-delimited SSE frames and providers that emit final streamed payloads via `message` instead of only `delta`.
+- **Legacy Tool-Calling Compatibility** — Restored non-OpenAI-compatible `functions` / `function_call` fallback alongside modern `tools` payloads for providers that still rely on the older request shape.
 - **Cross-Chat Stop Button Leakage** — Fixed the composer showing a Stop button in other chats when only one conversation is actively generating.
 - **Tool Approval Cross-Chat Interference** — Scoped pending inline tool approvals by conversation to avoid stop/cleanup side effects across simultaneous chat runs.
 - **StreamingCursor Animation Leak** — Fixed a memory leak in `MessageBubble.tsx` by adding a mandatory cleanup function to the `StreamingCursor` loop.

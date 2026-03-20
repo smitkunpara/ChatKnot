@@ -278,7 +278,7 @@ export const Input: React.FC<InputProps> = ({
           />
           <View style={styles.bottomRow}>
             {plusBtn}
-            <View style={{ flex: 1, justifyContent: 'center' }}>
+            <View style={styles.modeToggleWrap}>
               {showModeSelector && onModePress && (
                 <TouchableOpacity
                   style={styles.modeToggle}
@@ -375,12 +375,18 @@ const createStyles = (colors: AppPalette, insetBottom: number, isKeyboardVisible
     },
 
     bottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: -2 },
+    modeToggleWrap: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+    },
 
     modeToggle: {
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
       gap: 3,
       paddingHorizontal: 6,
+      alignSelf: 'flex-start',
     },
     modeToggleText: {
       fontSize: 12,
