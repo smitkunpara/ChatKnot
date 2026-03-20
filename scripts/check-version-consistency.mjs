@@ -51,7 +51,7 @@ const androidVersionCode = extractSingleMatch(buildGradle, /versionCode\s+(\d+)/
 assertEqual('android/app/build.gradle versionName', androidVersionName, expectedVersion);
 assertEqual('android/app/build.gradle versionCode', androidVersionCode, expectedBuild);
 
-const infoPlist = readRelativeFile('ios/mcpconnectorapp/Info.plist');
+const infoPlist = readRelativeFile('ios/ChatKnot/Info.plist');
 const iosShortVersion = extractSingleMatch(
   infoPlist,
   /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/,
@@ -62,10 +62,10 @@ const iosBuildVersion = extractSingleMatch(
   /<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/,
   'CFBundleVersion'
 );
-assertEqual('ios/mcpconnectorapp/Info.plist CFBundleShortVersionString', iosShortVersion, expectedVersion);
-assertEqual('ios/mcpconnectorapp/Info.plist CFBundleVersion', iosBuildVersion, expectedBuild);
+assertEqual('ios/ChatKnot/Info.plist CFBundleShortVersionString', iosShortVersion, expectedVersion);
+assertEqual('ios/ChatKnot/Info.plist CFBundleVersion', iosBuildVersion, expectedBuild);
 
-const pbxproj = readRelativeFile('ios/mcpconnectorapp.xcodeproj/project.pbxproj');
+const pbxproj = readRelativeFile('ios/ChatKnot.xcodeproj/project.pbxproj');
 const marketingVersions = Array.from(pbxproj.matchAll(/MARKETING_VERSION = ([^;]+);/g), (match) =>
   match[1].replaceAll('"', '').trim()
 );
