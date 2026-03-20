@@ -3,8 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  Dimensions,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -60,6 +60,8 @@ const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }
   { label: 'Dark', value: 'dark' },
 ];
 
+const MODEL_PICKER_HEIGHT = Math.round(Dimensions.get('screen').height * 0.84);
+
 const getCapabilityTags = (caps?: ModelCapabilities): string[] => {
   if (!caps) return [];
   const tags: string[] = [];
@@ -67,6 +69,20 @@ const getCapabilityTags = (caps?: ModelCapabilities): string[] => {
   if (caps.tools) tags.push('tools');
   if (caps.fileInput) tags.push('file');
   return tags;
+};
+
+const getProviderModelSelectionSummary = (provider: LlmProviderConfig): string => {
+  const allModels = Array.from(
+    new Set((provider.availableModels || []).filter((model) => isModelIdLikelyTextOutput(model)))
+  );
+
+  if (allModels.length === 0) {
+    return 'No models available';
+  }
+
+  const hiddenModels = new Set(provider.hiddenModels || []);
+  const selectedCount = allModels.filter((model) => !hiddenModels.has(model)).length;
+  return `${selectedCount}/${allModels.length} selected`;
 };
 
 type SettingsView = 'index' | 'appearance' | 'providers' | 'providerEditor' | 'modes' | 'modeEditor' | 'mcpServers' | 'mcpServerEditor';
@@ -324,6 +340,19 @@ export const SettingsScreen = () => {
 
     return activeProviderForPicker.availableModels || [];
   }, [activeProviderForPicker]);
+
+  const filteredModelsForPicker = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...activeProviderModelsForPicker,
+          ...(activeProviderDraftForPicker?.model ? [activeProviderDraftForPicker.model] : []),
+        ])
+      )
+        .filter(model => isModelIdLikelyTextOutput(model))
+        .filter(model => model.toLowerCase().includes(modelSearch.toLowerCase())),
+    [activeProviderDraftForPicker?.model, activeProviderModelsForPicker, modelSearch]
+  );
 
   const beginProviderEdit = (provider: LlmProviderConfig) => {
     setProviderDrafts(prev => beginProviderDraft(prev, provider));
@@ -1845,7 +1874,7 @@ export const SettingsScreen = () => {
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modelLabel}>Manage Models</Text>
-                  <Text style={styles.modelText}>{effectiveProvider.model || 'No model selected'}</Text>
+                  <Text style={styles.modelText}>{getProviderModelSelectionSummary(effectiveProvider)}</Text>
                 </View>
                 {isFetchingModels === editingProvider.id ? (
                   <ActivityIndicator size="small" color={colors.primary} />
@@ -1903,13 +1932,9 @@ export const SettingsScreen = () => {
           setActiveProviderIdForPicker(null);
         }}
       >
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            style={styles.modalKeyboardAvoiding}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
-          >
-            <View style={styles.modalContent}>
+        <View style={styles.modelPickerOverlay}>
+          <View style={styles.modelPickerKeyboardAvoiding}>
+            <View style={styles.modelPickerContent}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Manage Models</Text>
                 <TouchableOpacity
@@ -1923,7 +1948,6 @@ export const SettingsScreen = () => {
               </View>
 
               <View style={styles.searchBar}>
-                <Plus size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '45deg' }] }} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search models..."
@@ -1983,15 +2007,10 @@ export const SettingsScreen = () => {
               </View>
 
               <FlatList
+                style={styles.modelPickerList}
+                contentContainerStyle={styles.modelPickerListContent}
                 keyboardShouldPersistTaps="handled"
-                data={Array.from(
-                  new Set([
-                    ...activeProviderModelsForPicker,
-                    ...(activeProviderDraftForPicker?.model ? [activeProviderDraftForPicker.model] : []),
-                  ])
-                )
-                  .filter(model => isModelIdLikelyTextOutput(model))
-                  .filter(model => model.toLowerCase().includes(modelSearch.toLowerCase()))}
+                data={filteredModelsForPicker}
                 keyExtractor={item => item}
                 renderItem={({ item: model }) => {
                   const isHidden = (activeProviderDraftForPicker?.hiddenModels || []).includes(model);
@@ -2068,7 +2087,7 @@ export const SettingsScreen = () => {
                 </View>
               )}
             </View>
-          </KeyboardAvoidingView>
+          </View>
         </View>
       </Modal>
 
@@ -2357,7 +2376,6 @@ const createStyles = (colors: AppPalette) =>
     searchInput: {
       flex: 1,
       color: colors.text,
-      marginLeft: 9,
       fontSize: 14,
     },
     row: {
@@ -2684,20 +2702,48 @@ const createStyles = (colors: AppPalette) =>
       backgroundColor: colors.overlay,
       justifyContent: 'flex-end',
     },
+    modelPickerOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-start',
+      alignItems: 'center',
+      paddingTop: 74,
+    },
     modalKeyboardAvoiding: {
       width: '100%',
+      justifyContent: 'flex-end',
+    },
+    modelPickerKeyboardAvoiding: {
+      width: '100%',
+      alignItems: 'center',
     },
     modalContent: {
       backgroundColor: colors.surface,
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
-      minHeight: '62%',
-      maxHeight: '84%',
+      height: '78%',
       paddingHorizontal: 14,
       paddingTop: 12,
       paddingBottom: 24,
       borderTopWidth: 1,
       borderColor: colors.border,
+    },
+    modelPickerContent: {
+      backgroundColor: colors.surface,
+      width: '92%',
+      height: MODEL_PICKER_HEIGHT,
+      borderRadius: 16,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    modelPickerList: {
+      flex: 1,
+      minHeight: 0,
+    },
+    modelPickerListContent: {
+      paddingBottom: 8,
     },
     modalHeader: {
       flexDirection: 'row',
