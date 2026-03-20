@@ -19,6 +19,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
+import { ContextIndicator } from './ContextIndicator';
 
 // Slimmer, strictly calculated UI properties (The Formula)
 const BUTTON_SIZE = 30;
@@ -48,6 +49,9 @@ interface InputProps {
   modeName?: string;
   showModeSelector?: boolean;
   onModePress?: () => void;
+  conversationId?: string | null;
+  contextProviderId?: string;
+  contextModel?: string;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -68,6 +72,9 @@ export const Input: React.FC<InputProps> = ({
   modeName,
   showModeSelector = false,
   onModePress,
+  conversationId,
+  contextProviderId,
+  contextModel,
 }) => {
 const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -272,6 +279,13 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 </TouchableOpacity>
               )}
             </View>
+            {conversationId && contextProviderId && contextModel && (
+              <ContextIndicator
+                conversationId={conversationId}
+                providerId={contextProviderId}
+                model={contextModel}
+              />
+            )}
             {sendBtn}
           </View>
         </View>

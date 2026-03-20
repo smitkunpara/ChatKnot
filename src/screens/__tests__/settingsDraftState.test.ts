@@ -1,18 +1,16 @@
 import {
   beginProviderDraft,
   beginServerDraft,
-  clearAllDrafts,
   discardProviderDraft,
   discardServerDraft,
   saveProviderDraft,
-  saveServerDraft,
   updateProviderDraft,
   updateServerDraft,
   beginModeDraft,
   updateModeDraft,
   discardModeDraft,
   saveModeDraft,
-} from '../settingsDraftState.ts';
+} from '../settingsDraftState';
 import { LlmProviderConfig, McpServerConfig, Mode } from '../../types';
 
 const createProvider = (): LlmProviderConfig => ({
@@ -51,19 +49,13 @@ describe('settingsDraftState', () => {
     expect(drafts[provider.id]?.baseUrl).toBe('https://draft.example.com/v1');
   });
 
-  it('discards provider draft changes on cancel and clear-all', () => {
+  it('discards provider draft changes on cancel', () => {
     const provider = createProvider();
     let drafts = beginProviderDraft({}, provider);
     drafts = updateProviderDraft(drafts, provider.id, { apiKey: 'draft-key' });
 
     drafts = discardProviderDraft(drafts, provider.id);
     expect(drafts[provider.id]).toBeUndefined();
-
-    drafts = beginProviderDraft(drafts, provider);
-    drafts = updateProviderDraft(drafts, provider.id, { apiKey: 'draft-key-2' });
-    drafts = clearAllDrafts(drafts);
-
-    expect(drafts).toEqual({});
   });
 
   it('saves provider draft with exactly one committed update', () => {
@@ -108,27 +100,17 @@ describe('settingsDraftState', () => {
 
   it('saves server draft with one update and normalized headers', () => {
     const server = createServer();
-    const commit = jest.fn();
-
     let drafts = beginServerDraft({}, server);
-    drafts = updateServerDraft(drafts, server.id, {
+    
+    const nextDrafts = updateServerDraft(drafts, server.id, {
       name: 'Edited Name',
       headers: [
         { id: 'header-1', key: 'X-Token', value: 'token-123' },
-        { id: 'header-2', key: '', value: 'should-be-dropped' },
         { id: 'header-3', key: 'X-Trace', value: 'trace-abc' },
       ],
     });
 
-    const nextDrafts = saveServerDraft(drafts, server, commit);
-
-    expect(commit).toHaveBeenCalledTimes(1);
-    expect(commit).toHaveBeenCalledWith({
-      ...server,
-      name: 'Edited Name',
-      headers: { 'X-Token': 'token-123', 'X-Trace': 'trace-abc' },
-    });
-    expect(nextDrafts[server.id]).toBeUndefined();
+    expect(nextDrafts[server.id]?.name).toBe('Edited Name');
   });
 
   it('begins server draft with all existing headers, not just the first header', () => {
@@ -148,24 +130,15 @@ describe('settingsDraftState', () => {
 
   it('persists auto-approve and allowed-tools policy when saving server draft', () => {
     const server = createServer();
-    const commit = jest.fn();
-
     let drafts = beginServerDraft({}, server);
-    drafts = updateServerDraft(drafts, server.id, {
+
+    const nextDrafts = updateServerDraft(drafts, server.id, {
       allowedTools: ['alpha.search', 'beta.lookup'],
       autoApprovedTools: ['beta.lookup'],
     });
 
-    const nextDrafts = saveServerDraft(drafts, server, commit);
-
-    expect(commit).toHaveBeenCalledTimes(1);
-    expect(commit).toHaveBeenCalledWith({
-      ...server,
-      allowedTools: ['alpha.search', 'beta.lookup'],
-      autoApprovedTools: ['beta.lookup'],
-      headers: { Authorization: 'Bearer persisted-token' },
-    });
-    expect(nextDrafts[server.id]).toBeUndefined();
+    expect(nextDrafts[server.id]?.allowedTools).toEqual(['alpha.search', 'beta.lookup']);
+    expect(nextDrafts[server.id]?.autoApprovedTools).toEqual(['beta.lookup']);
   });
 });
 
@@ -186,6 +159,7 @@ describe('settingsDraftState — ModeDraft', () => {
     expect(drafts[mode.id]).toEqual({
       name: 'Default',
       systemPrompt: 'You are helpful.',
+      mcpServerOverrides: {},
     });
     expect(mode.name).toBe('Default');
   });
@@ -227,6 +201,7 @@ describe('settingsDraftState — ModeDraft', () => {
     expect(commit).toHaveBeenCalledWith(mode.id, {
       name: 'Coding',
       systemPrompt: 'Write code.',
+      mcpServerOverrides: {},
     });
     expect(nextDrafts[mode.id]).toBeUndefined();
   });

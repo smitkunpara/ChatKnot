@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import {
-  Animated,
   Image,
   ScrollView,
   StyleSheet,
@@ -13,10 +12,12 @@ import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Copy, Edit2, FileText, RotateCcw } from 'lucide-react-native';
-import { Message } from '../../types';
+import { Message, ApiRequestDetails } from '../../types';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
 import { ThinkingBlock } from './ThinkingBlock';
+import { RequestPhaseIndicator } from './RequestPhaseIndicator';
+import { RequestPhase } from '../../store/useChatRuntimeStore';
 
 interface MessageBubbleProps {
   message: Message;
@@ -25,6 +26,10 @@ interface MessageBubbleProps {
   pendingToolApprovalIds?: Record<string, true>;
   onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
   onRetryAssistant?: (messageId: string) => void;
+  /** Current request phase — drives the status indicator above streamed content. */
+  requestPhase?: RequestPhase;
+  /** Live API request details for the 'api_request' phase indicator. */
+  apiRequestDetails?: ApiRequestDetails | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,27 +72,6 @@ const parseThinkingBlocks = (raw: string): ContentBlock[] => {
 };
 
 // ---------------------------------------------------------------------------
-// StreamingCursor
-// ---------------------------------------------------------------------------
-
-const StreamingCursor = ({ color }: { color: string }) => {
-  const opacity = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0, duration: 420, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 420, useNativeDriver: true }),
-      ])
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [opacity]);
-
-  return <Animated.View style={[baseStyles.cursor, { opacity, backgroundColor: color }]} />;
-};
-
-// ---------------------------------------------------------------------------
 // MessageBubble
 // ---------------------------------------------------------------------------
 
@@ -98,6 +82,8 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   pendingToolApprovalIds,
   onToolApprovalDecision,
   onRetryAssistant,
+  requestPhase,
+  apiRequestDetails,
 }) => {
 const { colors } = useAppTheme();
   const { width: viewportWidth } = useWindowDimensions();
@@ -231,6 +217,14 @@ const { colors } = useAppTheme();
                 </View>
               ) : (
                 <>
+                  {/* Phase indicator: stays permanently if we have apiRequestDetails, or actively streaming query phase */}
+                  {(requestPhase || message.apiRequestDetails || apiRequestDetails) && (
+                    <RequestPhaseIndicator
+                      phase={requestPhase}
+                      apiRequestDetails={apiRequestDetails ?? message.apiRequestDetails ?? null}
+                    />
+                  )}
+
                   {contentBlocks.map((block, idx) => {
                     if (block.type === 'think') {
                       const isThisBlockStreaming = isStreaming === true && idx === contentBlocks.length - 1 && isStreamingThinking;
@@ -239,6 +233,7 @@ const { colors } = useAppTheme();
                           key={`think-${idx}`}
                           content={block.content}
                           isStreaming={isThisBlockStreaming}
+                          durationMs={message.thoughtDurationMs}
                         />
                       );
                     }
@@ -253,13 +248,6 @@ const { colors } = useAppTheme();
                       </View>
                     );
                   })}
-
-                  {/* Hide the cursor once MCP/tool UI is present so we do not show two loading indicators. */}
-                  {isStreaming && !isStreamingThinking && !hasToolCalls && (
-                    <View style={styles.textRow}>
-                      <StreamingCursor color={colors.primary} />
-                    </View>
-                  )}
                 </>
               )}
 
@@ -438,15 +426,6 @@ const createStyles = (colors: AppPalette) =>
       alignItems: 'center',
     },
   });
-
-const baseStyles = StyleSheet.create({
-  cursor: {
-    width: 8,
-    height: 17,
-    marginLeft: 4,
-    borderRadius: 2,
-  },
-});
 
 export const createMarkdownStyles = (colors: AppPalette) => ({
   body: {

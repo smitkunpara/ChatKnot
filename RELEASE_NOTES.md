@@ -1,12 +1,25 @@
 # Unreleased Changes
 
+## Context usage indicator
+- Added a circular progress ring in the chat composer (left of send button) showing how much of the model's context window is consumed.
+- Indicator colors shift from green to yellow (70%+) to red (90%+) as context fills up.
+- Tap the ring to open a detailed popup with model name, context limit, prompt/completion/total tokens, and tokens remaining.
+- Usage data is captured from API responses and persisted per conversation so it survives app restarts.
+- Automatically reflects the correct usage when switching between models.
+
 ## Chat UI polish
 - Improved in-chat Markdown rendering for headings, emphasis, wrapped paragraphs, lists, inline code, and fenced code blocks.
 - Fixed Markdown table rendering so table cells no longer create extra nested blocks and wide tables scroll horizontally more cleanly.
 - Fixed sidebar-open behavior during streaming so the active thinking block does not re-expand unexpectedly.
 - Fixed the small scroll drift that could happen when opening the sidebar while a normal response was still streaming.
 - Improved initial chat anchoring so existing conversations open at the latest messages more reliably.
-- Fixed regenerate / retry scrolling so the list stays anchored to the active response instead of jumping upward.
+- **Retry Scroll Anchoring** — Fixed regenerate / retry scrolling so the list stays anchored to the active response instead of jumping upward.
+- **Shiny Thinking Effect** — High-end "shining" text animation for active reasoning.
+- **Precision Millisecond Tracking** — Millisecond-accurate timing for both Thinking and API request phases.
+- **Improved Request Persistence** — API request details (Mode, Model, Provider, Duration) are permanently saved with messages for historical review.
+- **Refined Processing Labels** — Simplified "Thinking/Thought [Time]" labels and standardized icon/padding across all AI processing states.
+- **Historical Content Fallback** — Added "N/A" time labels for older chat data.
+- **Improved Thinking Visibility** — Fixed thinking duration visibility during the transition to text generation and ensured full persistence across app restarts.
 
 # ChatKnot v0.3.0 Release Notes
 

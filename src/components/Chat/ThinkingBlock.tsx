@@ -9,8 +9,9 @@ import {
     View,
 } from 'react-native';
 import { ChevronDown, ChevronUp, Brain } from 'lucide-react-native';
-import Markdown from 'react-native-markdown-display';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
+import Markdown from 'react-native-markdown-display';
+import { ShinyText } from '../Common/ShinyText';
 import {
     createMarkdownStyles,
     createTableRenderRules,
@@ -22,26 +23,41 @@ interface ThinkingBlockProps {
     content: string;
     /** True while the model is still streaming this thinking block. */
     isStreaming: boolean;
+    /** Persisted duration in milliseconds for finished thoughts. */
+    durationMs?: number;
 }
 
-/** Format elapsed seconds into a human-readable duration, e.g. "3s", "1m 23s". */
-const formatDuration = (totalSeconds: number): string => {
-    if (totalSeconds < 1) return '';
+/** Format elapsed milliseconds into a clean string like "0.4s" or "32.1s" */
+const formatDuration = (totalMs: number): string => {
+    if (totalMs === 0) return '';
+    if (totalMs < 1000) return `${totalMs}ms`;
+    const totalSeconds = totalMs / 1000;
+    if (totalSeconds < 60) {
+        return `${Math.max(0, totalSeconds).toFixed(1)}s`;
+    }
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-    }
-    return `${seconds}s`;
+    return `${minutes}m ${Math.floor(seconds)}s`;
 };
 
 /**
  * Renders a collapsible "Thinking" section.
- * While streaming it shows a shimmering "Thinking" label, auto-expands,
- * and counts the elapsed thinking time. Once done it collapses by default,
- * shows "Thought for Xm Ys", and the user can tap to expand.
+ *
+ * While streaming:
+ *  - Shows a shimmering "Thinking…" / "Thinking for Xs" label (left side only – chevron is stable)
+ *  - Auto-expands so the user can watch reasoning appear
+ *  - Counts elapsed thinking time
+ *
+ * Once done:
+ *  - Collapses, shows "Thought for Xs"
+ *  - User can tap to expand/collapse
+ *  - No shimmer animation
  */
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreaming }) => {
+export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
+    content,
+    isStreaming,
+    durationMs,
+}) => {
     const { colors } = useAppTheme();
     const { width: viewportWidth } = useWindowDimensions();
     const styles = useMemo(() => createStyles(colors), [colors]);
@@ -56,11 +72,9 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     const prevStreamingRef = useRef(isStreaming);
 
     useEffect(() => {
-        // When streaming starts, expand
         if (isStreaming && !prevStreamingRef.current) {
             setExpanded(true);
         }
-        // Went from streaming → done → collapse.
         if (prevStreamingRef.current && !isStreaming) {
             setExpanded(false);
         }
@@ -68,26 +82,27 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     }, [isStreaming]);
 
     // ---- Elapsed time tracking ----
-    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [elapsedMs, setElapsedMs] = useState(0);
     const startTimeRef = useRef<number>(Date.now());
 
     useEffect(() => {
         if (isStreaming) {
             startTimeRef.current = Date.now();
-            setElapsedSeconds(0);
+            setElapsedMs(0);
             const interval = setInterval(() => {
-                setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000));
-            }, 1000);
+                setElapsedMs(Date.now() - startTimeRef.current);
+            }, 100);
             return () => clearInterval(interval);
         }
-        // When streaming stops, freeze the elapsed time
     }, [isStreaming]);
 
-    // ---- Shimmer animation (opacity pulse) while streaming ----
-    const shimmerAnim = useRef(new Animated.Value(0.4)).current;
+    // ---- Shimmer animation (opacity pulse) only while streaming ----
+    // Applied only to the label + brain icon (left side), NOT to the chevron.
+    const shimmerAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
         if (isStreaming) {
+            shimmerAnim.setValue(0.55);
             const loop = Animated.loop(
                 Animated.sequence([
                     Animated.timing(shimmerAnim, {
@@ -97,7 +112,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                         useNativeDriver: true,
                     }),
                     Animated.timing(shimmerAnim, {
-                        toValue: 0.4,
+                        toValue: 0.55,
                         duration: 800,
                         easing: Easing.inOut(Easing.ease),
                         useNativeDriver: true,
@@ -112,9 +127,9 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     }, [isStreaming, shimmerAnim]);
 
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
-    const durationText = formatDuration(elapsedSeconds);
+    const durationText = formatDuration(isStreaming ? elapsedMs : (durationMs ?? 0));
 
-    // Build the header label
+    // Header label: while streaming show "Thinking…" or "Thinking for Xs"; when done "Thought for Xs"
     const headerLabel = isStreaming
         ? `Thinking${durationText ? ` for ${durationText}` : '…'}`
         : `Thought${durationText ? ` for ${durationText}` : ''}`;
@@ -128,13 +143,30 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
                 accessibilityRole="button"
                 accessibilityLabel={expanded ? 'Collapse thinking' : 'Expand thinking'}
             >
-                <Animated.View style={[styles.headerInner, { opacity: isStreaming ? shimmerAnim : 1 }]}>
+                {/* Left side shimmers/shines — chevron stays fully opaque always */}
+                <Animated.View style={[styles.headerInner, isStreaming ? { opacity: shimmerAnim } : {}]}>
                     <Brain size={14} color={colors.primary} />
-                    <Text style={styles.headerText}>
-                        {headerLabel}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        {isStreaming ? (
+                            <ShinyText
+                                text={durationText ? `Thinking ${durationText}` : 'Thinking…'}
+                                color={colors.textSecondary}
+                                shineColor={colors.text}
+                                style={styles.headerText}
+                                speed={1.5}
+                            />
+                        ) : (
+                            <>
+                                <Text style={styles.headerText}>Thought</Text>
+                                <Text style={styles.durationText}>
+                                    {durationText || 'N/A'}
+                                </Text>
+                            </>
+                        )}
+                    </View>
                 </Animated.View>
-                <ChevronIcon size={14} color={colors.textTertiary} />
+                {/* Chevron: always opaque, always visible */}
+                <ChevronIcon size={14} color={colors.textSecondary} />
             </TouchableOpacity>
 
             {expanded && content.trim().length > 0 && (
@@ -172,11 +204,17 @@ const createStyles = (colors: AppPalette) =>
             flexDirection: 'row',
             alignItems: 'center',
             gap: 6,
+            flex: 1,
         },
         headerText: {
-            color: colors.textSecondary,
+            color: colors.text,
             fontSize: 13,
             fontWeight: '600',
+        },
+        durationText: {
+            color: colors.textTertiary,
+            fontSize: 12,
+            marginLeft: 0,
         },
         body: {
             paddingHorizontal: 12,

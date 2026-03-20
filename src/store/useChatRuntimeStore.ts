@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import { ApiRequestDetails } from '../types';
+
+/** Phases of a single chat-loop iteration, used to drive the UI status indicator. */
+export type RequestPhase = 'generating_query' | 'api_request' | 'thinking' | null;
 
 export interface StreamingMessageSession {
   conversationId: string;
@@ -6,6 +10,12 @@ export interface StreamingMessageSession {
   content: string;
   reasoning: string;
   updatedAt: number;
+  /** Current phase of this streaming session. */
+  requestPhase: RequestPhase;
+  /** Live API request details shown in the indicator while phase is 'api_request'. */
+  apiRequestDetails: ApiRequestDetails | null;
+  /** Final duration of the thinking phase in ms — populated as soon as thinking finishes. */
+  thoughtDurationMs?: number;
 }
 
 interface ChatRuntimeState {
@@ -19,9 +29,14 @@ interface ChatRuntimeState {
   updateStreamingMessage: (
     conversationId: string,
     messageId: string,
-    payload: { content?: string; reasoning?: string }
+    payload: { content?: string; reasoning?: string; thoughtDurationMs?: number }
   ) => void;
   clearStreamingMessage: (conversationId: string, messageId?: string) => void;
+  setRequestPhase: (
+    conversationId: string,
+    phase: RequestPhase,
+    apiRequestDetails?: ApiRequestDetails | null
+  ) => void;
 }
 
 export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
@@ -81,6 +96,8 @@ return {};
         content: '',
         reasoning: '',
         updatedAt: Date.now(),
+        requestPhase: 'api_request',
+        apiRequestDetails: state.streamingSessions[conversationId]?.apiRequestDetails ?? null,
       },
     },
   })),
@@ -98,6 +115,7 @@ const session = state.streamingSessions[conversationId];
           ...session,
           content: payload.content ?? session.content,
           reasoning: payload.reasoning ?? session.reasoning,
+          thoughtDurationMs: payload.thoughtDurationMs ?? session.thoughtDurationMs,
           updatedAt: Date.now(),
         },
       },
@@ -120,5 +138,46 @@ const session = state.streamingSessions[conversationId];
     return {
       streamingSessions: nextSessions,
     };
+  }),
+
+  setRequestPhase: (conversationId, phase, apiRequestDetails) => set((state) => {
+    const session = state.streamingSessions[conversationId];
+
+    if (session) {
+      // Update existing session's phase
+      return {
+        streamingSessions: {
+          ...state.streamingSessions,
+          [conversationId]: {
+            ...session,
+            requestPhase: phase,
+            apiRequestDetails: apiRequestDetails !== undefined
+              ? apiRequestDetails
+              : session.apiRequestDetails,
+          },
+        },
+      };
+    }
+
+    // No session yet (generating_query phase fires before startStreamingMessage)
+    // Create a minimal placeholder session to hold the phase
+    if (phase === 'generating_query') {
+      return {
+        streamingSessions: {
+          ...state.streamingSessions,
+          [conversationId]: {
+            conversationId,
+            messageId: '',
+            content: '',
+            reasoning: '',
+            updatedAt: Date.now(),
+            requestPhase: 'generating_query',
+            apiRequestDetails: apiRequestDetails ?? null,
+          },
+        },
+      };
+    }
+
+    return state;
   }),
 }));

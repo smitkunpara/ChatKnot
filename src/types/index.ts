@@ -23,6 +23,17 @@ export interface Attachment {
   base64?: string;
 }
 
+export interface ApiRequestDetails {
+  model: string;
+  modeName?: string;
+  providerUrl: string;
+  requestedAt: number;
+  /** HTTP response status code — set when first chunk / response arrives. */
+  responseStatus?: number;
+  /** Timestamp of first chunk or response received. */
+  firstChunkAt?: number;
+}
+
 export interface Message {
   id: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -34,6 +45,10 @@ export interface Message {
   isError?: boolean;
   /** Reasoning / thinking content from models that stream it separately (e.g. reasoning_content delta). */
   reasoning?: string;
+  /** Final thinking duration in milliseconds, persisted to avoid re-calculation. */
+  thoughtDurationMs?: number;
+  /** API request metadata persisted for display in the request phase indicator. */
+  apiRequestDetails?: ApiRequestDetails;
 }
 
 export interface Conversation {

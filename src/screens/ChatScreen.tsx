@@ -28,6 +28,8 @@ import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
 import { ToolCall, Attachment, Message } from '../types';
+import { useContextUsageStore } from '../store/useContextUsageStore';
+import { getContextLimitForModel } from '../utils/modelContextLimits';
 import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -112,6 +114,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   const startStreamingMessage = useChatRuntimeStore(state => state.startStreamingMessage);
   const updateStreamingMessage = useChatRuntimeStore(state => state.updateStreamingMessage);
   const clearStreamingMessage = useChatRuntimeStore(state => state.clearStreamingMessage);
+  const setRequestPhase = useChatRuntimeStore(state => state.setRequestPhase);
   const isStreamingUiVisible = isScreenFocused;
   const isActiveConversationLoading = useChatRuntimeStore(
     state => (activeConversationId ? !!state.loadingConversationIds[activeConversationId] : false)
@@ -122,6 +125,18 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
         return null;
       }
       return state.streamingSessions[activeConversationId] ?? null;
+    }
+  );
+  const streamingRequestPhase = useChatRuntimeStore(
+    state => {
+      if (!activeConversationId || !isStreamingUiVisible) return null;
+      return state.streamingSessions[activeConversationId]?.requestPhase ?? null;
+    }
+  );
+  const streamingApiRequestDetails = useChatRuntimeStore(
+    state => {
+      if (!activeConversationId || !isStreamingUiVisible) return null;
+      return state.streamingSessions[activeConversationId]?.apiRequestDetails ?? null;
     }
   );
   const activeConversationDraft = useChatDraftStore(
@@ -158,6 +173,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
         ...message,
         content: streamingSession.content,
         reasoning: streamingSession.reasoning,
+        thoughtDurationMs: streamingSession.thoughtDurationMs,
       };
     });
 
@@ -172,6 +188,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
         role: 'assistant' as const,
         content: streamingSession.content,
         reasoning: streamingSession.reasoning,
+        thoughtDurationMs: streamingSession.thoughtDurationMs,
         timestamp: streamingSession.updatedAt,
       },
     ];
@@ -650,7 +667,9 @@ let latestContent = '';
     conversationId: string,
     messageId: string,
     content: string,
-    reasoning: string
+    reasoning: string,
+    apiRequestDetails?: import('../types').ApiRequestDetails | null,
+    thoughtDurationMs?: number,
   ) => {
 const conversation = useChatStore
       .getState()
@@ -661,6 +680,8 @@ const conversation = useChatStore
       finalizeMessage(conversationId, messageId, {
         content,
         reasoning,
+        ...(apiRequestDetails ? { apiRequestDetails } : {}),
+        ...(thoughtDurationMs !== undefined ? { thoughtDurationMs } : {}),
       });
     } else {
       addMessage(conversationId, {
@@ -668,6 +689,8 @@ const conversation = useChatStore
         role: 'assistant',
         content,
         reasoning,
+        ...(apiRequestDetails ? { apiRequestDetails } : {}),
+        ...(thoughtDurationMs !== undefined ? { thoughtDurationMs } : {}),
       });
     }
 
@@ -758,10 +781,14 @@ let hasFinalAnswer = false;
     let currentStreamedContent = '';
     let currentStreamedReasoning = '';
     let currentStreamController: ReturnType<typeof createStreamingController> | null = null;
+    let currentApiRequestDetails: import('../types').ApiRequestDetails | null = null;
+    let thoughtStartedAt: number | null = null;
+    let finalThoughtDurationMs: number | undefined;
 
     const settleCurrentStream = (options?: {
       content?: string;
       reasoning?: string;
+      thoughtDurationMs?: number;
       clearOnly?: boolean;
     }) => {
 if (!currentAssistantMsgId) {
@@ -781,7 +808,9 @@ if (!currentAssistantMsgId) {
           conversationId,
           currentAssistantMsgId,
           nextContent,
-          nextReasoning
+          nextReasoning,
+          currentApiRequestDetails,
+          options?.thoughtDurationMs ?? finalThoughtDurationMs,
         );
       }
 
@@ -888,6 +917,9 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
           },
         }));
 
+        // Phase 1: Generating query (collecting context, building payload)
+        setRequestPhase(conversationId, 'generating_query', null);
+
         const assistantMsgId = uuid.v4() as string;
         startStreamingMessage(conversationId, assistantMsgId);
         currentAssistantMsgId = assistantMsgId;
@@ -916,12 +948,24 @@ console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — me
         }
         const apiStartTime = Date.now();
 
+        // Phase 2: API request in-flight — capture request metadata now that apiStartTime is known
+        const apiRequestMeta = {
+          model: selectedModel,
+          modeName: loopMode?.name,
+          providerUrl: effectiveConfig.baseUrl,
+          requestedAt: apiStartTime,
+        };
+        currentApiRequestDetails = apiRequestMeta;
+        setRequestPhase(conversationId, 'api_request', apiRequestMeta);
+
+
         let streamedContent = '';
         let streamedReasoning = '';
         const requestController = new AbortController();
         activeRequestControllersRef.current.set(conversationId, requestController);
 
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
+          let receivedFirstChunk = false;
           service
             .sendChatCompletion(
               hydratedMessages,
@@ -930,6 +974,23 @@ console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — me
               openAiTools,
               (chunk) => {
                 if (!chunk) return;
+                if (!receivedFirstChunk) {
+                  receivedFirstChunk = true;
+                  // Phase transition: first content chunk → clear phase (text streaming)
+                  const updatedMeta = {
+                    ...apiRequestMeta,
+                    firstChunkAt: Date.now(),
+                  };
+                  currentApiRequestDetails = updatedMeta;
+                  setRequestPhase(conversationId, null, updatedMeta);
+                }
+                if (thoughtStartedAt && finalThoughtDurationMs === undefined) {
+                  finalThoughtDurationMs = Date.now() - thoughtStartedAt;
+                  updateStreamingMessage(conversationId, assistantMsgId, {
+                    content: streamedContent,
+                    thoughtDurationMs: finalThoughtDurationMs,
+                  });
+                }
                 streamedContent += chunk;
                 currentStreamedContent = streamedContent;
                 currentStreamController?.updateContent(streamedContent);
@@ -939,9 +1000,31 @@ console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — me
               (error) => reject(error),
               requestController.signal,
               (reasoningChunk) => {
+                if (!receivedFirstChunk) {
+                  receivedFirstChunk = true;
+                  // Phase transition: first reasoning chunk → thinking phase
+                  const updatedMeta = {
+                    ...apiRequestMeta,
+                    firstChunkAt: Date.now(),
+                  };
+                  currentApiRequestDetails = updatedMeta;
+                  thoughtStartedAt = Date.now();
+                  setRequestPhase(conversationId, 'thinking', updatedMeta);
+                }
                 streamedReasoning += reasoningChunk;
                 currentStreamedReasoning = streamedReasoning;
                 currentStreamController?.updateReasoning(streamedReasoning);
+              },
+              (usage) => {
+                const contextLimit = getContextLimitForModel(selectedModel);
+                useContextUsageStore.getState().updateUsage({
+                  conversationId,
+                  providerId: selectedProviderId,
+                  model: selectedModel,
+                  contextLimit,
+                  lastUsage: usage,
+                  timestamp: Date.now(),
+                });
               }
             )
             .catch(reject);
@@ -1199,26 +1282,33 @@ if (currentAssistantMsgId) {
 
   const bannerMessage = noModelAvailableMessage || chatError;
 
-  const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <MessageBubble
-      message={item}
-      onEdit={handleEdit}
-      isStreaming={isActiveConversationLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
-      pendingToolApprovalIds={pendingToolApprovalIds}
-      onToolApprovalDecision={resolveToolApproval}
-      onRetryAssistant={
-        item.role === 'assistant' && item.id === lastAssistantMessageId
-          ? handleRetryAssistant
-          : undefined
-      }
-    />
-  ), [
+  const renderMessage = useCallback(({ item }: { item: Message }) => {
+    const isThisMessageStreaming = isActiveConversationLoading && item.role === 'assistant' && item.id === lastAssistantMessageId;
+    return (
+      <MessageBubble
+        message={item}
+        onEdit={handleEdit}
+        isStreaming={isThisMessageStreaming}
+        pendingToolApprovalIds={pendingToolApprovalIds}
+        onToolApprovalDecision={resolveToolApproval}
+        onRetryAssistant={
+          item.role === 'assistant' && item.id === lastAssistantMessageId
+            ? handleRetryAssistant
+            : undefined
+        }
+        requestPhase={isThisMessageStreaming ? streamingRequestPhase : undefined}
+        apiRequestDetails={isThisMessageStreaming ? streamingApiRequestDetails : undefined}
+      />
+    );
+  }, [
     handleEdit,
     handleRetryAssistant,
     isActiveConversationLoading,
     lastAssistantMessageId,
     pendingToolApprovalIds,
     resolveToolApproval,
+    streamingRequestPhase,
+    streamingApiRequestDetails,
   ]);
 
   const hasAnyProvider = useMemo(() => {
@@ -1400,6 +1490,9 @@ if (currentAssistantMsgId) {
             modeName={activeMode?.name}
             showModeSelector={modes.length > 1}
             onModePress={() => setModeSelectorVisible(true)}
+            conversationId={activeConversationId}
+            contextProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
+            contextModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
           />
         </View>
       </KeyboardAvoidingView>

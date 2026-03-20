@@ -34,8 +34,15 @@ describe('model selection', () => {
         providerName: 'Primary',
         model: 'gpt-4o-mini',
       },
+      {
+        providerId: 'provider-1',
+        providerName: 'Primary',
+        model: 'text-embedding-3-small',
+      },
     ]);
   });
+
+
 
   it('falls back to first visible configured model when current selection is unavailable', () => {
     const result = resolveModelSelection({

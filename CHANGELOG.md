@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Context Usage Indicator** — Added a circular progress indicator in the chat input bar (left of the send button) that shows how much of the model's context window is used. Colors transition from green to yellow (>70%) to red (>90%). Tapping the indicator opens a detailed popup with model name, context limit, prompt/completion/total tokens, and tokens remaining. Context usage data is captured from API responses and persisted per conversation across app restarts. Automatically updates when switching models.
+
 ### Changed
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
 - **Release Notes Refresh** — Reworked `RELEASE_NOTES.md` so the current release notes cover the full `v0.3.0` release while keeping the latest chat fixes grouped under an unreleased section.
+
+### Added
+- **Shiny Thinking Effect** — Introduced a moving "shining" text effect (sweeping gradient) for the active thinking phase to provide high-end visual feedback.
+- **Precision AI Timing** — Added millisecond-accurate tracking for both the AI thinking phase and the API request phase.
+- **Persistent Request Metadata** — API request details (Mode, Model, Provider, and Duration) are now permanently stored with each assistant message for post-completion analysis and historical review.
 
 ### Fixed
 - **Markdown Table Rendering** — Fixed chat table rendering so cells no longer create extra nested blocks and wide tables scroll horizontally more cleanly.
@@ -17,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sidebar Scroll Drift** — Fixed the slight chat scroll movement that could happen when opening the sidebar during a normal streaming response with the blinking cursor visible.
 - **Initial Bottom Anchoring** — Existing conversations now reliably open at the latest messages instead of occasionally starting at the top of long chats.
 - **Retry Scroll Anchoring** — Regenerate / retry now keeps the conversation anchored to the active response instead of jumping the list upward.
+- **Thinking UI Refined** — Simplified thinking labels to a cleaner "Thinking/Thought [Time]" format (removed "for") and aligned icon/text padding with the API request block.
+- **API Request Phase UI** — Replaced the lightning icon with a rotating spinner during active requests and enabled a "settled" (dimmed) duration display once the first response chunk arrives.
+- **Historical Timing Fallback** — Added "N/A" indicators for thoughts and requests from older app versions where precision timing was not yet supported.
+- **Streaming Thinking Visibility** — Fixed an issue where the thinking duration would temporarily show "N/A" while the AI transitioned from reasoning to text answering.
+- **Thinking Time Persistence** — Thinking durations are now permanently saved with messages, ensuring correct timing is displayed after app restarts or chat reloads.
 
 ## [0.3.0] - 2026-03-17
 
