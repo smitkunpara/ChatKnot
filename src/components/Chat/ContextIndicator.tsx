@@ -44,8 +44,8 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
     return Math.min(1, usageData.lastUsage.promptTokens / usageData.contextLimit);
   }, [usageData]);
 
-  const strokeWidth = 3;
-  const radius = 14;
+  const strokeWidth = 2.5;
+  const radius = 10;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference * (1 - fillPercent);
 
@@ -115,7 +115,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
             <Circle
               cx={radius + strokeWidth}
               cy={radius + strokeWidth}
-              r={4}
+              r={3}
               fill={colors.placeholder}
             />
           )}
@@ -217,16 +217,17 @@ const createStyles = (colors: AppPalette) =>
     container: {
       alignItems: 'center',
       justifyContent: 'center',
-      width: 38,
-      height: 38,
-      borderRadius: 12,
+      width: 30,
+      height: 30,
+      borderRadius: 5,
       backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
       borderColor: colors.subtleBorder,
+      margin: 3,
     },
     percentText: {
       position: 'absolute',
-      fontSize: 8,
+      fontSize: 7,
       fontWeight: '700',
     },
     overlay: {

@@ -20,6 +20,7 @@ import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
 import { createDebugLogger } from '../../utils/debugLogger';
+import { ContextIndicator } from './ContextIndicator';
 
 const debug = createDebugLogger('components/Chat/Input');
 debug.moduleLoaded();
@@ -52,6 +53,9 @@ interface InputProps {
   modeName?: string;
   showModeSelector?: boolean;
   onModePress?: () => void;
+  conversationId?: string | null;
+  contextProviderId?: string;
+  contextModel?: string;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -72,6 +76,9 @@ export const Input: React.FC<InputProps> = ({
   modeName,
   showModeSelector = false,
   onModePress,
+  conversationId,
+  contextProviderId,
+  contextModel,
 }) => {
   debug.enter('Input', {
     isLoading,
@@ -292,6 +299,13 @@ export const Input: React.FC<InputProps> = ({
                 </TouchableOpacity>
               )}
             </View>
+            {conversationId && contextProviderId && contextModel && (
+              <ContextIndicator
+                conversationId={conversationId}
+                providerId={contextProviderId}
+                model={contextModel}
+              />
+            )}
             {sendBtn}
           </View>
         </View>

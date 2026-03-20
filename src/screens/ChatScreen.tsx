@@ -27,7 +27,6 @@ import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
-import { ContextIndicator } from '../components/Chat/ContextIndicator';
 import { ToolCall, Attachment, Message } from '../types';
 import { useContextUsageStore } from '../store/useContextUsageStore';
 import { getContextLimitForModel } from '../utils/modelContextLimits';
@@ -1527,6 +1526,9 @@ export const ChatScreen = () => {
             modeName={activeMode?.name}
             showModeSelector={modes.length > 1}
             onModePress={() => setModeSelectorVisible(true)}
+            conversationId={activeConversationId}
+            contextProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
+            contextModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
           />
         </View>
       </KeyboardAvoidingView>
@@ -1558,11 +1560,6 @@ export const ChatScreen = () => {
             }}
           />
         </View>
-        <ContextIndicator
-          conversationId={activeConversationId}
-          providerId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
-          model={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
-        />
         <TouchableOpacity
           style={[styles.exportButton, !chatHasMessages && styles.exportButtonDisabled]}
           onPress={() => {

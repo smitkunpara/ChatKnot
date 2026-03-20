@@ -1,5 +1,12 @@
 # Unreleased Changes
 
+## Context usage indicator
+- Added a circular progress ring in the chat composer (left of send button) showing how much of the model's context window is consumed.
+- Indicator colors shift from green to yellow (70%+) to red (90%+) as context fills up.
+- Tap the ring to open a detailed popup with model name, context limit, prompt/completion/total tokens, and tokens remaining.
+- Usage data is captured from API responses and persisted per conversation so it survives app restarts.
+- Automatically reflects the correct usage when switching between models.
+
 ## Chat UI polish
 - Improved in-chat Markdown rendering for headings, emphasis, wrapped paragraphs, lists, inline code, and fenced code blocks.
 - Fixed Markdown table rendering so table cells no longer create extra nested blocks and wide tables scroll horizontally more cleanly.
