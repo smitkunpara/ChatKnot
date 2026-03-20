@@ -405,7 +405,8 @@ export class OpenAiService {
     onComplete: (fullContent: string, fullToolCalls?: any[]) => void,
     onError: (error: any) => void,
     abortSignal?: AbortSignal,
-    onReasoning?: (reasoningChunk: string) => void
+    onReasoning?: (reasoningChunk: string) => void,
+    onUsage?: (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => void
   ) {
     try {
       debug.log('sendChatCompletion', 'sending chat completion', {
@@ -625,6 +626,22 @@ export class OpenAiService {
         if (!cleanPayload || cleanPayload === '[DONE]') return false;
         try {
           const json = JSON.parse(cleanPayload);
+
+          // Capture token usage from the API response
+          if (json.usage && onUsage) {
+            const usage = json.usage;
+            debug.log('processSsePayload', 'usage data received', {
+              promptTokens: usage.prompt_tokens,
+              completionTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
+            });
+            onUsage({
+              promptTokens: usage.prompt_tokens ?? 0,
+              completionTokens: usage.completion_tokens ?? 0,
+              totalTokens: usage.total_tokens ?? 0,
+            });
+          }
+
           const choice = json.choices?.[0];
           const delta = choice?.delta;
           const message = choice?.message ?? json.message;

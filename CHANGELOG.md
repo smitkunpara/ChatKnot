@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Context Usage Indicator** — Added a circular progress indicator in the chat input bar (left of the send button) that shows how much of the model's context window is used. Colors transition from green to yellow (>70%) to red (>90%). Tapping the indicator opens a detailed popup with model name, context limit, prompt/completion/total tokens, and tokens remaining. Context usage data is captured from API responses and persisted per conversation across app restarts. Automatically updates when switching models.
+
 ### Changed
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
 - **Release Notes Refresh** — Reworked `RELEASE_NOTES.md` so the current release notes cover the full `v0.3.0` release while keeping the latest chat fixes grouped under an unreleased section.

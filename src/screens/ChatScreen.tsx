@@ -28,6 +28,8 @@ import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
 import { ToolCall, Attachment, Message } from '../types';
+import { useContextUsageStore } from '../store/useContextUsageStore';
+import { getContextLimitForModel } from '../utils/modelContextLimits';
 import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -1070,6 +1072,17 @@ export const ChatScreen = () => {
                 streamedReasoning += reasoningChunk;
                 currentStreamedReasoning = streamedReasoning;
                 currentStreamController?.updateReasoning(streamedReasoning);
+              },
+              (usage) => {
+                const contextLimit = getContextLimitForModel(selectedModel);
+                useContextUsageStore.getState().updateUsage({
+                  conversationId,
+                  providerId: selectedProviderId,
+                  model: selectedModel,
+                  contextLimit,
+                  lastUsage: usage,
+                  timestamp: Date.now(),
+                });
               }
             )
             .catch(reject);
@@ -1573,6 +1586,9 @@ export const ChatScreen = () => {
             modeName={activeMode?.name}
             showModeSelector={modes.length > 1}
             onModePress={() => setModeSelectorVisible(true)}
+            conversationId={activeConversationId}
+            contextProviderId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
+            contextModel={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
           />
         </View>
       </KeyboardAvoidingView>
