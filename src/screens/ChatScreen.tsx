@@ -27,7 +27,10 @@ import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
+import { ContextIndicator } from '../components/Chat/ContextIndicator';
 import { ToolCall, Attachment, Message } from '../types';
+import { useContextUsageStore } from '../store/useContextUsageStore';
+import { getContextLimitForModel } from '../utils/modelContextLimits';
 import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -1017,6 +1020,17 @@ export const ChatScreen = () => {
                 streamedReasoning += reasoningChunk;
                 currentStreamedReasoning = streamedReasoning;
                 currentStreamController?.updateReasoning(streamedReasoning);
+              },
+              (usage) => {
+                const contextLimit = getContextLimitForModel(selectedModel);
+                useContextUsageStore.getState().updateUsage({
+                  conversationId,
+                  providerId: selectedProviderId,
+                  model: selectedModel,
+                  contextLimit,
+                  lastUsage: usage,
+                  timestamp: Date.now(),
+                });
               }
             )
             .catch(reject);
@@ -1544,6 +1558,11 @@ export const ChatScreen = () => {
             }}
           />
         </View>
+        <ContextIndicator
+          conversationId={activeConversationId}
+          providerId={modelResolution.selection?.providerId || activeConversation?.providerId || ''}
+          model={modelResolution.selection?.model || activeConversation?.modelOverride || ''}
+        />
         <TouchableOpacity
           style={[styles.exportButton, !chatHasMessages && styles.exportButtonDisabled]}
           onPress={() => {
