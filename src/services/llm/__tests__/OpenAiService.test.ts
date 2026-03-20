@@ -23,7 +23,7 @@ describe('OpenAiService.listModels', () => {
     (global as any).fetch.mockResolvedValue({
       ok: true,
       json: async () => ({
-        data: [{ id: 'gpt-4o-mini' }, { id: 'text-embedding-3-small' }],
+        data: [{ id: 'gpt-4o-mini' }],
       }),
     });
 
