@@ -219,10 +219,6 @@ const createStyles = (colors: AppPalette) =>
       justifyContent: 'center',
       width: 30,
       height: 30,
-      borderRadius: 5,
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.subtleBorder,
       margin: 3,
     },
     percentText: {
