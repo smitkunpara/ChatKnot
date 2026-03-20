@@ -1,8 +1,12 @@
 import { create } from 'zustand';
 import { createDebugLogger } from '../utils/debugLogger';
+import { ApiRequestDetails } from '../types';
 
 const debug = createDebugLogger('store/useChatRuntimeStore');
 debug.moduleLoaded();
+
+/** Phases of a single chat-loop iteration, used to drive the UI status indicator. */
+export type RequestPhase = 'generating_query' | 'api_request' | 'thinking' | null;
 
 export interface StreamingMessageSession {
   conversationId: string;
@@ -10,6 +14,10 @@ export interface StreamingMessageSession {
   content: string;
   reasoning: string;
   updatedAt: number;
+  /** Current phase of this streaming session. */
+  requestPhase: RequestPhase;
+  /** Live API request details shown in the indicator while phase is 'api_request'. */
+  apiRequestDetails: ApiRequestDetails | null;
 }
 
 interface ChatRuntimeState {
@@ -26,6 +34,11 @@ interface ChatRuntimeState {
     payload: { content?: string; reasoning?: string }
   ) => void;
   clearStreamingMessage: (conversationId: string, messageId?: string) => void;
+  setRequestPhase: (
+    conversationId: string,
+    phase: RequestPhase,
+    apiRequestDetails?: ApiRequestDetails | null
+  ) => void;
 }
 
 export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
@@ -91,6 +104,8 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
         content: '',
         reasoning: '',
         updatedAt: Date.now(),
+        requestPhase: 'api_request',
+        apiRequestDetails: state.streamingSessions[conversationId]?.apiRequestDetails ?? null,
       },
     },
   })),
@@ -140,5 +155,47 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
     return {
       streamingSessions: nextSessions,
     };
+  }),
+
+  setRequestPhase: (conversationId, phase, apiRequestDetails) => set((state) => {
+    debug.log('setRequestPhase', 'setting request phase', { conversationId, phase });
+    const session = state.streamingSessions[conversationId];
+
+    if (session) {
+      // Update existing session's phase
+      return {
+        streamingSessions: {
+          ...state.streamingSessions,
+          [conversationId]: {
+            ...session,
+            requestPhase: phase,
+            apiRequestDetails: apiRequestDetails !== undefined
+              ? apiRequestDetails
+              : session.apiRequestDetails,
+          },
+        },
+      };
+    }
+
+    // No session yet (generating_query phase fires before startStreamingMessage)
+    // Create a minimal placeholder session to hold the phase
+    if (phase === 'generating_query') {
+      return {
+        streamingSessions: {
+          ...state.streamingSessions,
+          [conversationId]: {
+            conversationId,
+            messageId: '',
+            content: '',
+            reasoning: '',
+            updatedAt: Date.now(),
+            requestPhase: 'generating_query',
+            apiRequestDetails: apiRequestDetails ?? null,
+          },
+        },
+      };
+    }
+
+    return state;
   }),
 }));

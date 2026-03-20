@@ -119,6 +119,7 @@ export const ChatScreen = () => {
   const startStreamingMessage = useChatRuntimeStore(state => state.startStreamingMessage);
   const updateStreamingMessage = useChatRuntimeStore(state => state.updateStreamingMessage);
   const clearStreamingMessage = useChatRuntimeStore(state => state.clearStreamingMessage);
+  const setRequestPhase = useChatRuntimeStore(state => state.setRequestPhase);
   const isStreamingUiVisible = isScreenFocused;
   const isActiveConversationLoading = useChatRuntimeStore(
     state => (activeConversationId ? !!state.loadingConversationIds[activeConversationId] : false)
@@ -129,6 +130,18 @@ export const ChatScreen = () => {
         return null;
       }
       return state.streamingSessions[activeConversationId] ?? null;
+    }
+  );
+  const streamingRequestPhase = useChatRuntimeStore(
+    state => {
+      if (!activeConversationId || !isStreamingUiVisible) return null;
+      return state.streamingSessions[activeConversationId]?.requestPhase ?? null;
+    }
+  );
+  const streamingApiRequestDetails = useChatRuntimeStore(
+    state => {
+      if (!activeConversationId || !isStreamingUiVisible) return null;
+      return state.streamingSessions[activeConversationId]?.apiRequestDetails ?? null;
     }
   );
   const activeConversationDraft = useChatDraftStore(
@@ -665,7 +678,8 @@ export const ChatScreen = () => {
     conversationId: string,
     messageId: string,
     content: string,
-    reasoning: string
+    reasoning: string,
+    apiRequestDetails?: import('../types').ApiRequestDetails | null,
   ) => {
     debug.log('commitStreamingAssistant', 'committing assistant stream', {
       conversationId,
@@ -682,6 +696,7 @@ export const ChatScreen = () => {
       finalizeMessage(conversationId, messageId, {
         content,
         reasoning,
+        ...(apiRequestDetails ? { apiRequestDetails } : {}),
       });
     } else {
       addMessage(conversationId, {
@@ -689,6 +704,7 @@ export const ChatScreen = () => {
         role: 'assistant',
         content,
         reasoning,
+        ...(apiRequestDetails ? { apiRequestDetails } : {}),
       });
     }
 
@@ -792,6 +808,7 @@ export const ChatScreen = () => {
     let currentStreamedContent = '';
     let currentStreamedReasoning = '';
     let currentStreamController: ReturnType<typeof createStreamingController> | null = null;
+    let currentApiRequestDetails: import('../types').ApiRequestDetails | null = null;
 
     const settleCurrentStream = (options?: {
       content?: string;
@@ -822,7 +839,8 @@ export const ChatScreen = () => {
           conversationId,
           currentAssistantMsgId,
           nextContent,
-          nextReasoning
+          nextReasoning,
+          currentApiRequestDetails,
         );
       }
 
@@ -954,6 +972,9 @@ export const ChatScreen = () => {
           },
         }));
 
+        // Phase 1: Generating query (collecting context, building payload)
+        setRequestPhase(conversationId, 'generating_query', null);
+
         const assistantMsgId = uuid.v4() as string;
         startStreamingMessage(conversationId, assistantMsgId);
         currentAssistantMsgId = assistantMsgId;
@@ -991,12 +1012,23 @@ export const ChatScreen = () => {
         }
         const apiStartTime = Date.now();
 
+        // Phase 2: API request in-flight — capture request metadata now that apiStartTime is known
+        const apiRequestMeta = {
+          model: selectedModel,
+          providerUrl: effectiveConfig.baseUrl,
+          requestedAt: apiStartTime,
+        };
+        currentApiRequestDetails = apiRequestMeta;
+        setRequestPhase(conversationId, 'api_request', apiRequestMeta);
+
+
         let streamedContent = '';
         let streamedReasoning = '';
         const requestController = new AbortController();
         activeRequestControllersRef.current.set(conversationId, requestController);
 
         const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
+          let receivedFirstChunk = false;
           service
             .sendChatCompletion(
               hydratedMessages,
@@ -1005,6 +1037,14 @@ export const ChatScreen = () => {
               openAiTools,
               (chunk) => {
                 if (!chunk) return;
+                if (!receivedFirstChunk) {
+                  receivedFirstChunk = true;
+                  // Phase transition: first content chunk → clear phase (text streaming)
+                  setRequestPhase(conversationId, null, {
+                    ...apiRequestMeta,
+                    firstChunkAt: Date.now(),
+                  });
+                }
                 streamedContent += chunk;
                 currentStreamedContent = streamedContent;
                 currentStreamController?.updateContent(streamedContent);
@@ -1014,6 +1054,14 @@ export const ChatScreen = () => {
               (error) => reject(error),
               requestController.signal,
               (reasoningChunk) => {
+                if (!receivedFirstChunk) {
+                  receivedFirstChunk = true;
+                  // Phase transition: first reasoning chunk → thinking phase
+                  setRequestPhase(conversationId, 'thinking', {
+                    ...apiRequestMeta,
+                    firstChunkAt: Date.now(),
+                  });
+                }
                 streamedReasoning += reasoningChunk;
                 currentStreamedReasoning = streamedReasoning;
                 currentStreamController?.updateReasoning(streamedReasoning);
@@ -1312,26 +1360,33 @@ export const ChatScreen = () => {
 
   const bannerMessage = noModelAvailableMessage || chatError;
 
-  const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <MessageBubble
-      message={item}
-      onEdit={handleEdit}
-      isStreaming={isActiveConversationLoading && item.role === 'assistant' && item.id === lastAssistantMessageId}
-      pendingToolApprovalIds={pendingToolApprovalIds}
-      onToolApprovalDecision={resolveToolApproval}
-      onRetryAssistant={
-        item.role === 'assistant' && item.id === lastAssistantMessageId
-          ? handleRetryAssistant
-          : undefined
-      }
-    />
-  ), [
+  const renderMessage = useCallback(({ item }: { item: Message }) => {
+    const isThisMessageStreaming = isActiveConversationLoading && item.role === 'assistant' && item.id === lastAssistantMessageId;
+    return (
+      <MessageBubble
+        message={item}
+        onEdit={handleEdit}
+        isStreaming={isThisMessageStreaming}
+        pendingToolApprovalIds={pendingToolApprovalIds}
+        onToolApprovalDecision={resolveToolApproval}
+        onRetryAssistant={
+          item.role === 'assistant' && item.id === lastAssistantMessageId
+            ? handleRetryAssistant
+            : undefined
+        }
+        requestPhase={isThisMessageStreaming ? streamingRequestPhase : undefined}
+        apiRequestDetails={isThisMessageStreaming ? streamingApiRequestDetails : undefined}
+      />
+    );
+  }, [
     handleEdit,
     handleRetryAssistant,
     isActiveConversationLoading,
     lastAssistantMessageId,
     pendingToolApprovalIds,
     resolveToolApproval,
+    streamingRequestPhase,
+    streamingApiRequestDetails,
   ]);
 
   const hasAnyProvider = useMemo(() => {

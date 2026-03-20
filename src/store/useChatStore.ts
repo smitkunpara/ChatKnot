@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { Message, Conversation, ToolCall } from '../types';
+import { Message, Conversation, ToolCall, ApiRequestDetails } from '../types';
 import uuid from 'react-native-uuid';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import { generateConversationTitle, isPlaceholderTitle } from '../utils/conversationHelpers';
@@ -30,7 +30,7 @@ interface ChatState {
   finalizeMessage: (
     conversationId: string,
     messageId: string,
-    payload: { content?: string; reasoning?: string; updatedAt?: number }
+    payload: { content?: string; reasoning?: string; updatedAt?: number; apiRequestDetails?: ApiRequestDetails }
   ) => void;
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
   addToolCall: (conversationId: string, messageId: string, toolCall: ToolCall) => void;
@@ -201,6 +201,7 @@ export const useChatStore = create<ChatState>()(
                     ...m,
                     content: payload.content ?? m.content,
                     reasoning: payload.reasoning ?? m.reasoning,
+                    ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
                   }
                   : m
               ),
