@@ -70,18 +70,59 @@ this.openapiSpec = openApiValidation.spec;
     }
 
     return new Promise((resolve, reject) => {
+      const CONNECTION_TIMEOUT_MS = 30_000;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let settled = false;
+
+      const clearTimer = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      const closeEventSource = () => {
+        try {
+          this.eventSource?.close?.();
+        } catch {
+          // ignore close failures
+        } finally {
+          this.eventSource = null;
+        }
+      };
+
+      const safeResolve = () => {
+        if (settled) return;
+        settled = true;
+        clearTimer();
+        resolve();
+      };
+
+      const safeReject = (err: any) => {
+        if (settled) return;
+        settled = true;
+        clearTimer();
+        this.isConnected = false;
+        closeEventSource();
+        reject(err);
+      };
+
       try {
         this.eventSource = new EventSource(this.config.url, {
           headers: this.getAuthHeaders(),
         });
 
+        timeoutId = setTimeout(() => {
+          safeReject(new Error(`Timed out connecting to MCP SSE endpoint after ${CONNECTION_TIMEOUT_MS}ms`));
+        }, CONNECTION_TIMEOUT_MS);
+
         this.eventSource.addEventListener('open', () => {
-// Connection established, waiting for endpoint event
+          // Connection established, waiting for endpoint event
         });
 
         this.eventSource.addEventListener('endpoint' as any, (event: any) => {
           try {
-// The server sends the POST endpoint relative or absolute
+            // The server sends the POST endpoint relative or absolute
             const data = event.data; // might be just the URL string or JSON
             // MCP spec: event: endpoint, data: /mcp/messages
             // Check if data is absolute or relative
@@ -95,21 +136,24 @@ this.openapiSpec = openApiValidation.spec;
             this.postUrl = endpoint;
             this.isConnected = true;
 
+            // We got what we needed from SSE; stop the connection timeout timer.
+            clearTimer();
+
             // After getting endpoint, initialize
             this.initialize().then(() => {
-              resolve();
-            }).catch(reject);
+              safeResolve();
+            }).catch(safeReject);
 
           } catch (e) {
             console.error('Failed to parse endpoint event', e);
-            reject(e);
+            safeReject(e);
           }
         });
 
         this.eventSource.addEventListener('error', (event: any) => {
-console.error('MCP SSE Error:', event);
+          console.error('MCP SSE Error:', event);
           if (!this.isConnected) {
-            reject(new Error('Failed to connect to MCP server'));
+            safeReject(new Error('Failed to connect to MCP server'));
           } else {
             // Surface post-connection SSE errors (S6)
             this.isConnected = false;
@@ -117,7 +161,7 @@ console.error('MCP SSE Error:', event);
         });
 
       } catch (error) {
-        reject(error);
+        safeReject(error);
       }
     });
   }

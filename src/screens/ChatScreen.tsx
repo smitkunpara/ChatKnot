@@ -616,16 +616,32 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
 
   const attachmentBase64Cache = useRef<Map<string, string>>(new Map());
 
+  const ATTACHMENT_BASE64_CACHE_MAX_ITEMS = 50;
+
   const readFileAsBase64 = async (uri: string): Promise<string> => {
-if (attachmentBase64Cache.current.has(uri)) {
-      return attachmentBase64Cache.current.get(uri)!;
+    if (attachmentBase64Cache.current.has(uri)) {
+      // LRU "touch": re-insert so the key becomes the most-recently-used entry.
+      const existing = attachmentBase64Cache.current.get(uri)!;
+      attachmentBase64Cache.current.delete(uri);
+      attachmentBase64Cache.current.set(uri, existing);
+      return existing;
     }
     const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: 'base64',
     });
     attachmentBase64Cache.current.set(uri, base64);
+    // LRU eviction: drop the oldest entry when exceeding capacity.
+    if (attachmentBase64Cache.current.size > ATTACHMENT_BASE64_CACHE_MAX_ITEMS) {
+      const oldestKey = attachmentBase64Cache.current.keys().next().value;
+      if (oldestKey) attachmentBase64Cache.current.delete(oldestKey);
+    }
     return base64;
   };
+
+  // Conversation-scoped cache: clear when switching chats.
+  useEffect(() => {
+    attachmentBase64Cache.current.clear();
+  }, [activeConversationId]);
 
   const createStreamingController = useCallback((conversationId: string, messageId: string) => {
 let latestContent = '';
@@ -964,7 +980,9 @@ console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — me
         const requestController = new AbortController();
         activeRequestControllersRef.current.set(conversationId, requestController);
 
-        const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
+        let result!: { fullContent: string; toolCalls?: any[] };
+        try {
+          result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
           let receivedFirstChunk = false;
           service
             .sendChatCompletion(
@@ -1029,8 +1047,10 @@ console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — me
             )
             .catch(reject);
         });
-if (activeRequestControllersRef.current.get(conversationId) === requestController) {
-          activeRequestControllersRef.current.delete(conversationId);
+        } finally {
+          if (activeRequestControllersRef.current.get(conversationId) === requestController) {
+            activeRequestControllersRef.current.delete(conversationId);
+          }
         }
         const apiElapsed = Date.now() - apiStartTime;
         console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);

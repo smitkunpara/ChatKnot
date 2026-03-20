@@ -5,6 +5,7 @@ import {
   OpenApiValidationResult,
 } from '../../types';
 import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
+import { sanitizeToolName } from '../../utils/toolName';
 
 type ValidateOpenApiEndpointInput = {
   url: string;
@@ -83,16 +84,6 @@ const resolveSchema = (schema: any, components: any): any => {
     if (resolved) return resolved;
   }
   return schema;
-};
-
-const sanitizeToolName = (name: string): string => {
-  // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
-  // We prefer underscores over hyphens for broader compatibility across all providers
-  const sanitized = name
-    .replace(/[^a-zA-Z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-  return sanitized || 'tool';
 };
 
 export const extractOpenApiTools = (spec: any): McpToolSchema[] => {

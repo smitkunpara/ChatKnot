@@ -15,6 +15,7 @@ import {
   migratePersistedSettingsPayload,
 } from '../services/storage/migrations';
 import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
+import { normalizeSettingValue } from '../utils/stringUtils';
 import 'react-native-get-random-values';
 
 const rawSettingsPersistStorage = createEncryptedStateStorage({
@@ -84,8 +85,6 @@ const normalizeProviderConfig = (provider: LlmProviderConfig): LlmProviderConfig
     hiddenModels: normalizedHidden,
   };
 };
-
-const normalizeSettingValue = (value: string | undefined | null): string => (value || '').trim();
 
 const sortModes = (modes: Mode[]): Mode[] => {
   return [...modes].sort((a, b) => {

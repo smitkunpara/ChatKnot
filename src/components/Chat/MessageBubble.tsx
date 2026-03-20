@@ -41,6 +41,10 @@ interface ContentBlock {
   content: string;
 }
 
+// Shared regex for matching both complete <think>...</think> blocks and a trailing
+// unclosed <think>...</think segment while the model is still streaming.
+const THINK_BLOCK_REGEX = /<think>([\s\S]*?)(<\/think>|$)/gi;
+
 /**
  * Split raw assistant content into an ordered list of text and think blocks.
  * Handles both complete `<think>…</think>` pairs and an un-closed trailing
@@ -48,19 +52,19 @@ interface ContentBlock {
  */
 const parseThinkingBlocks = (raw: string): ContentBlock[] => {
   const blocks: ContentBlock[] = [];
-  // Regex matches <think>…</think> (greedy-lazy) as well as a trailing <think>… with no close
-  const regex = /<think>([\s\S]*?)(<\/think>|$)/gi;
+  // RegExp#exec with the `g` flag is stateful (`lastIndex`), so reset before each parse.
+  THINK_BLOCK_REGEX.lastIndex = 0;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(raw)) !== null) {
+  while ((match = THINK_BLOCK_REGEX.exec(raw)) !== null) {
     // Any text before this <think> block
     if (match.index > lastIndex) {
       blocks.push({ type: 'text', content: raw.slice(lastIndex, match.index) });
     }
     blocks.push({ type: 'think', content: match[1] });
-    lastIndex = regex.lastIndex;
+    lastIndex = THINK_BLOCK_REGEX.lastIndex;
   }
 
   // Remaining text after the last match
@@ -126,7 +130,8 @@ const { colors } = useAppTheme();
     // When reasoning arrived via delta.reasoning_content, build blocks from it
     if (hasStreamedReasoning) {
       const rawContent = message.content || '';
-      const strippedContent = rawContent.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+      THINK_BLOCK_REGEX.lastIndex = 0;
+      const strippedContent = rawContent.replace(THINK_BLOCK_REGEX, '').trim();
       const blocks: ContentBlock[] = [{ type: 'think', content: message.reasoning! }];
       if (strippedContent) {
         blocks.push({ type: 'text', content: strippedContent });

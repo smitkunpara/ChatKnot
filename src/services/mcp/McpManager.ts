@@ -1,5 +1,6 @@
 import { McpClient } from './McpClient';
 import { McpServerConfig, McpToolSchema } from '../../types';
+import { sanitizeToolName } from '../../utils/toolName';
 
 export interface McpToolExecutionPolicy {
   found: boolean;
@@ -61,16 +62,6 @@ class McpManagerService {
     return next;
   }
 
-  private sanitizeToolName(name: string): string {
-    // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
-    // We prefer underscores over hyphens for broader compatibility across all providers
-    const sanitized = name
-      .replace(/[^a-zA-Z0-9_]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-
-    return sanitized || 'tool';
-  }
-
   private rebuildToolRegistry() {
     this.tools.clear();
     this.cachedTools = null;
@@ -95,7 +86,7 @@ class McpManagerService {
         const hasCollision = (rawNameCounts.get(tool.name) || 0) > 1;
         // Use double underscore '__' instead of '.' for OpenAI compatibility
         const candidateName = hasCollision ? `${namespace}__${tool.name}` : tool.name;
-        const sanitizedCandidate = this.sanitizeToolName(candidateName);
+        const sanitizedCandidate = sanitizeToolName(candidateName);
         const exposedName = this.buildUniqueToolName(sanitizedCandidate, usedNames);
         usedNames.add(exposedName);
 

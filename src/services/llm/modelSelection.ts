@@ -1,5 +1,6 @@
 import { LlmProviderConfig, LastUsedModelPreference } from '../../types';
 import { isModelIdLikelyTextOutput } from './modelFilter';
+import { normalize } from '../../utils/stringUtils';
 
 export interface ChatModelOption {
   providerId: string;
@@ -22,8 +23,6 @@ export interface ResolveModelSelectionResult {
 
 export const CHAT_NO_MODEL_AVAILABLE_MESSAGE =
   'No model is available for chat. Configure a provider, API key, and visible model in Settings.';
-
-const normalize = (value: string | undefined | null): string => (value || '').trim();
 
 const hasProviderSetup = (provider: LlmProviderConfig): boolean => {
   const hasApiCredential =

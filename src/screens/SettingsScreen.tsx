@@ -761,6 +761,60 @@ export const SettingsScreen = () => {
   saveProviderEditorRef.current = promptProviderUnsavedChanges;
 
   // ─── MCP Server editor helpers ───────────────────────────
+  const cleanToolPermissions = (server: McpServerConfig, freshTools: any[]): {
+    tools: any[];
+    allowedTools: string[];
+    autoApprovedTools: string[];
+  } => {
+    const freshToolNames: string[] = freshTools.map((t: any) => t.name);
+    const oldToolNames = new Set((server.tools || []).map((t: any) => t.name));
+    const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
+    const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
+
+    const cleanedAllowed = (server.allowedTools || []).filter(
+      t => !removedSet.has(t) && freshToolNames.includes(t)
+    );
+    const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
+      t => !removedSet.has(t) && freshToolNames.includes(t)
+    );
+
+    // New tools disabled by default when the server had prior tools
+    let nextAllowed = [...cleanedAllowed];
+    const hadPreviousTools = (server.tools || []).length > 0;
+    if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
+      nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
+    }
+
+    return {
+      tools: freshTools,
+      allowedTools: nextAllowed,
+      autoApprovedTools: cleanedAutoApproved,
+    };
+  };
+
+  const refreshServerTools = async (server: McpServerConfig) => {
+    if (!server.url) return;
+    try {
+      const validation = await validateOpenApiEndpoint({
+        url: server.url,
+        headers: server.headers || {},
+      });
+      if (!validation.ok) return;
+
+      const freshTools = validation.tools;
+      const cleaned = cleanToolPermissions(server, freshTools);
+
+      updateMcpServer({
+        ...server,
+        tools: cleaned.tools,
+        allowedTools: cleaned.allowedTools,
+        autoApprovedTools: cleaned.autoApprovedTools,
+      });
+    } catch {
+      // silent — works fine with cached tool data
+    }
+  };
+
   const editingServer = editingServerId ? mcpServers.find(s => s.id === editingServerId) ?? null : null;
   const editingServerDraft = editingServerId ? serverDrafts[editingServerId] ?? null : null;
 
@@ -772,44 +826,7 @@ export const SettingsScreen = () => {
 
     // Silently refresh tool list for this server in the background
     if (server.url && server.enabled) {
-      void (async () => {
-        try {
-          const validation = await validateOpenApiEndpoint({
-            url: server.url,
-            headers: server.headers || {},
-          });
-          if (!validation.ok) return;
-
-          const freshTools = validation.tools;
-          const freshToolNames: string[] = freshTools.map((t: any) => t.name);
-          const oldToolNames = new Set((server.tools || []).map(t => t.name));
-          const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
-          const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
-
-          const cleanedAllowed = (server.allowedTools || []).filter(
-            t => !removedSet.has(t) && freshToolNames.includes(t)
-          );
-          const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
-            t => !removedSet.has(t) && freshToolNames.includes(t)
-          );
-
-          // New tools disabled by default when the server had prior tools
-          let nextAllowed = [...cleanedAllowed];
-          const hadPreviousTools = (server.tools || []).length > 0;
-          if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
-            nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
-          }
-
-          updateMcpServer({
-            ...server,
-            tools: freshTools,
-            allowedTools: nextAllowed,
-            autoApprovedTools: cleanedAutoApproved,
-          });
-        } catch {
-          // silent — editor works fine with cached data
-        }
-      })();
+      void refreshServerTools(server);
     }
   };
 
@@ -842,14 +859,26 @@ export const SettingsScreen = () => {
       const original = mcpServers.find((s) => s.id === serverId);
       if (!draft || !original) return false;
 
-      const originalHeaders = original.headers ? Object.entries(original.headers).map(([key, value]) => ({ id: uuid.v4() as string, key, value })) : [];
+      const normalizeHeaders = (headers: Array<{ key: string; value: string }>) => {
+        return headers
+          .slice()
+          .sort((a, b) => a.key.localeCompare(b.key) || a.value.localeCompare(b.value));
+      };
+
+      const draftHeadersNoIds = Array.isArray(draft.headers)
+        ? draft.headers.map(({ key, value }) => ({ key, value }))
+        : [];
+
+      const originalHeadersNoIds = original.headers
+        ? Object.entries(original.headers).map(([key, value]) => ({ key, value }))
+        : [];
 
       return (
         draft.name !== original.name ||
         draft.url !== original.url ||
         draft.enabled !== original.enabled ||
         draft.token !== original.token ||
-        JSON.stringify(draft.headers) !== JSON.stringify(originalHeaders)
+        JSON.stringify(normalizeHeaders(draftHeadersNoIds)) !== JSON.stringify(normalizeHeaders(originalHeadersNoIds))
       );
     },
     [serverDrafts, mcpServers]
@@ -1350,39 +1379,7 @@ export const SettingsScreen = () => {
                     // Auto-expand and fetch fresh tools when user enables this MCP
                     setExpandedMcpInMode(prev => ({ ...prev, [server.id]: true }));
                     if (server.url) {
-                      void (async () => {
-                        try {
-                          const validation = await validateOpenApiEndpoint({
-                            url: server.url,
-                            headers: server.headers || {},
-                          });
-                          if (!validation.ok) return;
-                          const freshTools = validation.tools;
-                          const freshToolNames: string[] = freshTools.map((t: any) => t.name);
-                          const oldToolNames = new Set((server.tools || []).map(t => t.name));
-                          const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
-                          const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
-                          const cleanedAllowed = (server.allowedTools || []).filter(
-                            t => !removedSet.has(t) && freshToolNames.includes(t)
-                          );
-                          const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
-                            t => !removedSet.has(t) && freshToolNames.includes(t)
-                          );
-                          let nextAllowed = [...cleanedAllowed];
-                          const hadPreviousTools = (server.tools || []).length > 0;
-                          if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
-                            nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
-                          }
-                          updateMcpServer({
-                            ...server,
-                            tools: freshTools,
-                            allowedTools: nextAllowed,
-                            autoApprovedTools: cleanedAutoApproved,
-                          });
-                        } catch {
-                          // silent — works fine with cached tool data
-                        }
-                      })();
+                      void refreshServerTools(server);
                     }
                   } else {
                     // Collapse when disabled
