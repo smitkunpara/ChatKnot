@@ -4,6 +4,10 @@ import { Message, Conversation, ToolCall } from '../types';
 import uuid from 'react-native-uuid';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import { generateConversationTitle, isPlaceholderTitle } from '../utils/conversationHelpers';
+import { createDebugLogger } from '../utils/debugLogger';
+
+const debug = createDebugLogger('store/useChatStore');
+debug.moduleLoaded();
 
 const chatPersistStorage = createEncryptedStateStorage({
   id: 'chat-storage',
@@ -46,6 +50,11 @@ export const useChatStore = create<ChatState>()(
       activeConversationId: null,
 
       createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
+        debug.log('createConversation', 'creating conversation', {
+          providerId,
+          modeId,
+          modelOverride,
+        });
         const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
@@ -64,63 +73,94 @@ export const useChatStore = create<ChatState>()(
         }));
       },
 
-      setActiveConversation: (id) => set({ activeConversationId: id }),
+      setActiveConversation: (id) => {
+        debug.log('setActiveConversation', 'setting active conversation', { id });
+        set({ activeConversationId: id });
+      },
 
-      deleteConversation: (id) => set((state) => ({
-        conversations: state.conversations.filter((c) => c.id !== id),
-        activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
-      })),
+      deleteConversation: (id) => set((state) => {
+        debug.log('deleteConversation', 'deleting conversation', { id });
+        return {
+          conversations: state.conversations.filter((c) => c.id !== id),
+          activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
+        };
+      }),
 
-      updateProviderInConversation: (conversationId, providerId) => set((state) => ({
-        conversations: state.conversations.map((c) =>
-          c.id === conversationId ? { ...c, providerId } : c
-        ),
-      })),
+      updateProviderInConversation: (conversationId, providerId) => set((state) => {
+        debug.log('updateProviderInConversation', 'updating provider', {
+          conversationId,
+          providerId,
+        });
+        return {
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId ? { ...c, providerId } : c
+          ),
+        };
+      }),
 
-      updateModelInConversation: (conversationId, providerId, model) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            // We need a way to pass the model override to the LLM service.
-            // For now we'll store it in a custom property on the conversation.
-            return { ...c, providerId, modelOverride: model };
-          }
-          return c;
-        }),
-      })),
+      updateModelInConversation: (conversationId, providerId, model) => set((state) => {
+        debug.log('updateModelInConversation', 'updating model', {
+          conversationId,
+          providerId,
+          model,
+        });
+        return {
+          conversations: state.conversations.map((c) => {
+            if (c.id === conversationId) {
+              return { ...c, providerId, modelOverride: model };
+            }
+            return c;
+          }),
+        };
+      }),
 
-      updateModeInConversation: (conversationId, modeId) => set((state) => ({
-        conversations: state.conversations.map((c) =>
-          c.id === conversationId ? { ...c, modeId } : c
-        ),
-      })),
+      updateModeInConversation: (conversationId, modeId) => set((state) => {
+        debug.log('updateModeInConversation', 'updating mode', {
+          conversationId,
+          modeId,
+        });
+        return {
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId ? { ...c, modeId } : c
+          ),
+        };
+      }),
 
-      addMessage: (conversationId, message) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            const newMessage = {
-              ...message,
-              id: message.id || (uuid.v4() as string),
-              timestamp: Date.now(),
-            };
+      addMessage: (conversationId, message) => set((state) => {
+        debug.log('addMessage', 'adding message', {
+          conversationId,
+          role: message.role,
+          contentLength: message.content?.length ?? 0,
+          attachmentsCount: message.attachments?.length ?? 0,
+          isError: message.isError === true,
+        });
+        return {
+          conversations: state.conversations.map((c) => {
+            if (c.id === conversationId) {
+              const newMessage = {
+                ...message,
+                id: message.id || (uuid.v4() as string),
+                timestamp: Date.now(),
+              };
 
-            // Auto-title from first user message
-            const shouldAutoTitle =
-              message.role === 'user' &&
-              !!message.content?.trim() &&
-              isPlaceholderTitle(c.title);
+              const shouldAutoTitle =
+                message.role === 'user' &&
+                !!message.content?.trim() &&
+                isPlaceholderTitle(c.title);
 
-            return {
-              ...c,
-              title: shouldAutoTitle
-                ? generateConversationTitle(message.content)
-                : c.title,
-              messages: [...c.messages, newMessage],
-              updatedAt: Date.now(),
-            };
-          }
-          return c;
-        }),
-      })),
+              return {
+                ...c,
+                title: shouldAutoTitle
+                  ? generateConversationTitle(message.content)
+                  : c.title,
+                messages: [...c.messages, newMessage],
+                updatedAt: Date.now(),
+              };
+            }
+            return c;
+          }),
+        };
+      }),
 
       updateMessage: (conversationId, messageId, content) => set((state) => ({
         conversations: state.conversations.map((c) => {

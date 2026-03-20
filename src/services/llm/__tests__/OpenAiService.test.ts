@@ -175,4 +175,46 @@ describe('OpenAiService.listModels', () => {
       })
     );
   });
+
+  it('includes legacy function-calling fields for non-OpenAI-compatible endpoints when tools are present', async () => {
+    (global as any).fetch.mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({
+        choices: [{ message: { content: 'hello' } }],
+      }),
+    });
+
+    const service = new OpenAiService(createProvider({ baseUrl: 'https://openrouter.ai/api/v1' }));
+    await service.sendChatCompletion(
+      [],
+      'system prompt',
+      'app prompt',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'lookup_weather',
+            description: 'Lookup weather',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      ],
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+
+    const [, options] = (global as any).fetch.mock.calls[0];
+    const parsedBody = JSON.parse(options.body);
+
+    expect(parsedBody.tools).toHaveLength(1);
+    expect(parsedBody.functions).toEqual([
+      {
+        name: 'lookup_weather',
+        description: 'Lookup weather',
+        parameters: { type: 'object', properties: {} },
+      },
+    ]);
+    expect(parsedBody.function_call).toBe('auto');
+  });
 });

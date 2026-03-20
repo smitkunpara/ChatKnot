@@ -8,6 +8,10 @@ import { Message } from '../../types';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { ToolCall as ToolCallComponent } from './ToolCall';
 import { ThinkingBlock } from './ThinkingBlock';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const debug = createDebugLogger('components/Chat/MessageBubble');
+debug.moduleLoaded();
 
 interface MessageBubbleProps {
   message: Message;
@@ -90,6 +94,13 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   onToolApprovalDecision,
   onRetryAssistant,
 }) => {
+  debug.enter('MessageBubble', {
+    messageId: message.id,
+    role: message.role,
+    isStreaming,
+    hasToolCalls: !!message.toolCalls?.length,
+    hasReasoning: !!message.reasoning?.trim(),
+  });
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const markdownStyles = createMarkdownStyles(colors);

@@ -16,6 +16,10 @@ import {
 } from '../services/storage/migrations';
 import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
 import 'react-native-get-random-values';
+import { createDebugLogger } from '../utils/debugLogger';
+
+const debug = createDebugLogger('store/useSettingsStore');
+debug.moduleLoaded();
 
 const rawSettingsPersistStorage = createEncryptedStateStorage({
   id: 'settings-storage',
@@ -185,6 +189,11 @@ export const useSettingsStore = create<SettingsState>()(
 
       updateProvider: (updatedProvider) =>
         set((state) => {
+          debug.log('updateProvider', 'updating provider', {
+            providerId: updatedProvider.id,
+            type: updatedProvider.type,
+            model: updatedProvider.model,
+          });
           const normalizedProvider = normalizeProviderConfig(updatedProvider);
           return {
             providers: state.providers.map((p) =>
@@ -195,14 +204,23 @@ export const useSettingsStore = create<SettingsState>()(
               : state.lastUsedModel,
           };
         }),
-      addProvider: (provider) => set((state) => ({
-        providers: [...state.providers, normalizeProviderConfig(provider)],
-      })),
-      removeProvider: (id) => set((state) => ({
-        providers: state.providers.filter((p) => p.id !== id),
-        lastUsedModel:
-          state.lastUsedModel?.providerId === id ? null : state.lastUsedModel,
-      })),
+      addProvider: (provider) => set((state) => {
+        debug.log('addProvider', 'adding provider', {
+          providerId: provider.id,
+          type: provider.type,
+        });
+        return {
+          providers: [...state.providers, normalizeProviderConfig(provider)],
+        };
+      }),
+      removeProvider: (id) => set((state) => {
+        debug.log('removeProvider', 'removing provider', { id });
+        return {
+          providers: state.providers.filter((p) => p.id !== id),
+          lastUsedModel:
+            state.lastUsedModel?.providerId === id ? null : state.lastUsedModel,
+        };
+      }),
 
       toggleModelVisibility: (providerId, model) =>
         set((state) => {
@@ -241,10 +259,15 @@ export const useSettingsStore = create<SettingsState>()(
           };
         }),
 
-      setLastUsedModel: (providerId, model) =>
+      setLastUsedModel: (providerId, model) => {
+        debug.log('setLastUsedModel', 'setting last used model', {
+          providerId,
+          model,
+        });
         set({
           lastUsedModel: providerId && model ? { providerId, model } : null,
-        }),
+        });
+      },
 
       clearLastUsedModel: () => set({ lastUsedModel: null }),
 

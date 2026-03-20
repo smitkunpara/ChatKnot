@@ -18,7 +18,11 @@ describe('OpenAiService Streaming', () => {
   beforeEach(() => {
     (global as any).fetch = jest.fn();
     (global as any).TextDecoder = class {
-      decode() { return ''; }
+      decode(value?: Uint8Array | string) {
+        if (!value) return '';
+        if (typeof value === 'string') return value;
+        return Buffer.from(value).toString('utf8');
+      }
     };
   });
 
@@ -104,5 +108,96 @@ describe('OpenAiService Streaming', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({
       message: 'Network failure'
     }));
+  });
+
+  it('parses CRLF-delimited SSE events and emits streamed content', async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      encoder.encode('data: {"choices":[{"delta":{"content":"Hello"}}]}\r\n\r\n'),
+      encoder.encode('data: {"choices":[{"delta":{"content":" world"}}]}\r\n\r\n'),
+      encoder.encode('data: [DONE]\r\n\r\n'),
+    ];
+    const mockRead = jest
+      .fn()
+      .mockResolvedValueOnce({ done: false, value: chunks[0] })
+      .mockResolvedValueOnce({ done: false, value: chunks[1] })
+      .mockResolvedValueOnce({ done: false, value: chunks[2] })
+      .mockResolvedValueOnce({ done: true, value: undefined });
+
+    const mockReader = {
+      read: mockRead,
+      cancel: jest.fn().mockResolvedValue(undefined),
+    };
+
+    (global as any).fetch.mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => mockReader,
+      },
+    });
+
+    const service = new OpenAiService(createProvider());
+    const onChunk = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    await service.sendChatCompletion(
+      [],
+      'system prompt',
+      'app prompt',
+      [],
+      onChunk,
+      onComplete,
+      onError
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('Hello', undefined);
+    expect(onChunk).toHaveBeenCalledWith(' world', undefined);
+    expect(onComplete).toHaveBeenCalledWith('Hello world', undefined);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('handles streamed SSE payloads that send a final message instead of delta', async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      encoder.encode('data: {"choices":[{"message":{"content":"Final answer"}}]}\r\n\r\n'),
+      encoder.encode('data: [DONE]\r\n\r\n'),
+    ];
+    const mockRead = jest
+      .fn()
+      .mockResolvedValueOnce({ done: false, value: chunks[0] })
+      .mockResolvedValueOnce({ done: false, value: chunks[1] })
+      .mockResolvedValueOnce({ done: true, value: undefined });
+
+    const mockReader = {
+      read: mockRead,
+      cancel: jest.fn().mockResolvedValue(undefined),
+    };
+
+    (global as any).fetch.mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => mockReader,
+      },
+    });
+
+    const service = new OpenAiService(createProvider());
+    const onChunk = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    await service.sendChatCompletion(
+      [],
+      'system prompt',
+      'app prompt',
+      [],
+      onChunk,
+      onComplete,
+      onError
+    );
+
+    expect(onChunk).toHaveBeenCalledWith('Final answer', undefined);
+    expect(onComplete).toHaveBeenCalledWith('Final answer', undefined);
+    expect(onError).not.toHaveBeenCalled();
   });
 });

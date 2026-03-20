@@ -1,4 +1,8 @@
 import { LlmProviderConfig, Message } from '../../types';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const debug = createDebugLogger('services/llm/requestMessageSanitizer');
+debug.moduleLoaded();
 
 export type ResolvedModelCapabilities = {
   vision: boolean;
@@ -10,6 +14,11 @@ export const resolveModelCapabilities = (
   provider: LlmProviderConfig | undefined,
   model: string
 ): ResolvedModelCapabilities => {
+  debug.log('resolveModelCapabilities', 'resolving capabilities', {
+    providerId: provider?.id,
+    model,
+    hasCapabilityMap: !!provider?.modelCapabilities && Object.keys(provider.modelCapabilities).length > 0,
+  });
   if (!provider) {
     return {
       vision: true,
@@ -53,6 +62,10 @@ export const sanitizeMessagesForRequest = (
   messages: Message[],
   capabilities: ResolvedModelCapabilities
 ): Message[] => {
+  debug.log('sanitizeMessagesForRequest', 'sanitizing messages', {
+    messagesCount: messages.length,
+    capabilities,
+  });
 
   const baseMessages = capabilities.tools
     ? messages

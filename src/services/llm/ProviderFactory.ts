@@ -1,5 +1,9 @@
 import { LlmProviderConfig } from '../../types';
 import { OpenAiService } from './OpenAiService';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const debug = createDebugLogger('services/llm/ProviderFactory');
+debug.moduleLoaded();
 
 export class ProviderFactory {
   private static instanceCache = new Map<string, OpenAiService>();
@@ -8,6 +12,13 @@ export class ProviderFactory {
   static create(config: LlmProviderConfig): OpenAiService {
     // Generate a cache key based on the provider configuration
     const cacheKey = `${config.type}:${config.baseUrl}:${config.apiKey}:${config.model}`;
+    debug.log('create', 'provider requested', {
+      providerId: config.id,
+      type: config.type,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      cacheHit: this.instanceCache.has(cacheKey),
+    });
     
     if (this.instanceCache.has(cacheKey)) {
       return this.instanceCache.get(cacheKey)!;

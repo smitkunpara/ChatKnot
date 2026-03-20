@@ -2,6 +2,10 @@ import { LlmProviderConfig, Message, ModelCapabilities } from '../../types';
 import { filterModelsForTextOutput } from './modelFilter';
 
 import { DEFAULT_OPENAI_BASE_URL } from '../../constants/api';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const debug = createDebugLogger('services/llm/OpenAiService');
+debug.moduleLoaded();
 
 export interface ModelsWithCapabilities {
   models: string[];
@@ -13,6 +17,12 @@ export class OpenAiService {
 
   constructor(config: LlmProviderConfig) {
     this.config = config;
+    debug.log('constructor', 'service instantiated', {
+      providerId: config.id,
+      type: config.type,
+      model: config.model,
+      baseUrl: config.baseUrl,
+    });
   }
 
   private getBaseUrl(): string {
@@ -90,6 +100,9 @@ export class OpenAiService {
 
   private async fetchModelsPayload(): Promise<any> {
     const endpointCandidates = this.getModelEndpointCandidates();
+    debug.log('fetchModelsPayload', 'fetching model endpoints', {
+      endpointCandidates,
+    });
     let lastError: Error | null = null;
 
     for (let index = 0; index < endpointCandidates.length; index += 1) {
@@ -97,6 +110,7 @@ export class OpenAiService {
       const hasFallback = index < endpointCandidates.length - 1;
 
       try {
+        debug.log('fetchModelsPayload', 'requesting model endpoint', { endpoint });
         const response = await fetch(endpoint, {
           method: 'GET',
           headers: this.getHeaders(),
@@ -121,6 +135,10 @@ export class OpenAiService {
 
         return await response.json();
       } catch (error) {
+        debug.warn('fetchModelsPayload', 'model endpoint failed', {
+          endpoint,
+          error,
+        });
         if (error instanceof Error) {
           lastError = error;
         } else {
@@ -347,6 +365,10 @@ export class OpenAiService {
 
   async listModelsWithCapabilities(): Promise<ModelsWithCapabilities> {
     try {
+      debug.log('listModelsWithCapabilities', 'listing models with capabilities', {
+        providerId: this.config.id,
+        model: this.config.model,
+      });
       const data = await this.fetchModelsPayload();
       const rawModels = OpenAiService.extractModelList(data);
       const supportedModels = filterModelsForTextOutput(rawModels);
@@ -364,6 +386,7 @@ export class OpenAiService {
 
       return { models: supportedModels, capabilities };
     } catch (error) {
+      debug.error('listModelsWithCapabilities', 'failed to list models', { error });
       console.error('Error fetching models:', error);
       if (error instanceof Error) {
         throw new Error(`Unable to fetch models: ${error.message}`);
@@ -385,6 +408,14 @@ export class OpenAiService {
     onReasoning?: (reasoningChunk: string) => void
   ) {
     try {
+      debug.log('sendChatCompletion', 'sending chat completion', {
+        providerId: this.config.id,
+        model: this.config.model,
+        messagesCount: messages.length,
+        toolsCount: tools.length,
+        userSystemPromptLength: userSystemPrompt.length,
+        appSystemPromptLength: appSystemPrompt?.length ?? 0,
+      });
       const systemMessages = [userSystemPrompt, appSystemPrompt]
         .map((prompt) => (prompt || '').trim())
         .filter(Boolean)
@@ -456,6 +487,15 @@ export class OpenAiService {
         // Only include parallel_tool_calls if it's likely an OpenAI or compatible provider
         // some older or smaller providers might not support this field.
         body.parallel_tool_calls = true;
+
+        // Compatibility fallback for OpenAI-like providers that still expect the
+        // legacy function-calling shape. This used to be present and some
+        // third-party/OpenRouter-backed models behave better with it.
+        const isLikelyOpenAi = /api\.openai\.com/i.test(this.getBaseUrl());
+        if (!isLikelyOpenAi) {
+          body.functions = tools.map((tool: any) => tool.function);
+          body.function_call = 'auto';
+        }
       }
 
       const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
@@ -465,6 +505,11 @@ export class OpenAiService {
         signal: abortSignal,
         // @ts-ignore
         reactNative: { textStreaming: true },
+      });
+      debug.log('sendChatCompletion', 'chat completion response received', {
+        ok: response.ok,
+        status: (response as any).status,
+        hasReader: typeof (response as any).body?.getReader === 'function',
       });
 
       if (!response.ok) {
@@ -522,6 +567,10 @@ export class OpenAiService {
           throw new Error('Request cancelled by user');
         }
         fullContent += contentChunk;
+        debug.log('emitContentChunk', 'content chunk received', {
+          chunkLength: contentChunk.length,
+          fullContentLength: fullContent.length,
+        });
         onChunk(contentChunk, undefined);
       };
 
@@ -533,6 +582,10 @@ export class OpenAiService {
         const reasoningChunk = delta.reasoning_content || delta.reasoning || '';
         if (reasoningChunk && onReasoning) {
           fullReasoning += reasoningChunk;
+          debug.log('processDelta', 'reasoning chunk received', {
+            chunkLength: reasoningChunk.length,
+            fullReasoningLength: fullReasoning.length,
+          });
           onReasoning(reasoningChunk);
           emitted = true;
         }
@@ -541,11 +594,15 @@ export class OpenAiService {
           emitted = true;
         }
         if (delta.tool_calls) {
+          debug.log('processDelta', 'tool call chunk received', {
+            toolCallsCount: delta.tool_calls.length,
+          });
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
           onChunk('', toolCallsBuffer);
           emitted = true;
         }
         if (delta.function_call) {
+          debug.log('processDelta', 'legacy function_call chunk received');
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
             {
               index: 0,
@@ -568,12 +625,82 @@ export class OpenAiService {
         if (!cleanPayload || cleanPayload === '[DONE]') return false;
         try {
           const json = JSON.parse(cleanPayload);
-          const delta = json.choices?.[0]?.delta;
-          return processDelta(delta);
+          const choice = json.choices?.[0];
+          const delta = choice?.delta;
+          const message = choice?.message ?? json.message;
+
+          if (processDelta(delta)) {
+            return true;
+          }
+
+          let emitted = false;
+          const reasoningChunk = message?.reasoning_content || message?.reasoning || '';
+          if (reasoningChunk && onReasoning) {
+            fullReasoning += reasoningChunk;
+            onReasoning(reasoningChunk);
+            emitted = true;
+          }
+          if (message?.content) {
+            emitContentChunk(message.content);
+            emitted = true;
+          }
+          if (message?.tool_calls) {
+            toolCallsBuffer = mergeToolCalls(toolCallsBuffer, message.tool_calls);
+            onChunk('', toolCallsBuffer);
+            emitted = true;
+          }
+          if (message?.function_call) {
+            toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
+              {
+                index: 0,
+                id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
+                type: 'function',
+                function: {
+                  name: message.function_call.name,
+                  arguments: message.function_call.arguments || '',
+                },
+              },
+            ]);
+            onChunk('', toolCallsBuffer);
+            emitted = true;
+          }
+          return emitted;
         } catch (e) {
           // Ignore partial or non-JSON control events.
           return false;
         }
+      };
+
+      const splitSseEvents = (buffer: string): { events: string[]; pending: string } => {
+        const events: string[] = [];
+        let remaining = buffer;
+
+        while (true) {
+          const boundaryMatch = remaining.match(/\r?\n\r?\n/);
+          if (!boundaryMatch || boundaryMatch.index === undefined) {
+            break;
+          }
+
+          const boundaryIndex = boundaryMatch.index;
+          events.push(remaining.slice(0, boundaryIndex));
+          remaining = remaining.slice(boundaryIndex + boundaryMatch[0].length);
+        }
+
+        return { events, pending: remaining };
+      };
+
+      const extractSsePayload = (event: string): string | null => {
+        const dataLines = event
+          .split(/\r?\n/)
+          .map((line) => line.trimEnd())
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.replace(/^data:\s?/, ''));
+
+        if (dataLines.length === 0) {
+          return null;
+        }
+
+        return dataLines.join('\n');
       };
 
       // Yield to the event loop so React can flush a render.
@@ -616,34 +743,36 @@ export class OpenAiService {
 
           if (done) break;
           pendingBuffer += decoder.decode(value, { stream: true });
-          const events = pendingBuffer.split('\n\n');
-          pendingBuffer = events.pop() || '';
+          debug.log('sendChatCompletion.stream', 'reader chunk received', {
+            chunkLength: typeof value?.length === 'number' ? value.length : undefined,
+            pendingBufferLength: pendingBuffer.length,
+          });
+          const { events, pending } = splitSseEvents(pendingBuffer);
+          pendingBuffer = pending;
 
           for (const event of events) {
-            const dataLines = event
-              .split('\n')
-              .filter(line => line.startsWith('data:'))
-              .map(line => line.replace(/^data:\s?/, ''));
-            if (dataLines.length > 0) {
-              const emitted = processSsePayload(dataLines.join('\n'));
-              if (emitted) {
-                // Yield for each payload so batched network chunks still render progressively.
-                await yieldToUI();
-              }
+            const payload = extractSsePayload(event);
+            if (!payload) {
+              continue;
+            }
+
+            const emitted = processSsePayload(payload);
+            if (emitted) {
+              // Yield for each payload so batched network chunks still render progressively.
+              await yieldToUI();
             }
           }
         }
+
+        pendingBuffer += decoder.decode();
 
         // Final yield to ensure UI catches up
         await yieldToUI();
 
         if (pendingBuffer.trim().length > 0) {
-          const dataLines = pendingBuffer
-            .split('\n')
-            .filter(line => line.startsWith('data:'))
-            .map(line => line.replace(/^data:\s?/, ''));
-          if (dataLines.length > 0) {
-            const emitted = processSsePayload(dataLines.join('\n'));
+          const payload = extractSsePayload(pendingBuffer);
+          if (payload) {
+            const emitted = processSsePayload(payload);
             if (emitted) {
               await yieldToUI();
             }
@@ -653,12 +782,17 @@ export class OpenAiService {
       } else {
         // Fallback for non-streaming reader (manual processing of the full body)
         const text = await response.text();
-        const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
-        const sseLines = lines.filter(line => line.startsWith('data:'));
+        const { events, pending } = splitSseEvents(text);
+        const sseEvents = pending.trim().length > 0 ? [...events, pending] : events;
 
-        if (sseLines.length > 0) {
-          for (const line of sseLines) {
-            const emitted = processSsePayload(line.replace(/^data:\s?/, ''));
+        if (sseEvents.length > 0) {
+          for (const event of sseEvents) {
+            const payload = extractSsePayload(event);
+            if (!payload) {
+              continue;
+            }
+
+            const emitted = processSsePayload(payload);
             if (emitted) {
               // Yield per SSE payload so UI keeps up with each chunk.
               await yieldToUI();
@@ -698,6 +832,7 @@ export class OpenAiService {
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
       }
     } catch (error) {
+      debug.error('sendChatCompletion', 'chat completion failed', { error });
       if ((error as any)?.name === 'AbortError') {
         onError(new Error('Request cancelled by user'));
         return;

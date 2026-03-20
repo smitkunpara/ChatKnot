@@ -60,8 +60,15 @@ import { formatLocalDateTime } from '../utils/dateFormat';
 import { mergeServersWithOverrides } from '../utils/mcpMerge';
 import * as FileSystem from 'expo-file-system';
 import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
+import { createDebugLogger } from '../utils/debugLogger';
+
+const debug = createDebugLogger('screens/ChatScreen');
+debug.moduleLoaded();
 
 export const ChatScreen = () => {
+  debug.enter('ChatScreen', {
+    activeConversationId: useChatStore.getState().activeConversationId,
+  });
   const navigation = useNavigation<DrawerNavigationProp<any>>();
   const isScreenFocused = useIsFocused();
   const drawerStatus = useDrawerStatus();
@@ -595,6 +602,10 @@ export const ChatScreen = () => {
   const attachmentBase64Cache = useRef<Map<string, string>>(new Map());
 
   const readFileAsBase64 = async (uri: string): Promise<string> => {
+    debug.log('readFileAsBase64', 'reading attachment', {
+      uri,
+      cached: attachmentBase64Cache.current.has(uri),
+    });
     if (attachmentBase64Cache.current.has(uri)) {
       return attachmentBase64Cache.current.get(uri)!;
     }
@@ -606,6 +617,10 @@ export const ChatScreen = () => {
   };
 
   const createStreamingController = useCallback((conversationId: string, messageId: string) => {
+    debug.log('createStreamingController', 'creating streaming controller', {
+      conversationId,
+      messageId,
+    });
     let latestContent = '';
     let latestReasoning = '';
 
@@ -647,6 +662,12 @@ export const ChatScreen = () => {
     content: string,
     reasoning: string
   ) => {
+    debug.log('commitStreamingAssistant', 'committing assistant stream', {
+      conversationId,
+      messageId,
+      contentLength: content.length,
+      reasoningLength: reasoning.length,
+    });
     const conversation = useChatStore
       .getState()
       .conversations.find((entry) => entry.id === conversationId);
@@ -670,6 +691,11 @@ export const ChatScreen = () => {
   }, [addMessage, clearStreamingMessage, finalizeMessage]);
 
   const handleSend = async (text: string) => {
+    debug.log('handleSend', 'send requested', {
+      rawLength: text.length,
+      activeConversationId,
+      attachmentsCount: attachments.length,
+    });
     Keyboard.dismiss();
     let conversationId = activeConversationId;
     const trimmedText = text.trim();
@@ -705,6 +731,12 @@ export const ChatScreen = () => {
   };
 
   const doSend = async (text: string, conversationId: string) => {
+    debug.log('doSend', 'preparing outbound user message', {
+      conversationId,
+      textLength: text.length,
+      attachmentsCount: attachments.length,
+      editingMessageId,
+    });
     setChatError(null);
     clearStopRequested(conversationId);
     clearConversationDraft(conversationId);
@@ -746,6 +778,7 @@ export const ChatScreen = () => {
 
   const runChatLoop = async (conversationId: string) => {
     if (!conversationId) return;
+    debug.log('runChatLoop', 'starting chat loop', { conversationId });
 
     let hasFinalAnswer = false;
     let absoluteIterationCount = 0;
@@ -760,6 +793,13 @@ export const ChatScreen = () => {
       reasoning?: string;
       clearOnly?: boolean;
     }) => {
+      debug.log('settleCurrentStream', 'settling current stream', {
+        conversationId,
+        currentAssistantMsgId,
+        clearOnly: options?.clearOnly === true,
+        nextContentLength: (options?.content ?? currentStreamedContent).length,
+        nextReasoningLength: (options?.reasoning ?? currentStreamedReasoning).length,
+      });
       if (!currentAssistantMsgId) {
         return;
       }
@@ -804,6 +844,11 @@ export const ChatScreen = () => {
           .getState()
           .conversations.find(c => c.id === conversationId);
         if (!currentConv) break;
+        debug.log('runChatLoop', 'conversation loaded for iteration', {
+          conversationId,
+          iteration: absoluteIterationCount,
+          messagesCount: currentConv.messages.length,
+        });
 
         const settingsState = useSettingsStore.getState();
         const loopMode = settingsState.modes.find(m => m.id === settingsState.lastUsedModeId) ?? settingsState.modes[0] ?? null;
@@ -815,6 +860,10 @@ export const ChatScreen = () => {
         });
 
         if (!modelSelection.selection) {
+          debug.warn('runChatLoop', 'model selection unavailable', {
+            conversationId,
+            message: modelSelection.message,
+          });
           setChatError(modelSelection.message || CHAT_NO_MODEL_AVAILABLE_MESSAGE);
           break;
         }
@@ -838,6 +887,10 @@ export const ChatScreen = () => {
 
         const providerConfig = settingsState.providers.find((provider) => provider.id === selectedProviderId);
         if (!providerConfig) {
+          debug.warn('runChatLoop', 'provider config missing', {
+            conversationId,
+            selectedProviderId,
+          });
           setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
           break;
         }
@@ -854,6 +907,16 @@ export const ChatScreen = () => {
         const requestMessages = sanitizeMessagesForRequest(currentConv.messages, {
           ...selectedModelCapabilities,
           tools: toolsEnabledForRequest,
+        });
+        debug.log('runChatLoop', 'request sanitized', {
+          conversationId,
+          iteration: absoluteIterationCount,
+          selectedProviderId,
+          selectedModel,
+          originalMessages: currentConv.messages.length,
+          requestMessages: requestMessages.length,
+          toolsEnabledForRequest,
+          mcpToolsCount: mcpTools.length,
         });
 
         // Hydrate base64 lazily from file URIs — never persisted in Zustand
@@ -908,6 +971,15 @@ export const ChatScreen = () => {
         });
 
         const payloadElapsed = Date.now() - payloadStartTime;
+        debug.log('runChatLoop', 'payload prepared', {
+          conversationId,
+          iteration: absoluteIterationCount,
+          payloadElapsed,
+          hydratedMessages: hydratedMessages.length,
+          openAiToolsCount: openAiTools.length,
+          selectedProviderId,
+          selectedModel,
+        });
         console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — messages: ${hydratedMessages.length}, tools: ${openAiTools.length}, model: ${settingsState.lastUsedModel?.model ?? 'unknown'}`);
         if (__DEV__) {
           console.log('[ChatScreen] Starting API request...');
@@ -943,6 +1015,13 @@ export const ChatScreen = () => {
               }
             )
             .catch(reject);
+        });
+        debug.log('runChatLoop', 'provider returned result', {
+          conversationId,
+          iteration: absoluteIterationCount,
+          streamedContentLength: streamedContent.length,
+          streamedReasoningLength: streamedReasoning.length,
+          toolCallsCount: result.toolCalls?.length ?? 0,
         });
 
         if (activeRequestControllersRef.current.get(conversationId) === requestController) {
@@ -991,6 +1070,10 @@ export const ChatScreen = () => {
         }
 
         if (toolCalls.length === 0 && finalizedAssistantText.length === 0) {
+          debug.warn('runChatLoop', 'empty assistant response detected', {
+            conversationId,
+            iteration: absoluteIterationCount,
+          });
           finalizedAssistantText = 'I received an empty response from the model.';
         }
 
@@ -1031,6 +1114,12 @@ export const ChatScreen = () => {
         const toolQueue = buildToolExecutionQueue(toolCalls);
 
         for (const call of toolQueue) {
+          debug.log('runChatLoop', 'queueing tool call', {
+            conversationId,
+            assistantMsgId,
+            toolCallId: call.id,
+            toolName: call.name,
+          });
           const toolCall: ToolCall = {
             id: call.id,
             name: call.name,
@@ -1113,6 +1202,11 @@ export const ChatScreen = () => {
 
           updateToolCallStatus(conversationId, assistantMsgId, call.id, 'running');
           try {
+            debug.log('runChatLoop', 'executing tool call', {
+              conversationId,
+              toolCallId: call.id,
+              toolName: call.name,
+            });
             const parsedArgs = parseToolArguments(call.arguments, call.name);
             const toolResult = await McpManager.executeTool(call.name, parsedArgs);
             const resultStr = serializeToolResult(toolResult);
@@ -1126,6 +1220,12 @@ export const ChatScreen = () => {
               toolCallId: call.id,
             });
           } catch (error: any) {
+            debug.warn('runChatLoop', 'tool execution failed', {
+              conversationId,
+              toolCallId: call.id,
+              toolName: call.name,
+              error,
+            });
             const errorStr = serializeToolExecutionError(error);
 
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
@@ -1141,6 +1241,10 @@ export const ChatScreen = () => {
 
       }
     } catch (error: any) {
+      debug.error('runChatLoop', 'chat loop failed', {
+        conversationId,
+        error,
+      });
       if (currentAssistantMsgId) {
         if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
           settleCurrentStream({
@@ -1166,6 +1270,11 @@ export const ChatScreen = () => {
         }
       }
     } finally {
+      debug.log('runChatLoop', 'chat loop finished', {
+        conversationId,
+        hasFinalAnswer,
+        absoluteIterationCount,
+      });
       if (currentAssistantMsgId) {
         if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
           settleCurrentStream({

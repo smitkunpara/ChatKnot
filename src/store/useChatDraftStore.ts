@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+import { createDebugLogger } from '../utils/debugLogger';
+
+const debug = createDebugLogger('store/useChatDraftStore');
+debug.moduleLoaded();
 
 const draftPersistStorage = createEncryptedStateStorage({
   id: 'chat-draft-storage',
@@ -19,6 +23,10 @@ export const useChatDraftStore = create<ChatDraftState>()(
       draftsByConversationId: {},
 
       setDraft: (conversationId, draft) => set((state) => {
+        debug.log('setDraft', 'updating draft', {
+          conversationId,
+          length: draft.length,
+        });
         const current = state.draftsByConversationId[conversationId] ?? '';
         if (current === draft) {
           return state;
@@ -33,6 +41,7 @@ export const useChatDraftStore = create<ChatDraftState>()(
       }),
 
       clearDraft: (conversationId) => set((state) => {
+        debug.log('clearDraft', 'clearing draft', { conversationId });
         if (!(conversationId in state.draftsByConversationId)) {
           return state;
         }
