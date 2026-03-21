@@ -10,6 +10,7 @@ import {
   updateModeDraft,
   discardModeDraft,
   saveModeDraft,
+  saveServerDraftWithValidation,
 } from '../settingsDraftState';
 import { LlmProviderConfig, McpServerConfig, Mode } from '../../types';
 
@@ -139,6 +140,94 @@ describe('settingsDraftState', () => {
 
     expect(nextDrafts[server.id]?.allowedTools).toEqual(['alpha.search', 'beta.lookup']);
     expect(nextDrafts[server.id]?.autoApprovedTools).toEqual(['beta.lookup']);
+  });
+
+  it('saveServerDraftWithValidation commits and clears draft on successful validation', async () => {
+    const server = createServer();
+    const commit = jest.fn();
+    const validateEndpoint = jest.fn().mockResolvedValue({
+      ok: true,
+      normalizedInputUrl: 'https://mcp.example.com/v1',
+      resolvedBaseUrl: 'https://mcp.example.com/v1',
+      spec: {},
+      tools: [],
+    });
+
+    const drafts = beginServerDraft({}, server);
+    const result = await saveServerDraftWithValidation({
+      drafts,
+      server,
+      commit,
+      validateEndpoint,
+    });
+
+    expect(validateEndpoint).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      id: server.id,
+      url: 'https://mcp.example.com/v1',
+    }));
+    expect(result.error).toBeNull();
+    expect(result.errorMessage).toBeNull();
+    expect(result.drafts[server.id]).toBeUndefined();
+  });
+
+  it('saveServerDraftWithValidation keeps draft and returns formatted error when validation fails', async () => {
+    const server = createServer();
+    const commit = jest.fn();
+    const validateEndpoint = jest.fn().mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'INVALID_SPEC',
+        field: 'spec',
+        message: 'Invalid spec',
+      },
+    });
+
+    const drafts = beginServerDraft({}, server);
+    const result = await saveServerDraftWithValidation({
+      drafts,
+      server,
+      commit,
+      validateEndpoint,
+    });
+
+    expect(validateEndpoint).toHaveBeenCalledTimes(1);
+    expect(commit).not.toHaveBeenCalled();
+    expect(result.error).toEqual({
+      code: 'INVALID_SPEC',
+      field: 'spec',
+      message: 'Invalid spec',
+    });
+    expect(typeof result.errorMessage).toBe('string');
+    expect(result.errorMessage).toContain('Invalid spec');
+    expect(result.drafts[server.id]).toBeDefined();
+  });
+
+  it('saveServerDraftWithValidation skips validation for disabled servers and commits directly', async () => {
+    const server = createServer();
+    const commit = jest.fn();
+    const validateEndpoint = jest.fn();
+
+    let drafts = beginServerDraft({}, server);
+    drafts = updateServerDraft(drafts, server.id, { enabled: false });
+
+    const result = await saveServerDraftWithValidation({
+      drafts,
+      server,
+      commit,
+      validateEndpoint,
+    });
+
+    expect(validateEndpoint).not.toHaveBeenCalled();
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      id: server.id,
+      enabled: false,
+    }));
+    expect(result.error).toBeNull();
+    expect(result.errorMessage).toBeNull();
+    expect(result.drafts[server.id]).toBeUndefined();
   });
 });
 

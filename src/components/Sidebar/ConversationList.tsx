@@ -19,13 +19,10 @@ import {
   getSidebarNewChatCtaLabel,
 } from '../../utils/dateFormat';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
-
-interface SidebarConversationSummary {
-  id: string;
-  title?: string;
-  createdAt?: number;
-  updatedAt?: number;
-}
+import {
+  SidebarConversationSummary,
+  sortAndFilterConversations,
+} from './sidebarFilter';
 
 const areConversationSummariesEqual = (
   previous: SidebarConversationSummary[],
@@ -73,13 +70,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredConversations = useMemo(() => {
-    const sorted = [...conversations].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-    if (!searchQuery.trim()) return sorted;
-    const query = searchQuery.toLowerCase();
-    return sorted.filter(c => {
-      const label = getSidebarConversationLabel(c).toLowerCase();
-      return label.includes(query);
-    });
+    return sortAndFilterConversations(conversations, searchQuery);
   }, [conversations, searchQuery]);
 
   const handleCreateConversation = () => {

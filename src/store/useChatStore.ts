@@ -39,6 +39,22 @@ interface ChatState {
   ) => void;
 }
 
+const mapConversations = (
+  conversations: Conversation[],
+  conversationId: string,
+  updater: (conversation: Conversation) => Conversation
+): Conversation[] => conversations.map((conversation) => (
+  conversation.id === conversationId ? updater(conversation) : conversation
+));
+
+const mapMessages = (
+  messages: Message[],
+  messageId: string,
+  updater: (message: Message) => Message
+): Message[] => messages.map((message) => (
+  message.id === messageId ? updater(message) : message
+));
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
@@ -132,53 +148,36 @@ return {
       }),
 
       updateMessage: (conversationId, messageId, content) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            return {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === messageId ? { ...m, content } : m
-              ),
-            };
-          }
-          return c;
-        }),
+        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+          ...conversation,
+          messages: mapMessages(conversation.messages, messageId, (message) => ({
+            ...message,
+            content,
+          })),
+        })),
       })),
 
       updateMessageReasoning: (conversationId, messageId, reasoning) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            return {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === messageId ? { ...m, reasoning } : m
-              ),
-            };
-          }
-          return c;
-        }),
+        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+          ...conversation,
+          messages: mapMessages(conversation.messages, messageId, (message) => ({
+            ...message,
+            reasoning,
+          })),
+        })),
       })),
 
       finalizeMessage: (conversationId, messageId, payload) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            return {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === messageId
-                  ? {
-                    ...m,
-                    content: payload.content ?? m.content,
-                    reasoning: payload.reasoning ?? m.reasoning,
-                    ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
-                  }
-                  : m
-              ),
-              updatedAt: payload.updatedAt ?? Date.now(),
-            };
-          }
-          return c;
-        }),
+        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+          ...conversation,
+          messages: mapMessages(conversation.messages, messageId, (message) => ({
+            ...message,
+            content: payload.content ?? message.content,
+            reasoning: payload.reasoning ?? message.reasoning,
+            ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
+          })),
+          updatedAt: payload.updatedAt ?? Date.now(),
+        })),
       })),
 
       editMessage: (conversationId, messageId, newContent) => set((state) => ({
@@ -196,51 +195,40 @@ return {
       })),
 
       addToolCall: (conversationId, messageId, toolCall) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            return {
-              ...c,
-              messages: c.messages.map((m) => {
-                if (m.id === messageId) {
-                  return { ...m, toolCalls: [...(m.toolCalls || []), toolCall] };
-                }
-                return m;
-              }),
-              updatedAt: Date.now(),
-            };
-          }
-          return c;
-        }),
+        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+          ...conversation,
+          messages: mapMessages(conversation.messages, messageId, (message) => ({
+            ...message,
+            toolCalls: [...(message.toolCalls || []), toolCall],
+          })),
+          updatedAt: Date.now(),
+        })),
       })),
 
       updateToolCallStatus: (conversationId, messageId, toolCallId, status, payload) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
+        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+          ...conversation,
+          messages: mapMessages(conversation.messages, messageId, (message) => {
+            if (!message.toolCalls) {
+              return message;
+            }
+
             return {
-              ...c,
-              messages: c.messages.map((m) => {
-                if (m.id === messageId && m.toolCalls) {
-                  return {
-                    ...m,
-                    toolCalls: m.toolCalls.map((t) =>
-                      t.id === toolCallId
-                        ? {
-                          ...t,
-                          status,
-                          result: payload?.result ?? (status === 'failed' ? undefined : t.result),
-                          error: payload?.error ?? (status !== 'failed' ? undefined : t.error),
-                        }
-                        : t
-                    ),
-                  };
-                }
-                return m;
-              }),
-              updatedAt: Date.now(),
+              ...message,
+              toolCalls: message.toolCalls.map((toolCall) =>
+                toolCall.id === toolCallId
+                  ? {
+                    ...toolCall,
+                    status,
+                    result: payload?.result ?? (status === 'failed' ? undefined : toolCall.result),
+                    error: payload?.error ?? (status !== 'failed' ? undefined : toolCall.error),
+                  }
+                  : toolCall
+              ),
             };
-          }
-          return c;
-        }),
+          }),
+          updatedAt: Date.now(),
+        })),
       })),
     }),
     {

@@ -21,6 +21,27 @@
 - **Historical Content Fallback** — Added "N/A" time labels for older chat data.
 - **Improved Thinking Visibility** — Fixed thinking duration visibility during the transition to text generation and ensured full persistence across app restarts.
 
+## Stability hardening
+- Fixed false-positive unsaved-change prompts in MCP server editor header comparisons.
+- Fixed provider model fetch row spinner state so active refreshes are visible in editor actions.
+- Guarded payload-preparation debug logs behind development checks to avoid production console noise.
+- Hardened OpenAPI tool invocation against null/non-object argument payloads while keeping existing path/query/body behavior.
+- Removed dead no-op runtime spread logic from streaming session initialization.
+- Added regression tests for runtime request-phase placeholder behavior, messageId mismatch protection, and API request metadata retention.
+- Refactored duplicated chat store conversation/message update paths into shared helpers with no intended behavior change.
+- Refactored duplicated Settings MCP allowed/auto-approve toggle normalization logic into shared helpers with no intended behavior change.
+- Added regression tests for settings server-draft validation success/failure/disabled flows.
+- Extracted settings server policy/draft-change helper logic into a dedicated module to reduce `SettingsScreen` complexity.
+- Added focused unit tests for settings server policy helper behavior.
+- Extracted repeated chat tool-failure message/payload formatting into shared helper utilities to reduce `ChatScreen` loop duplication.
+- Added unit tests for chat tool-failure helper formatting/serialization behavior.
+- Added unit tests for MCP merge override behavior in `mergeServersWithOverrides`.
+- Extracted sidebar sort/filter logic into a helper module and added focused unit tests.
+- Extracted startup warning visibility logic in navigation into a helper module and added focused unit tests.
+- Added export boundary tests for markdown/json/pdf flows, including thinking/tool-output toggles and PDF HTML escaping.
+- Added a stability feature completion ledger (`docs/stability-feature-status.md`) mapping F001-F228 outcomes.
+- Scoped TypeScript project include/exclude paths so `tsc --noEmit` validates app source without scanning vendored SDK files.
+
 # ChatKnot v0.3.0 Release Notes
 
 `v0.3.0` is a major workflow release centered on the new Mode System, safer MCP control, smoother streaming, and stronger performance foundations across the app.

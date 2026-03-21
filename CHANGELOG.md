@@ -9,10 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Context Usage Indicator** — Added a circular progress indicator in the chat input bar (left of the send button) that shows how much of the model's context window is used. Colors transition from green to yellow (>70%) to red (>90%). Tapping the indicator opens a detailed popup with model name, context limit, prompt/completion/total tokens, and tokens remaining. Context usage data is captured from API responses and persisted per conversation across app restarts. Automatically updates when switching models.
+- **Settings Draft Validation Regression Tests** — Added tests for `saveServerDraftWithValidation` success/failure/disabled-server paths to lock draft persistence and OpenAPI validation behavior.
+- **Settings Server Policy Unit Tests** — Added focused tests for server draft dirty-state comparison and allowed/auto-approved toggle policy helpers.
+- **Chat Tool Failure Helper Tests** — Added focused unit tests for shared tool failure message/payload helper behavior used by chat tool execution flow.
+- **MCP Merge Unit Tests** — Added focused tests for `mergeServersWithOverrides` covering override application and fallback behavior.
+- **Sidebar Filter Unit Tests** — Added focused tests for sidebar conversation sorting and case-insensitive filtering behavior.
+- **App Navigator Warning Helper Tests** — Added focused tests for startup warning visibility helper behavior.
+- **Chat Export Service Boundary Tests** — Added focused tests for markdown/json/pdf export boundary behavior, including thinking/tool-output toggles and HTML escaping in PDF rendering.
+- **Stability Feature Completion Ledger** — Added `docs/stability-feature-status.md` to map changelog feature IDs F001-F228 to final KEEP/FIX/TEST-ADD/REFACTOR/DOC-ALIGN outcomes.
 
 ### Changed
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
 - **Release Notes Refresh** — Reworked `RELEASE_NOTES.md` so the current release notes cover the full `v0.3.0` release while keeping the latest chat fixes grouped under an unreleased section.
+- **Chat Store Update Path Refactor** — Consolidated duplicated conversation/message map-update paths in `useChatStore` into shared helpers to reduce maintenance risk without changing runtime behavior.
+- **Settings MCP Toggle Refactor** — Consolidated repeated allowed/auto-approved tool list normalization logic in `SettingsScreen` into shared helpers without changing MCP policy behavior.
+- **Settings Screen Decomposition (Server Policy Helpers)** — Extracted MCP server draft-change detection and tool-policy toggle calculations from `SettingsScreen` into `settingsServerPolicy.ts` to reduce component complexity and improve testability.
+- **Chat Screen Decomposition (Tool Failure Helpers)** — Extracted repeated tool failure message and JSON payload formatting from `ChatScreen` into `chatToolFailureHelpers.ts` to reduce loop duplication and improve maintainability.
+- **Sidebar Filter Extraction** — Extracted sidebar conversation sort/filter logic into `sidebarFilter.ts` for reuse and deterministic unit testing.
+- **App Navigator Warning Visibility Extraction** — Extracted startup warning visibility decision logic into `appNavigatorHelpers.ts` for deterministic unit testing.
 
 ### Added
 - **Shiny Thinking Effect** — Introduced a moving "shining" text effect (sweeping gradient) for the active thinking phase to provide high-end visual feedback.
@@ -30,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Historical Timing Fallback** — Added "N/A" indicators for thoughts and requests from older app versions where precision timing was not yet supported.
 - **Streaming Thinking Visibility** — Fixed an issue where the thinking duration would temporarily show "N/A" while the AI transitioned from reasoning to text answering.
 - **Thinking Time Persistence** — Thinking durations are now permanently saved with messages, ensuring correct timing is displayed after app restarts or chat reloads.
+- **Settings Unsaved Header Detection** — Fixed MCP server editor dirty-state checks so unchanged headers no longer trigger false "Unsaved Changes" prompts.
+- **Provider Model Fetch Spinner** — Fixed provider editor model-loading indicator so row-level fetch state correctly reflects active model refresh requests.
+- **Chat Debug Log Guarding** — Wrapped payload preparation timing logs in dev-only guards to prevent production console noise.
+- **OpenAPI Tool Args Hardening** — Hardened OpenAPI tool invocation to safely handle null/non-object argument payloads while preserving path/query/body parameter separation.
+- **Runtime Store Cleanup** — Removed dead no-op spread logic from chat runtime streaming session initialization.
+- **Typecheck Scope Hardening** — Restricted `tsconfig.json` include/exclude scope to project source files so `tsc --noEmit` no longer parses vendored Android SDK artifacts.
+
+### Added
+- **Runtime Request-Phase Regression Tests** — Added targeted tests for request-phase placeholder behavior, messageId mismatch guards, and API request metadata retention across phase transitions in `useChatRuntimeStore`.
 
 ## [0.3.0] - 2026-03-17
 

@@ -51,6 +51,11 @@ import {
   formatOpenApiValidationError,
   validateOpenApiEndpoint,
 } from '../services/mcp/OpenApiValidationService';
+import {
+  hasServerDraftChanges,
+  toggleAllowedToolInDraft,
+  toggleAutoApprovedToolInDraft,
+} from './settingsServerPolicy';
 import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
 import { validateImportPayload } from '../utils/settingsValidation';
 
@@ -293,6 +298,7 @@ export const SettingsScreen = () => {
     const provider = providers.find((p) => p.id === providerId);
     if (!provider) return;
 
+    setIsFetchingModels(providerId);
     setLoadingModels(true);
     setFetchError(null);
 
@@ -307,18 +313,13 @@ export const SettingsScreen = () => {
         modelCapabilities: capabilities,
       };
       updateProvider(nextProvider);
-      
-      // Update draft if it exists to include new available models
-      if (providerDrafts[providerId]) {
-        // No-op update to trigger re-render of model list in picker
-        setProviderDrafts(prev => ({ ...prev }));
-      }
     } catch (err: any) {
       setFetchError(err.message || 'Failed to fetch models');
     } finally {
+      setIsFetchingModels(null);
       setLoadingModels(false);
     }
-  }, [providers, updateProvider, providerDrafts]);
+  }, [providers, updateProvider]);
 
   const activeProviderForPicker = useMemo(
     () => providers.find((provider) => provider.id === activeProviderIdForPicker) || null,
@@ -507,41 +508,7 @@ export const SettingsScreen = () => {
         return prev;
       }
 
-      const normalizedAllTools = Array.from(new Set(allToolNames.filter(Boolean)));
-      const currentAllowed = draft.allowedTools || [];
-      let nextAllowed: string[];
-
-      if (currentAllowed.length === 0) {
-        // Empty means all enabled; toggling once disables only this tool.
-        nextAllowed = normalizedAllTools.filter(name => name !== toolName);
-      } else if (currentAllowed.includes(toolName)) {
-        nextAllowed = currentAllowed.filter(name => name !== toolName);
-      } else {
-        nextAllowed = [...currentAllowed, toolName];
-      }
-
-      const dedupedAllowed = Array.from(new Set(nextAllowed));
-      const allEnabled =
-        normalizedAllTools.length > 0 &&
-        dedupedAllowed.length >= normalizedAllTools.length &&
-        normalizedAllTools.every(name => dedupedAllowed.includes(name));
-
-      if (allEnabled) {
-        nextAllowed = [];
-      } else {
-        nextAllowed = dedupedAllowed;
-      }
-
-      const nextAutoApproved = (draft.autoApprovedTools || []).filter(name => {
-        const enabledByList =
-          nextAllowed.length === 0 || nextAllowed.includes(name);
-        return enabledByList;
-      });
-
-      return updateServerDraft(prev, serverId, {
-        allowedTools: nextAllowed,
-        autoApprovedTools: nextAutoApproved,
-      });
+      return updateServerDraft(prev, serverId, toggleAllowedToolInDraft(draft, toolName, allToolNames));
     });
   };
 
@@ -552,28 +519,7 @@ export const SettingsScreen = () => {
         return prev;
       }
 
-      const normalizedAllTools = Array.from(new Set(allToolNames.filter(Boolean)));
-      const allowedTools = draft.allowedTools || [];
-      const toolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
-      const nextAllowed = toolEnabled ? [...allowedTools] : [...allowedTools, toolName];
-
-      const autoApproved = new Set(draft.autoApprovedTools || []);
-      if (autoApproved.has(toolName)) {
-        autoApproved.delete(toolName);
-      } else {
-        autoApproved.add(toolName);
-      }
-
-      const dedupedAllowed = Array.from(new Set(nextAllowed));
-      const allEnabled =
-        normalizedAllTools.length > 0 &&
-        dedupedAllowed.length >= normalizedAllTools.length &&
-        normalizedAllTools.every(name => dedupedAllowed.includes(name));
-
-      return updateServerDraft(prev, serverId, {
-        allowedTools: allEnabled ? [] : dedupedAllowed,
-        autoApprovedTools: Array.from(autoApproved),
-      });
+      return updateServerDraft(prev, serverId, toggleAutoApprovedToolInDraft(draft, toolName, allToolNames));
     });
   };
 
@@ -842,15 +788,7 @@ export const SettingsScreen = () => {
       const original = mcpServers.find((s) => s.id === serverId);
       if (!draft || !original) return false;
 
-      const originalHeaders = original.headers ? Object.entries(original.headers).map(([key, value]) => ({ id: uuid.v4() as string, key, value })) : [];
-
-      return (
-        draft.name !== original.name ||
-        draft.url !== original.url ||
-        draft.enabled !== original.enabled ||
-        draft.token !== original.token ||
-        JSON.stringify(draft.headers) !== JSON.stringify(originalHeaders)
-      );
+      return hasServerDraftChanges(draft, original);
     },
     [serverDrafts, mcpServers]
   );
