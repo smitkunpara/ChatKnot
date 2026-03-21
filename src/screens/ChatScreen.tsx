@@ -68,6 +68,9 @@ import {
   ToolFailureCode,
 } from './chatToolFailureHelpers';
 
+const INITIAL_VISIBLE_MESSAGE_COUNT = 220;
+const LOAD_MORE_MESSAGE_STEP = 180;
+
 export const ChatScreen = () => {
 const navigation = useNavigation<DrawerNavigationProp<any>>();
   const isScreenFocused = useIsFocused();
@@ -198,6 +201,24 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
       },
     ];
   }, [activeConversationMessages, streamingSession]);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(INITIAL_VISIBLE_MESSAGE_COUNT);
+
+  const pagedMessages = useMemo(() => {
+    if (displayedMessages.length <= visibleMessageCount) {
+      return displayedMessages;
+    }
+
+    return displayedMessages.slice(-visibleMessageCount);
+  }, [displayedMessages, visibleMessageCount]);
+
+  const hasOlderMessages = displayedMessages.length > pagedMessages.length;
+
+  const loadOlderMessages = useCallback(() => {
+    setVisibleMessageCount((previous) => Math.min(
+      displayedMessages.length,
+      previous + LOAD_MORE_MESSAGE_STEP
+    ));
+  }, [displayedMessages.length]);
   const [newChatDraft, setNewChatDraft] = useState('');
 
   const activeMode = useMemo(() => {
@@ -337,8 +358,8 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   // (e.g. because generation was interrupted before any content was received), 
   // we move the retry button to the PREVIOUS assistant message and hide the empty one.
   const lastAssistantMessageId = useMemo(() => {
-    if (!displayedMessages.length) return null;
-    const messages = displayedMessages;
+    if (!pagedMessages.length) return null;
+    const messages = pagedMessages;
 
     // Find the absolute last assistant message
     let lastIdx = -1;
@@ -372,9 +393,9 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     }
 
     return lastMessage.id;
-  }, [displayedMessages, isActiveConversationLoading]);
+  }, [pagedMessages, isActiveConversationLoading]);
 
-  const messageCount = displayedMessages.length;
+  const messageCount = pagedMessages.length;
   const scrollToBottom = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToEnd({ animated });
@@ -400,6 +421,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   useEffect(() => {
     setEditingMessageId(null);
     setEditingContent(undefined);
+    setVisibleMessageCount(INITIAL_VISIBLE_MESSAGE_COUNT);
     // Reset scroll lock whenever the conversation changes.
     userScrolledAwayRef.current = false;
     pendingInstantScrollConversationIdRef.current = activeConversationId;
@@ -1352,9 +1374,9 @@ if (currentAssistantMsgId) {
 
               <FlatList
                 ref={flatListRef}
-                data={displayedMessages}
+                data={pagedMessages}
                 keyExtractor={item => item.id}
-                extraData={{ lastAssistantMessageId, isLoading: isActiveConversationLoading }}
+                extraData={{ lastAssistantMessageId, isLoading: isActiveConversationLoading, hasOlderMessages }}
                 maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                 initialNumToRender={10}
                 maxToRenderPerBatch={8}
@@ -1382,6 +1404,16 @@ if (currentAssistantMsgId) {
                   }
                 }}
                 renderItem={renderMessage}
+                ListHeaderComponent={hasOlderMessages ? (
+                  <View style={styles.paginationHeader}>
+                    <TouchableOpacity style={styles.loadMoreButton} onPress={loadOlderMessages}>
+                      <Text style={styles.loadMoreButtonText}>Load Older Messages</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.paginationHint}>
+                      Showing last {pagedMessages.length} of {displayedMessages.length}
+                    </Text>
+                  </View>
+                ) : null}
                 ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
@@ -1798,6 +1830,29 @@ const createStyles = (colors: AppPalette, insetsTop: number) =>
     listContent: {
       paddingTop: insetsTop + 56 + 10,
       // Note: paddingBottom removed - using ListFooterComponent for buffer instead
+    },
+    paginationHeader: {
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingBottom: 8,
+    },
+    loadMoreButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      backgroundColor: colors.surfaceAlt,
+    },
+    loadMoreButtonText: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    paginationHint: {
+      marginTop: 6,
+      color: colors.textTertiary,
+      fontSize: 12,
     },
     emptyState: {
       flex: 1,
