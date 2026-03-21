@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sidebar Filter Unit Tests** — Added focused tests for sidebar conversation sorting and case-insensitive filtering behavior.
 - **App Navigator Warning Helper Tests** — Added focused tests for startup warning visibility helper behavior.
 - **Chat Export Service Boundary Tests** — Added focused tests for markdown/json/pdf export boundary behavior, including thinking/tool-output toggles and HTML escaping in PDF rendering.
+- **Stability Feature Completion Ledger** — Added `docs/stability-feature-status.md` to map changelog feature IDs F001-F228 to final KEEP/FIX/TEST-ADD/REFACTOR/DOC-ALIGN outcomes.
 
 ### Changed
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
