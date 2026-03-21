@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import pkg from '../../../package.json';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -43,7 +44,8 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
     outputRange: ['0%', '100%'],
   });
 
-  const version = pkg.version || '0.2.2';
+  const runtimeVersion = Constants.expoConfig?.version;
+  const version = runtimeVersion || pkg.version || '0.3.1';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
