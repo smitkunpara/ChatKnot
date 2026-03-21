@@ -496,6 +496,16 @@ export const SettingsScreen = () => {
     });
   };
 
+  const normalizeToolList = (toolNames: string[]) => Array.from(new Set(toolNames.filter(Boolean)));
+  const toAllEnabledSentinel = (candidateAllowed: string[], normalizedAllTools: string[]) => {
+    const dedupedAllowed = Array.from(new Set(candidateAllowed));
+    const allEnabled =
+      normalizedAllTools.length > 0 &&
+      dedupedAllowed.length >= normalizedAllTools.length &&
+      normalizedAllTools.every(name => dedupedAllowed.includes(name));
+    return allEnabled ? [] : dedupedAllowed;
+  };
+
   const toggleServerDraftAllowedTool = (serverId: string, toolName: string, allToolNames: string[]) => {
     setServerDrafts(prev => {
       const draft = prev[serverId];
@@ -503,7 +513,7 @@ export const SettingsScreen = () => {
         return prev;
       }
 
-      const normalizedAllTools = Array.from(new Set(allToolNames.filter(Boolean)));
+      const normalizedAllTools = normalizeToolList(allToolNames);
       const currentAllowed = draft.allowedTools || [];
       let nextAllowed: string[];
 
@@ -516,17 +526,7 @@ export const SettingsScreen = () => {
         nextAllowed = [...currentAllowed, toolName];
       }
 
-      const dedupedAllowed = Array.from(new Set(nextAllowed));
-      const allEnabled =
-        normalizedAllTools.length > 0 &&
-        dedupedAllowed.length >= normalizedAllTools.length &&
-        normalizedAllTools.every(name => dedupedAllowed.includes(name));
-
-      if (allEnabled) {
-        nextAllowed = [];
-      } else {
-        nextAllowed = dedupedAllowed;
-      }
+      nextAllowed = toAllEnabledSentinel(nextAllowed, normalizedAllTools);
 
       const nextAutoApproved = (draft.autoApprovedTools || []).filter(name => {
         const enabledByList =
@@ -548,7 +548,7 @@ export const SettingsScreen = () => {
         return prev;
       }
 
-      const normalizedAllTools = Array.from(new Set(allToolNames.filter(Boolean)));
+      const normalizedAllTools = normalizeToolList(allToolNames);
       const allowedTools = draft.allowedTools || [];
       const toolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
       const nextAllowed = toolEnabled ? [...allowedTools] : [...allowedTools, toolName];
@@ -560,14 +560,8 @@ export const SettingsScreen = () => {
         autoApproved.add(toolName);
       }
 
-      const dedupedAllowed = Array.from(new Set(nextAllowed));
-      const allEnabled =
-        normalizedAllTools.length > 0 &&
-        dedupedAllowed.length >= normalizedAllTools.length &&
-        normalizedAllTools.every(name => dedupedAllowed.includes(name));
-
       return updateServerDraft(prev, serverId, {
-        allowedTools: allEnabled ? [] : dedupedAllowed,
+        allowedTools: toAllEnabledSentinel(nextAllowed, normalizedAllTools),
         autoApprovedTools: Array.from(autoApproved),
       });
     });

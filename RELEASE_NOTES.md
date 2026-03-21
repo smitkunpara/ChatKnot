@@ -29,6 +29,7 @@
 - Removed dead no-op runtime spread logic from streaming session initialization.
 - Added regression tests for runtime request-phase placeholder behavior, messageId mismatch protection, and API request metadata retention.
 - Refactored duplicated chat store conversation/message update paths into shared helpers with no intended behavior change.
+- Refactored duplicated Settings MCP allowed/auto-approve toggle normalization logic into shared helpers with no intended behavior change.
 
 # ChatKnot v0.3.0 Release Notes
 

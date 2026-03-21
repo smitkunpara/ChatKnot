@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
 - **Release Notes Refresh** — Reworked `RELEASE_NOTES.md` so the current release notes cover the full `v0.3.0` release while keeping the latest chat fixes grouped under an unreleased section.
 - **Chat Store Update Path Refactor** — Consolidated duplicated conversation/message map-update paths in `useChatStore` into shared helpers to reduce maintenance risk without changing runtime behavior.
+- **Settings MCP Toggle Refactor** — Consolidated repeated allowed/auto-approved tool list normalization logic in `SettingsScreen` into shared helpers without changing MCP policy behavior.
 
 ### Added
 - **Shiny Thinking Effect** — Introduced a moving "shining" text effect (sweeping gradient) for the active thinking phase to provide high-end visual feedback.
