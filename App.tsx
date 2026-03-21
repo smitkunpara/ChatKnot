@@ -59,7 +59,7 @@ console.warn('Storage hardening bootstrap failed. Continuing with compatibility 
       try {
         await Promise.allSettled([
           useSettingsStore.persist.rehydrate(),
-          useChatStore.persist.rehydrate(),
+          useChatStore.getState().hydrateFromDatabase(),
           useChatDraftStore.persist.rehydrate(),
         ]);
 } catch (error) {

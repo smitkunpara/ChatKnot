@@ -1,18 +1,18 @@
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 import { Message, Conversation, ToolCall, ApiRequestDetails } from '../types';
 import uuid from 'react-native-uuid';
-import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import { generateConversationTitle, isPlaceholderTitle } from '../utils/conversationHelpers';
-
-const chatPersistStorage = createEncryptedStateStorage({
-  id: 'chat-storage',
-  keyAlias: 'chat-storage:encryption-key',
-});
+import {
+  clearChatStateFromRealm,
+  loadChatStateFromRealm,
+  saveChatStateToRealm,
+} from '../services/chat/ChatRealmRepository';
 
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
+  hydrateFromDatabase: () => Promise<void>;
+  clearAllChatData: () => Promise<void>;
 
   createConversation: (providerId: string, modeId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string | null) => void;
@@ -56,10 +56,43 @@ const mapMessages = (
 ));
 
 export const useChatStore = create<ChatState>()(
-  persist(
-    (set) => ({
+  (set, get) => {
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedulePersist = () => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+      }
+
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        const state = get();
+        void saveChatStateToRealm({
+          conversations: state.conversations,
+          activeConversationId: state.activeConversationId,
+        });
+      }, 120);
+    };
+
+    return {
       conversations: [],
       activeConversationId: null,
+
+      hydrateFromDatabase: async () => {
+        const state = await loadChatStateFromRealm();
+        set({
+          conversations: state.conversations,
+          activeConversationId: state.activeConversationId,
+        });
+      },
+
+      clearAllChatData: async () => {
+        set({
+          conversations: [],
+          activeConversationId: null,
+        });
+        await clearChatStateFromRealm();
+      },
 
       createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
 const now = Date.now();
@@ -78,28 +111,37 @@ const now = Date.now();
           conversations: [newConversation, ...state.conversations],
           activeConversationId: newConversation.id,
         }));
+        schedulePersist();
       },
 
       setActiveConversation: (id) => {
 set({ activeConversationId: id });
+        schedulePersist();
       },
 
-      deleteConversation: (id) => set((state) => {
+      deleteConversation: (id) => {
+        set((state) => {
 return {
           conversations: state.conversations.filter((c) => c.id !== id),
           activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
         };
-      }),
+        });
+        schedulePersist();
+      },
 
-      updateProviderInConversation: (conversationId, providerId) => set((state) => {
+      updateProviderInConversation: (conversationId, providerId) => {
+        set((state) => {
 return {
           conversations: state.conversations.map((c) =>
             c.id === conversationId ? { ...c, providerId } : c
           ),
         };
-      }),
+        });
+        schedulePersist();
+      },
 
-      updateModelInConversation: (conversationId, providerId, model) => set((state) => {
+      updateModelInConversation: (conversationId, providerId, model) => {
+        set((state) => {
 return {
           conversations: state.conversations.map((c) => {
             if (c.id === conversationId) {
@@ -108,17 +150,23 @@ return {
             return c;
           }),
         };
-      }),
+        });
+        schedulePersist();
+      },
 
-      updateModeInConversation: (conversationId, modeId) => set((state) => {
+      updateModeInConversation: (conversationId, modeId) => {
+        set((state) => {
 return {
           conversations: state.conversations.map((c) =>
             c.id === conversationId ? { ...c, modeId } : c
           ),
         };
-      }),
+        });
+        schedulePersist();
+      },
 
-      addMessage: (conversationId, message) => set((state) => {
+      addMessage: (conversationId, message) => {
+        set((state) => {
 return {
           conversations: state.conversations.map((c) => {
             if (c.id === conversationId) {
@@ -145,121 +193,111 @@ return {
             return c;
           }),
         };
-      }),
-
-      updateMessage: (conversationId, messageId, content) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            content,
-          })),
-        })),
-      })),
-
-      updateMessageReasoning: (conversationId, messageId, reasoning) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            reasoning,
-          })),
-        })),
-      })),
-
-      finalizeMessage: (conversationId, messageId, payload) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            content: payload.content ?? message.content,
-            reasoning: payload.reasoning ?? message.reasoning,
-            ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
-          })),
-          updatedAt: payload.updatedAt ?? Date.now(),
-        })),
-      })),
-
-      editMessage: (conversationId, messageId, newContent) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            const index = c.messages.findIndex(m => m.id === messageId);
-            if (index === -1) return c;
-            const newMessages = c.messages.slice(0, index + 1).map(m =>
-              m.id === messageId ? { ...m, content: newContent, timestamp: Date.now() } : m
-            );
-            return { ...c, messages: newMessages, updatedAt: Date.now() };
-          }
-          return c;
-        }),
-      })),
-
-      addToolCall: (conversationId, messageId, toolCall) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            toolCalls: [...(message.toolCalls || []), toolCall],
-          })),
-          updatedAt: Date.now(),
-        })),
-      })),
-
-      updateToolCallStatus: (conversationId, messageId, toolCallId, status, payload) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => {
-            if (!message.toolCalls) {
-              return message;
-            }
-
-            return {
-              ...message,
-              toolCalls: message.toolCalls.map((toolCall) =>
-                toolCall.id === toolCallId
-                  ? {
-                    ...toolCall,
-                    status,
-                    result: payload?.result ?? (status === 'failed' ? undefined : toolCall.result),
-                    error: payload?.error ?? (status !== 'failed' ? undefined : toolCall.error),
-                  }
-                  : toolCall
-              ),
-            };
-          }),
-          updatedAt: Date.now(),
-        })),
-      })),
-    }),
-    {
-      name: 'chat-storage',
-      storage: createJSONStorage(() => chatPersistStorage),
-      partialize: (state) => ({
-        conversations: state.conversations,
-        activeConversationId: state.activeConversationId,
-      }),
-      version: 2,
-      migrate: (persistedState: any) => {
-        if (!persistedState || typeof persistedState !== 'object') {
-          return {
-            conversations: [],
-            activeConversationId: null,
-          };
-        }
-
-        const conversations = Array.isArray(persistedState.conversations)
-          ? persistedState.conversations.map((c: any) => ({
-            ...c,
-            modeId: c.modeId || '', // UI will handle defaulting to active mode if empty
-            createdAt: c.createdAt || c.updatedAt || Date.now(),
-          }))
-          : [];
-
-        return {
-          conversations,
-          activeConversationId: persistedState.activeConversationId || null,
-        };
+        });
+        schedulePersist();
       },
-    }
-  )
+
+      updateMessage: (conversationId, messageId, content) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              content,
+            })),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      updateMessageReasoning: (conversationId, messageId, reasoning) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              reasoning,
+            })),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      finalizeMessage: (conversationId, messageId, payload) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              content: payload.content ?? message.content,
+              reasoning: payload.reasoning ?? message.reasoning,
+              ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
+            })),
+            updatedAt: payload.updatedAt ?? Date.now(),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      editMessage: (conversationId, messageId, newContent) => {
+        set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id === conversationId) {
+              const index = c.messages.findIndex(m => m.id === messageId);
+              if (index === -1) return c;
+              const newMessages = c.messages.slice(0, index + 1).map(m =>
+                m.id === messageId ? { ...m, content: newContent, timestamp: Date.now() } : m
+              );
+              return { ...c, messages: newMessages, updatedAt: Date.now() };
+            }
+            return c;
+          }),
+        }));
+        schedulePersist();
+      },
+
+      addToolCall: (conversationId, messageId, toolCall) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              toolCalls: [...(message.toolCalls || []), toolCall],
+            })),
+            updatedAt: Date.now(),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      updateToolCallStatus: (conversationId, messageId, toolCallId, status, payload) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => {
+              if (!message.toolCalls) {
+                return message;
+              }
+
+              return {
+                ...message,
+                toolCalls: message.toolCalls.map((toolCall) =>
+                  toolCall.id === toolCallId
+                    ? {
+                      ...toolCall,
+                      status,
+                      result: payload?.result ?? (status === 'failed' ? undefined : toolCall.result),
+                      error: payload?.error ?? (status !== 'failed' ? undefined : toolCall.error),
+                    }
+                    : toolCall
+                ),
+              };
+            }),
+            updatedAt: Date.now(),
+          })),
+        }));
+        schedulePersist();
+      },
+    };
+  }
 );
