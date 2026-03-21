@@ -23,6 +23,7 @@ interface ChatRuntimeState {
   activeRequestConversationId: string | null;
   loadingConversationIds: Record<string, true>;
   streamingSessions: Record<string, StreamingMessageSession>;
+  resetRuntimeState: () => void;
   beginRequest: (conversationId: string) => void;
   finishRequest: (conversationId?: string | null) => void;
   startStreamingMessage: (conversationId: string, messageId: string) => void;
@@ -44,6 +45,13 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   activeRequestConversationId: null,
   loadingConversationIds: {},
   streamingSessions: {},
+
+  resetRuntimeState: () => set({
+    isLoading: false,
+    activeRequestConversationId: null,
+    loadingConversationIds: {},
+    streamingSessions: {},
+  }),
 
   beginRequest: (conversationId) => set((state) => {
 if (state.loadingConversationIds[conversationId]) {

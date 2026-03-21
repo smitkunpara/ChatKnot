@@ -23,6 +23,7 @@ interface ContextUsageState {
 
   updateUsage: (data: ContextUsageData) => void;
   clearUsage: (conversationId: string) => void;
+  clearAllUsage: () => void;
   getUsage: (conversationId: string) => ContextUsageData | null;
   getUsageForModel: (conversationId: string, providerId: string, model: string) => ContextUsageData | null;
 }
@@ -52,6 +53,10 @@ export const useContextUsageStore = create<ContextUsageState>()(
           delete next[conversationId];
           return { usageByConversation: next };
         });
+      },
+
+      clearAllUsage: () => {
+        set({ usageByConversation: {} });
       },
 
       getUsage: (conversationId) => {

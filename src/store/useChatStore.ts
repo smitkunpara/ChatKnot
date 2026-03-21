@@ -8,6 +8,38 @@ import {
   saveChatStateToRealm,
 } from '../services/chat/ChatRealmRepository';
 
+const clearConversationAncillaryState = (conversationId: string): void => {
+  try {
+    const { useChatDraftStore } = require('./useChatDraftStore') as typeof import('./useChatDraftStore');
+    useChatDraftStore.getState().clearDraft(conversationId);
+  } catch {
+    // Ignore in environments where draft storage is not available (e.g. isolated tests).
+  }
+
+  try {
+    const { useContextUsageStore } = require('./useContextUsageStore') as typeof import('./useContextUsageStore');
+    useContextUsageStore.getState().clearUsage(conversationId);
+  } catch {
+    // Ignore in environments where context usage storage is not available.
+  }
+};
+
+const clearAllAncillaryState = (): void => {
+  try {
+    const { useChatDraftStore } = require('./useChatDraftStore') as typeof import('./useChatDraftStore');
+    useChatDraftStore.getState().clearAllDrafts();
+  } catch {
+    // Ignore in environments where draft storage is not available.
+  }
+
+  try {
+    const { useContextUsageStore } = require('./useContextUsageStore') as typeof import('./useContextUsageStore');
+    useContextUsageStore.getState().clearAllUsage();
+  } catch {
+    // Ignore in environments where context usage storage is not available.
+  }
+};
+
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -87,6 +119,7 @@ export const useChatStore = create<ChatState>()(
       },
 
       clearAllChatData: async () => {
+        clearAllAncillaryState();
         set({
           conversations: [],
           activeConversationId: null,
@@ -120,6 +153,7 @@ set({ activeConversationId: id });
       },
 
       deleteConversation: (id) => {
+        clearConversationAncillaryState(id);
         set((state) => {
 return {
           conversations: state.conversations.filter((c) => c.id !== id),

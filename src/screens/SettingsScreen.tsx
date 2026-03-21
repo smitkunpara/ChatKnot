@@ -58,6 +58,7 @@ import {
 } from './settingsServerPolicy';
 import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
 import { validateImportPayload } from '../utils/settingsValidation';
+import { resetAllLocalData } from '../services/storage/resetLocalData';
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -1080,6 +1081,33 @@ export const SettingsScreen = () => {
     }
   };
 
+  const handleDeleteAllLocalData = () => {
+    setConfirmDialog({
+      title: 'Delete All Local Data',
+      message: 'This will remove chats, drafts, context usage, providers, MCP servers, modes, and local secrets from this device. This cannot be undone.',
+      buttons: [
+        { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+        {
+          label: 'Delete All',
+          style: 'danger',
+          onPress: () => {
+            setConfirmDialog(null);
+            void (async () => {
+              try {
+                await resetAllLocalData();
+                closeAllEditModes();
+                setActiveView('index');
+                Alert.alert('Done', 'All local app data has been deleted.');
+              } catch (error) {
+                Alert.alert('Delete Failed', `Unable to delete all local data: ${String(error)}`);
+              }
+            })();
+          },
+        },
+      ],
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topHeader}>
@@ -1121,6 +1149,15 @@ export const SettingsScreen = () => {
                   <Text style={styles.themePillText}>Import</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Data Management</Text>
+              <Text style={styles.sectionHint}>Delete all local app data on this device (chat history, drafts, settings, and local secrets).</Text>
+              <TouchableOpacity style={[styles.dangerButton, { marginTop: 10 }]} onPress={handleDeleteAllLocalData}>
+                <Trash2 size={16} color={colors.danger} />
+                <Text style={styles.dangerButtonText}>Delete All Local Data</Text>
+              </TouchableOpacity>
             </View>
           </>
         ) : null}

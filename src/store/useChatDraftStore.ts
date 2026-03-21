@@ -11,6 +11,7 @@ interface ChatDraftState {
   draftsByConversationId: Record<string, string>;
   setDraft: (conversationId: string, draft: string) => void;
   clearDraft: (conversationId: string) => void;
+  clearAllDrafts: () => void;
 }
 
 export const useChatDraftStore = create<ChatDraftState>()(
@@ -44,6 +45,8 @@ if (!(conversationId in state.draftsByConversationId)) {
           draftsByConversationId: nextDrafts,
         };
       }),
+
+      clearAllDrafts: () => set({ draftsByConversationId: {} }),
     }),
     {
       name: 'chat-draft-storage',
