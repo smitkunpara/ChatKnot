@@ -51,6 +51,11 @@ import {
   formatOpenApiValidationError,
   validateOpenApiEndpoint,
 } from '../services/mcp/OpenApiValidationService';
+import {
+  hasServerDraftChanges,
+  toggleAllowedToolInDraft,
+  toggleAutoApprovedToolInDraft,
+} from './settingsServerPolicy';
 import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
 import { validateImportPayload } from '../utils/settingsValidation';
 
@@ -496,16 +501,6 @@ export const SettingsScreen = () => {
     });
   };
 
-  const normalizeToolList = (toolNames: string[]) => Array.from(new Set(toolNames.filter(Boolean)));
-  const toAllEnabledSentinel = (candidateAllowed: string[], normalizedAllTools: string[]) => {
-    const dedupedAllowed = Array.from(new Set(candidateAllowed));
-    const allEnabled =
-      normalizedAllTools.length > 0 &&
-      dedupedAllowed.length >= normalizedAllTools.length &&
-      normalizedAllTools.every(name => dedupedAllowed.includes(name));
-    return allEnabled ? [] : dedupedAllowed;
-  };
-
   const toggleServerDraftAllowedTool = (serverId: string, toolName: string, allToolNames: string[]) => {
     setServerDrafts(prev => {
       const draft = prev[serverId];
@@ -513,31 +508,7 @@ export const SettingsScreen = () => {
         return prev;
       }
 
-      const normalizedAllTools = normalizeToolList(allToolNames);
-      const currentAllowed = draft.allowedTools || [];
-      let nextAllowed: string[];
-
-      if (currentAllowed.length === 0) {
-        // Empty means all enabled; toggling once disables only this tool.
-        nextAllowed = normalizedAllTools.filter(name => name !== toolName);
-      } else if (currentAllowed.includes(toolName)) {
-        nextAllowed = currentAllowed.filter(name => name !== toolName);
-      } else {
-        nextAllowed = [...currentAllowed, toolName];
-      }
-
-      nextAllowed = toAllEnabledSentinel(nextAllowed, normalizedAllTools);
-
-      const nextAutoApproved = (draft.autoApprovedTools || []).filter(name => {
-        const enabledByList =
-          nextAllowed.length === 0 || nextAllowed.includes(name);
-        return enabledByList;
-      });
-
-      return updateServerDraft(prev, serverId, {
-        allowedTools: nextAllowed,
-        autoApprovedTools: nextAutoApproved,
-      });
+      return updateServerDraft(prev, serverId, toggleAllowedToolInDraft(draft, toolName, allToolNames));
     });
   };
 
@@ -548,22 +519,7 @@ export const SettingsScreen = () => {
         return prev;
       }
 
-      const normalizedAllTools = normalizeToolList(allToolNames);
-      const allowedTools = draft.allowedTools || [];
-      const toolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
-      const nextAllowed = toolEnabled ? [...allowedTools] : [...allowedTools, toolName];
-
-      const autoApproved = new Set(draft.autoApprovedTools || []);
-      if (autoApproved.has(toolName)) {
-        autoApproved.delete(toolName);
-      } else {
-        autoApproved.add(toolName);
-      }
-
-      return updateServerDraft(prev, serverId, {
-        allowedTools: toAllEnabledSentinel(nextAllowed, normalizedAllTools),
-        autoApprovedTools: Array.from(autoApproved),
-      });
+      return updateServerDraft(prev, serverId, toggleAutoApprovedToolInDraft(draft, toolName, allToolNames));
     });
   };
 
@@ -832,29 +788,7 @@ export const SettingsScreen = () => {
       const original = mcpServers.find((s) => s.id === serverId);
       if (!draft || !original) return false;
 
-      const draftHeaders = (draft.headers || [])
-        .reduce<Record<string, string>>((acc, header) => {
-          const key = (header.key || '').trim();
-          if (!key) return acc;
-          acc[key] = header.value || '';
-          return acc;
-        }, {});
-      const normalizeHeaders = (headers: Record<string, string>) =>
-        Object.fromEntries(
-          Object.keys(headers)
-            .sort()
-            .map((key) => [key, headers[key] ?? ''])
-        );
-      const originalHeaders = normalizeHeaders(original.headers || {});
-      const normalizedDraftHeaders = normalizeHeaders(draftHeaders);
-
-      return (
-        draft.name !== original.name ||
-        draft.url !== original.url ||
-        draft.enabled !== original.enabled ||
-        draft.token !== original.token ||
-        JSON.stringify(normalizedDraftHeaders) !== JSON.stringify(originalHeaders)
-      );
+      return hasServerDraftChanges(draft, original);
     },
     [serverDrafts, mcpServers]
   );

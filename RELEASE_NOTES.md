@@ -31,6 +31,8 @@
 - Refactored duplicated chat store conversation/message update paths into shared helpers with no intended behavior change.
 - Refactored duplicated Settings MCP allowed/auto-approve toggle normalization logic into shared helpers with no intended behavior change.
 - Added regression tests for settings server-draft validation success/failure/disabled flows.
+- Extracted settings server policy/draft-change helper logic into a dedicated module to reduce `SettingsScreen` complexity.
+- Added focused unit tests for settings server policy helper behavior.
 
 # ChatKnot v0.3.0 Release Notes
 
