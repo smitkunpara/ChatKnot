@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chat Debug Log Guarding** — Wrapped payload preparation timing logs in dev-only guards to prevent production console noise.
 - **OpenAPI Tool Args Hardening** — Hardened OpenAPI tool invocation to safely handle null/non-object argument payloads while preserving path/query/body parameter separation.
 - **Runtime Store Cleanup** — Removed dead no-op spread logic from chat runtime streaming session initialization.
+- **Typecheck Scope Hardening** — Restricted `tsconfig.json` include/exclude scope to project source files so `tsc --noEmit` no longer parses vendored Android SDK artifacts.
 
 ### Added
 - **Runtime Request-Phase Regression Tests** — Added targeted tests for request-phase placeholder behavior, messageId mismatch guards, and API request metadata retention across phase transitions in `useChatRuntimeStore`.

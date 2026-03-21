@@ -40,6 +40,7 @@
 - Extracted startup warning visibility logic in navigation into a helper module and added focused unit tests.
 - Added export boundary tests for markdown/json/pdf flows, including thinking/tool-output toggles and PDF HTML escaping.
 - Added a stability feature completion ledger (`docs/stability-feature-status.md`) mapping F001-F228 outcomes.
+- Scoped TypeScript project include/exclude paths so `tsc --noEmit` validates app source without scanning vendored SDK files.
 
 # ChatKnot v0.3.0 Release Notes
 
