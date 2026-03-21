@@ -66,4 +66,57 @@ describe('useChatRuntimeStore', () => {
     expect(finalState.loadingConversationIds).toEqual({});
     expect(finalState.activeRequestConversationId).toBeNull();
   });
+
+  it('preserves request metadata across generating_query placeholder to streaming session', () => {
+    const store = useChatRuntimeStore.getState();
+    const details = {
+      model: 'gpt-4.1',
+      modeName: 'Default',
+      providerUrl: 'https://api.example.com',
+      requestedAt: Date.now(),
+    };
+
+    store.setRequestPhase('conversation-1', 'generating_query', details);
+    store.startStreamingMessage('conversation-1', 'message-1');
+
+    const session = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    expect(session).toMatchObject({
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      requestPhase: 'api_request',
+      apiRequestDetails: details,
+    });
+  });
+
+  it('does not mutate streaming content when messageId does not match active session', () => {
+    const store = useChatRuntimeStore.getState();
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.updateStreamingMessage('conversation-1', 'message-2', {
+      content: 'should-not-apply',
+      reasoning: 'should-not-apply',
+    });
+
+    const session = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    expect(session.content).toBe('');
+    expect(session.reasoning).toBe('');
+  });
+
+  it('keeps existing apiRequestDetails when setRequestPhase is called without metadata override', () => {
+    const store = useChatRuntimeStore.getState();
+    const details = {
+      model: 'gpt-4.1-mini',
+      modeName: 'Coding',
+      providerUrl: 'https://provider.example.com',
+      requestedAt: Date.now(),
+    };
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.setRequestPhase('conversation-1', 'api_request', details);
+    store.setRequestPhase('conversation-1', 'thinking');
+
+    const session = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    expect(session.requestPhase).toBe('thinking');
+    expect(session.apiRequestDetails).toEqual(details);
+  });
 });

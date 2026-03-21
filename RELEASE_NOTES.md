@@ -27,6 +27,7 @@
 - Guarded payload-preparation debug logs behind development checks to avoid production console noise.
 - Hardened OpenAPI tool invocation against null/non-object argument payloads while keeping existing path/query/body behavior.
 - Removed dead no-op runtime spread logic from streaming session initialization.
+- Added regression tests for runtime request-phase placeholder behavior, messageId mismatch protection, and API request metadata retention.
 
 # ChatKnot v0.3.0 Release Notes
 
