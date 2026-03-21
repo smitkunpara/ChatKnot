@@ -35,6 +35,10 @@
 - Added focused unit tests for settings server policy helper behavior.
 - Extracted repeated chat tool-failure message/payload formatting into shared helper utilities to reduce `ChatScreen` loop duplication.
 - Added unit tests for chat tool-failure helper formatting/serialization behavior.
+- Added unit tests for MCP merge override behavior in `mergeServersWithOverrides`.
+- Extracted sidebar sort/filter logic into a helper module and added focused unit tests.
+- Extracted startup warning visibility logic in navigation into a helper module and added focused unit tests.
+- Added export boundary tests for markdown/json/pdf flows, including thinking/tool-output toggles and PDF HTML escaping.
 
 # ChatKnot v0.3.0 Release Notes
 

@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings Draft Validation Regression Tests** — Added tests for `saveServerDraftWithValidation` success/failure/disabled-server paths to lock draft persistence and OpenAPI validation behavior.
 - **Settings Server Policy Unit Tests** — Added focused tests for server draft dirty-state comparison and allowed/auto-approved toggle policy helpers.
 - **Chat Tool Failure Helper Tests** — Added focused unit tests for shared tool failure message/payload helper behavior used by chat tool execution flow.
+- **MCP Merge Unit Tests** — Added focused tests for `mergeServersWithOverrides` covering override application and fallback behavior.
+- **Sidebar Filter Unit Tests** — Added focused tests for sidebar conversation sorting and case-insensitive filtering behavior.
+- **App Navigator Warning Helper Tests** — Added focused tests for startup warning visibility helper behavior.
+- **Chat Export Service Boundary Tests** — Added focused tests for markdown/json/pdf export boundary behavior, including thinking/tool-output toggles and HTML escaping in PDF rendering.
 
 ### Changed
 - **Markdown Presentation Polish** — Refined in-chat Markdown styling for headings, emphasis, lists, wrapped paragraphs, inline code, and fenced code blocks so assistant responses render more consistently.
@@ -20,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings MCP Toggle Refactor** — Consolidated repeated allowed/auto-approved tool list normalization logic in `SettingsScreen` into shared helpers without changing MCP policy behavior.
 - **Settings Screen Decomposition (Server Policy Helpers)** — Extracted MCP server draft-change detection and tool-policy toggle calculations from `SettingsScreen` into `settingsServerPolicy.ts` to reduce component complexity and improve testability.
 - **Chat Screen Decomposition (Tool Failure Helpers)** — Extracted repeated tool failure message and JSON payload formatting from `ChatScreen` into `chatToolFailureHelpers.ts` to reduce loop duplication and improve maintainability.
+- **Sidebar Filter Extraction** — Extracted sidebar conversation sort/filter logic into `sidebarFilter.ts` for reuse and deterministic unit testing.
+- **App Navigator Warning Visibility Extraction** — Extracted startup warning visibility decision logic into `appNavigatorHelpers.ts` for deterministic unit testing.
 
 ### Added
 - **Shiny Thinking Effect** — Introduced a moving "shining" text effect (sweeping gradient) for the active thinking phase to provide high-end visual feedback.
