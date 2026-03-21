@@ -85,9 +85,6 @@ if (!conversationId) {
   }),
 
   startStreamingMessage: (conversationId, messageId) => set((state) => ({
-    ...(() => {
-return {};
-    })(),
     streamingSessions: {
       ...state.streamingSessions,
       [conversationId]: {

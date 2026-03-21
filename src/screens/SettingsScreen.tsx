@@ -293,6 +293,7 @@ export const SettingsScreen = () => {
     const provider = providers.find((p) => p.id === providerId);
     if (!provider) return;
 
+    setIsFetchingModels(providerId);
     setLoadingModels(true);
     setFetchError(null);
 
@@ -307,18 +308,13 @@ export const SettingsScreen = () => {
         modelCapabilities: capabilities,
       };
       updateProvider(nextProvider);
-      
-      // Update draft if it exists to include new available models
-      if (providerDrafts[providerId]) {
-        // No-op update to trigger re-render of model list in picker
-        setProviderDrafts(prev => ({ ...prev }));
-      }
     } catch (err: any) {
       setFetchError(err.message || 'Failed to fetch models');
     } finally {
+      setIsFetchingModels(null);
       setLoadingModels(false);
     }
-  }, [providers, updateProvider, providerDrafts]);
+  }, [providers, updateProvider]);
 
   const activeProviderForPicker = useMemo(
     () => providers.find((provider) => provider.id === activeProviderIdForPicker) || null,
@@ -842,14 +838,28 @@ export const SettingsScreen = () => {
       const original = mcpServers.find((s) => s.id === serverId);
       if (!draft || !original) return false;
 
-      const originalHeaders = original.headers ? Object.entries(original.headers).map(([key, value]) => ({ id: uuid.v4() as string, key, value })) : [];
+      const draftHeaders = (draft.headers || [])
+        .reduce<Record<string, string>>((acc, header) => {
+          const key = (header.key || '').trim();
+          if (!key) return acc;
+          acc[key] = header.value || '';
+          return acc;
+        }, {});
+      const normalizeHeaders = (headers: Record<string, string>) =>
+        Object.fromEntries(
+          Object.keys(headers)
+            .sort()
+            .map((key) => [key, headers[key] ?? ''])
+        );
+      const originalHeaders = normalizeHeaders(original.headers || {});
+      const normalizedDraftHeaders = normalizeHeaders(draftHeaders);
 
       return (
         draft.name !== original.name ||
         draft.url !== original.url ||
         draft.enabled !== original.enabled ||
         draft.token !== original.token ||
-        JSON.stringify(draft.headers) !== JSON.stringify(originalHeaders)
+        JSON.stringify(normalizedDraftHeaders) !== JSON.stringify(originalHeaders)
       );
     },
     [serverDrafts, mcpServers]

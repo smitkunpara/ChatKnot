@@ -247,9 +247,10 @@ if (this.isOpenApi) {
 
     const toolBaseUrl = this.resolveToolBaseUrl(baseUrl);
     let url = toolBaseUrl.replace(/\/$/, '') + path;
+    const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? args : {};
 
     // Replace path parameters
-    Object.entries(args).forEach(([key, val]) => {
+    Object.entries(safeArgs).forEach(([key, val]) => {
       const placeholder = `{${key}}`;
       if (url.indexOf(placeholder) !== -1) {
         url = url.split(placeholder).join(encodeURIComponent(String(val)));
@@ -264,11 +265,11 @@ if (this.isOpenApi) {
       }
     };
 
-    const bodyArgs = { ...args };
+    const bodyArgs = { ...safeArgs };
 
     if (method.toLowerCase() !== 'get') {
       // Remove path params from body
-      Object.keys(args).forEach(key => {
+      Object.keys(safeArgs).forEach(key => {
         if (path.includes(`{${key}}`)) {
           delete bodyArgs[key];
         }
@@ -277,7 +278,7 @@ if (this.isOpenApi) {
     } else {
       // Add remaining args as query params for GET
       const query = new URLSearchParams();
-      Object.entries(args).forEach(([key, val]) => {
+      Object.entries(safeArgs).forEach(([key, val]) => {
         if (!path.includes(`{${key}}`)) {
           query.append(key, String(val));
         }

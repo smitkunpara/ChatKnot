@@ -829,8 +829,8 @@ if (!currentAssistantMsgId) {
 
         if (__DEV__) {
           console.log('[ChatScreen] Prompting with context from mode:', activeMode.name);
+          console.log(`[ChatKnot Debug] ⏳ Preparing payload — collecting context from storage (iteration ${absoluteIterationCount})...`);
         }
-        console.log(`[ChatKnot Debug] ⏳ Preparing payload — collecting context from storage (iteration ${absoluteIterationCount})...`);
         const payloadStartTime = Date.now();
 
         const currentConv = useChatStore
@@ -942,7 +942,9 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
         });
 
         const payloadElapsed = Date.now() - payloadStartTime;
-console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — messages: ${hydratedMessages.length}, tools: ${openAiTools.length}, model: ${settingsState.lastUsedModel?.model ?? 'unknown'}`);
+        if (__DEV__) {
+          console.log(`[ChatKnot Debug] ✅ Payload prepared in ${payloadElapsed}ms — messages: ${hydratedMessages.length}, tools: ${openAiTools.length}, model: ${settingsState.lastUsedModel?.model ?? 'unknown'}`);
+        }
         if (__DEV__) {
           console.log('[ChatScreen] Starting API request...');
         }

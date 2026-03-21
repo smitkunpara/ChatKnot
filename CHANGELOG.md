@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Historical Timing Fallback** — Added "N/A" indicators for thoughts and requests from older app versions where precision timing was not yet supported.
 - **Streaming Thinking Visibility** — Fixed an issue where the thinking duration would temporarily show "N/A" while the AI transitioned from reasoning to text answering.
 - **Thinking Time Persistence** — Thinking durations are now permanently saved with messages, ensuring correct timing is displayed after app restarts or chat reloads.
+- **Settings Unsaved Header Detection** — Fixed MCP server editor dirty-state checks so unchanged headers no longer trigger false "Unsaved Changes" prompts.
+- **Provider Model Fetch Spinner** — Fixed provider editor model-loading indicator so row-level fetch state correctly reflects active model refresh requests.
+- **Chat Debug Log Guarding** — Wrapped payload preparation timing logs in dev-only guards to prevent production console noise.
+- **OpenAPI Tool Args Hardening** — Hardened OpenAPI tool invocation to safely handle null/non-object argument payloads while preserving path/query/body parameter separation.
+- **Runtime Store Cleanup** — Removed dead no-op spread logic from chat runtime streaming session initialization.
 
 ## [0.3.0] - 2026-03-17
 

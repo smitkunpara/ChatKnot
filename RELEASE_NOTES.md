@@ -21,6 +21,13 @@
 - **Historical Content Fallback** — Added "N/A" time labels for older chat data.
 - **Improved Thinking Visibility** — Fixed thinking duration visibility during the transition to text generation and ensured full persistence across app restarts.
 
+## Stability hardening
+- Fixed false-positive unsaved-change prompts in MCP server editor header comparisons.
+- Fixed provider model fetch row spinner state so active refreshes are visible in editor actions.
+- Guarded payload-preparation debug logs behind development checks to avoid production console noise.
+- Hardened OpenAPI tool invocation against null/non-object argument payloads while keeping existing path/query/body behavior.
+- Removed dead no-op runtime spread logic from streaming session initialization.
+
 # ChatKnot v0.3.0 Release Notes
 
 `v0.3.0` is a major workflow release centered on the new Mode System, safer MCP control, smoother streaming, and stronger performance foundations across the app.
