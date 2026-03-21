@@ -62,6 +62,11 @@ import { formatLocalDateTime } from '../utils/dateFormat';
 import { mergeServersWithOverrides } from '../utils/mcpMerge';
 import * as FileSystem from 'expo-file-system';
 import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
+import {
+  formatToolFailureMessage,
+  serializeToolFailurePayload,
+  ToolFailureCode,
+} from './chatToolFailureHelpers';
 
 export const ChatScreen = () => {
 const navigation = useNavigation<DrawerNavigationProp<any>>();
@@ -1130,69 +1135,33 @@ const toolCall: ToolCall = {
         for (const call of toolQueue) {
           if (isStopRequested(conversationId)) break;
 
-          const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
-          if (!toolPolicy.found) {
-            const missingMessage = `Tool \"${call.name}\" is not available. Check MCP server connection or tool name.`;
+          const failToolCall = (code: ToolFailureCode) => {
+            const message = formatToolFailureMessage(code, call.name);
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
-              error: missingMessage,
+              error: message,
             });
             addMessage(conversationId, {
               role: 'tool',
-              content: JSON.stringify(
-                {
-                  error: 'TOOL_NOT_FOUND',
-                  tool: call.name,
-                  message: missingMessage,
-                },
-                null,
-                2
-              ),
+              content: serializeToolFailurePayload(code, call.name, message),
               toolCallId: call.id,
             });
+          };
+
+          const toolPolicy = McpManager.getToolExecutionPolicy(call.name);
+          if (!toolPolicy.found) {
+            failToolCall('TOOL_NOT_FOUND');
             continue;
           }
 
           if (!toolPolicy.enabled) {
-            const disabledMessage = `Tool \"${call.name}\" is disabled in MCP settings.`;
-            updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
-              error: disabledMessage,
-            });
-            addMessage(conversationId, {
-              role: 'tool',
-              content: JSON.stringify(
-                {
-                  error: 'TOOL_DISABLED',
-                  tool: call.name,
-                  message: disabledMessage,
-                },
-                null,
-                2
-              ),
-              toolCallId: call.id,
-            });
+            failToolCall('TOOL_DISABLED');
             continue;
           }
 
           if (!toolPolicy.autoAllow) {
             const approved = await waitForInlineToolApproval(call.id, conversationId);
             if (!approved) {
-              const deniedMessage = `User denied permission for tool \"${call.name}\".`;
-              updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
-                error: deniedMessage,
-              });
-              addMessage(conversationId, {
-                role: 'tool',
-                content: JSON.stringify(
-                  {
-                    error: 'TOOL_PERMISSION_DENIED',
-                    tool: call.name,
-                    message: deniedMessage,
-                  },
-                  null,
-                  2
-                ),
-                toolCallId: call.id,
-              });
+              failToolCall('TOOL_PERMISSION_DENIED');
               continue;
             }
           }

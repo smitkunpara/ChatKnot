@@ -33,6 +33,8 @@
 - Added regression tests for settings server-draft validation success/failure/disabled flows.
 - Extracted settings server policy/draft-change helper logic into a dedicated module to reduce `SettingsScreen` complexity.
 - Added focused unit tests for settings server policy helper behavior.
+- Extracted repeated chat tool-failure message/payload formatting into shared helper utilities to reduce `ChatScreen` loop duplication.
+- Added unit tests for chat tool-failure helper formatting/serialization behavior.
 
 # ChatKnot v0.3.0 Release Notes
 
