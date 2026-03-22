@@ -111,7 +111,6 @@ describe('StartupHealthCheck safety actions', () => {
   it('applies disabled AI/MCP actions to settings updates', () => {
     const updateMcpServer = jest.fn();
     const updateProvider = jest.fn();
-    const setModelVisibility = jest.fn();
 
     const report: HealthCheckReport = {
       mcpResults: [],
@@ -130,8 +129,7 @@ describe('StartupHealthCheck safety actions', () => {
       servers,
       providers,
       updateMcpServer,
-      updateProvider,
-      setModelVisibility
+      updateProvider
     );
 
     expect(updateMcpServer).toHaveBeenCalledWith({

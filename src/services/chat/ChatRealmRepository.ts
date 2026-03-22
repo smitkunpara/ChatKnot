@@ -2,9 +2,10 @@ import Realm from 'realm';
 import 'react-native-get-random-values';
 import { Attachment, Conversation, Message, ToolCall } from '../../types';
 import { defaultSecretVault } from '../storage/SecretVault';
+import { STORAGE_KEYS } from '../../constants/storage';
 
 const CHAT_REALM_PATH = 'chat.realm';
-const CHAT_REALM_KEY_ALIAS = 'chat-realm.encryption-key';
+const CHAT_REALM_KEY_ALIAS = STORAGE_KEYS.CHAT_REALM_KEY_ALIAS;
 const CHAT_STATE_ID = 'chat-state-v2';
 
 export interface ChatPersistedState {

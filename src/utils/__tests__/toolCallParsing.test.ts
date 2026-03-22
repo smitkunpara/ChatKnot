@@ -328,3 +328,32 @@ describe('stripLegacyStructuredToolCalls', () => {
         expect(stripLegacyStructuredToolCalls(content)).toBe('This is normal text.');
     });
 });
+
+// ─── Loop Detection and Legacy Parsing Edge Cases ────────────
+
+describe('Loop Detection and Legacy Parsing Edge Cases', () => {
+    it('normalizeToolCalls prevents infinite loops from identical consecutive streaming tool calls', () => {
+        const repeatedCalls = [
+            { id: 'loop-tc-1', function: { name: 'get_weather', arguments: '{"city":"NYC"}' } },
+            { id: 'loop-tc-1', function: { name: 'get_weather', arguments: '{"city":"NYC"}' } },
+            { id: 'loop-tc-1', function: { name: 'get_weather', arguments: '{"city":"NYC"}' } },
+        ];
+        const result = normalizeToolCalls(repeatedCalls);
+        expect(result).toHaveLength(1);
+    });
+
+    it('tryParseJsonWithRepair handles deeply nested or edge-case legacy structured JSON', () => {
+        // Single quotes + missing trailing braces or just weird formatting
+        const strangeJson = "{'data': {'nested': ['value1', 'value2']}}";
+        expect(tryParseJsonWithRepair(strangeJson)).toEqual({ data: { nested: ['value1', 'value2'] } });
+    });
+
+    it('extractLegacyJsonToolCalls handles empty or malformed input without crashing', () => {
+        const toolMap = new Map([['test_tool', 'test_tool']]);
+        const badInputs = ['{', '[', 'null', 'undefined', '{"name": "test_tool", "arguments": {'];
+        
+        for (const input of badInputs) {
+            expect(() => extractLegacyJsonToolCalls(input, toolMap)).not.toThrow();
+        }
+    });
+});

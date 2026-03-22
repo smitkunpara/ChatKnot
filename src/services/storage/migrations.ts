@@ -1,11 +1,12 @@
 import { createEncryptedStateStorage } from './EncryptedStateStorage';
 import { defaultSecretVault } from './SecretVault';
 import uuid from 'react-native-uuid';
+import { STORAGE_KEYS } from '../../constants/storage';
 
 const SECRET_REF_PREFIX = 'vault://';
-const DEFAULT_SETTINGS_STORAGE_KEY = 'settings-storage';
-const DEFAULT_CHAT_STORAGE_KEY = 'chat-storage';
-const DEFAULT_MIGRATION_MARKER_KEY = 'storage-hardening_migration_v1';
+const DEFAULT_SETTINGS_STORAGE_KEY = STORAGE_KEYS.SETTINGS_STORAGE;
+const DEFAULT_CHAT_STORAGE_KEY = STORAGE_KEYS.CHAT_STORAGE;
+const DEFAULT_MIGRATION_MARKER_KEY = STORAGE_KEYS.MIGRATION_MARKER_V1;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -629,9 +630,9 @@ export const executeStorageHardeningBootstrap = async (
   const legacyStorage = options.legacyStorage ?? resolveDefaultLegacyStorage();
   const encryptedSettingsStorage =
     options.encryptedSettingsStorage ??
-    createDefaultEncryptedStorage('settings-storage', 'settings-storage_encryption-key');
+    createDefaultEncryptedStorage(STORAGE_KEYS.SETTINGS_STORAGE, STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS);
   const encryptedChatStorage =
-    options.encryptedChatStorage ?? createDefaultEncryptedStorage('chat-storage', 'chat-storage_encryption-key');
+    options.encryptedChatStorage ?? createDefaultEncryptedStorage(STORAGE_KEYS.CHAT_STORAGE, STORAGE_KEYS.CHAT_STORAGE_KEY_ALIAS);
   const vault = options.vault ?? (defaultSecretVault as unknown as MigrationVault);
 
   const result: StorageHardeningBootstrapResult = {

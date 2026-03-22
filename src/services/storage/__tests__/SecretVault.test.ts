@@ -17,9 +17,9 @@ describe('SecretVault', () => {
     const value = await vault.getSecret('api-key');
     await vault.deleteSecret('api-key');
 
-    expect(secureStore.setItemAsync).toHaveBeenCalledWith('test-vault:api-key', 'super-secret');
+    expect(secureStore.setItemAsync).toHaveBeenCalledWith('test-vault_api-key', 'super-secret');
     expect(value).toBe('super-secret');
-    expect(secureStore.deleteItemAsync).toHaveBeenCalledWith('test-vault:api-key');
+    expect(secureStore.deleteItemAsync).toHaveBeenCalledWith('test-vault_api-key');
   });
 
   it('does not use in-memory fallback when secure store write fails', async () => {

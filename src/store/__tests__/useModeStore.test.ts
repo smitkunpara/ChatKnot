@@ -8,15 +8,6 @@ const createMode = (overrides: Partial<import('../../types').Mode> = {}): import
   isDefault: overrides.isDefault ?? false,
 });
 
-const createMcpServer = (id: string, name = `Server ${id}`): import('../../types').McpServerConfig => ({
-  id,
-  name,
-  url: `https://${id}.example.com`,
-  enabled: true,
-  tools: [],
-  allowedTools: [],
-});
-
 const flushPersistence = async (): Promise<void> => {
   await Promise.resolve();
   await new Promise<void>((resolve) => setImmediate(resolve));

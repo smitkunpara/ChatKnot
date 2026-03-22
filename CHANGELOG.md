@@ -18,12 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup Chat Hydration Path** — Startup now hydrates chat state from the new Realm-backed chat repository while keeping settings and secret vault flow unchanged.
 - **Startup Version Source** — Loading screen version display now resolves from runtime app config first (with package fallback) for reliable frontend version visibility.
 - **Android Reinstall Data Policy** — Disabled Android backup restore (`android:allowBackup="false"`) so uninstall/reinstall starts from a fresh local app state.
+- **Storage Core Cleanup** — Centralized all MMKV/Vault key aliases into a single constant registry to prevent future alias mismatches across migrations and deletion flows.
+- **Comprehensive Test Coverage** — Dramatically expanded test coverage (now at 273 tests) specifically targeting OpenAPI routing logic, context usage persistence, and local data reset boundaries.
 
 ### Optimized
 - **Android Binary Size Reduction** — Reduced APK size from ~142MB to ~45MB (68% reduction) for modern devices by enabling R8 minification, resource shrinking, and ABI splitting.
 - **Smart APK Naming** — Automated APK output renaming to follow the `ChatKnot-v<version>-<abi>-release.apk` format for easier version tracking.
+- **Codebase Maintenance Pass** — Removed hundreds of lines of unused imports, dead components, and duplicated state logic from massive UI files (e.g. `SettingsScreen.tsx`), improving compilation time and maintainability.
 
 ### Fixed
+- **JSON Export Parity** — JSON exports now correctly respect user-selected toggle options (include tool input, output, and model thinking), achieving full parity with Markdown/PDF export controls.
+- **Context Usage Rehydration** — The context usage store now explicitly rehydrates during app startup, fixing a bug where previous usage data might fail to load.
+- **OpenAPI Payload Hardening** — Massively nested or excessively large API error payloads (e.g. giant HTML failure pages from misconfigured servers) are now strictly truncated and stripped of stack traces before attaching to the error state, preventing app crashes and token bloat.
+- **Legacy JSON Parsing Loops** — Resolved an edge-case bug where identical consecutive streaming tool calls could trap the app in an infinite execution loop, and improved the fallback JSON repair regex to handle single-quoted arrays safely.
 - **Share Icon Initial Background** — Fixed chat header share button background appearing transparent on first open; button now renders with its normal background immediately.
 - **API Request Loader Shape** — Replaced the line-style request indicator icon with a standard round spinner during active API request phase.
 - **Stable Round Request Spinner** — Simplified API request loading indicator to a plain circular spinner so it no longer appears to stretch or change length.

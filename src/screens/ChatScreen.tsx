@@ -44,7 +44,6 @@ import {
   extractLegacyXmlToolCalls,
   extractLegacyJsonToolCalls,
   stripLegacyStructuredToolCalls,
-  tryParseJsonWithRepair,
   parseToolArguments,
   serializeToolResult,
   buildToolExecutionQueue,

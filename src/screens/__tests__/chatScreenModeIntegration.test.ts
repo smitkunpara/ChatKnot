@@ -9,7 +9,6 @@
 import {
   buildEffectiveSystemPrompt,
 } from '../../utils/chatHelpers.ts';
-import { resolveModelSelection } from '../../services/llm/modelSelection.ts';
 import { mergeServersWithOverrides } from '../../utils/mcpMerge.ts';
 import { Mode, LlmProviderConfig, McpServerConfig } from '../../types/index.ts';
 

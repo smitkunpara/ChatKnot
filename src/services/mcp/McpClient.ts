@@ -2,8 +2,38 @@ import EventSource from 'react-native-sse';
 import { McpServerConfig, McpToolSchema } from '../../types';
 import uuid from 'react-native-uuid';
 import { validateOpenApiEndpoint } from './OpenApiValidationService';
-import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
+import { ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
 import { MCP_PROTOCOL_VERSION, MCP_CLIENT_VERSION } from '../../constants/api';
+
+const sanitizeErrorPayload = (payload: any): any => {
+  if (!payload) return payload;
+  
+  if (typeof payload === 'string') {
+    // Truncate massively long HTML/text error pages to prevent token overflow
+    return payload.length > 2000 ? payload.substring(0, 2000) + '... [truncated]' : payload;
+  }
+  
+  if (typeof payload === 'object') {
+    if (Array.isArray(payload)) {
+      return payload.map(sanitizeErrorPayload);
+    }
+    
+    const sanitized = { ...payload };
+    // Remove internal stack traces or giant properties
+    if (sanitized.stack) delete sanitized.stack;
+    if (sanitized.trace) delete sanitized.trace;
+    
+    // Check property lengths
+    for (const key in sanitized) {
+      if (typeof sanitized[key] === 'string' && sanitized[key].length > 2000) {
+        sanitized[key] = sanitized[key].substring(0, 2000) + '... [truncated]';
+      }
+    }
+    return sanitized;
+  }
+  
+  return payload;
+};
 
 export class McpClient {
   private config: McpServerConfig;
@@ -151,7 +181,7 @@ if (!this.postUrl) throw new Error('MCP Client not connected (no POST URL)');
       }
 
       const mcpError: any = new Error(`MCP POST failed: ${response.statusText}`);
-      mcpError.data = errorData;
+      mcpError.data = sanitizeErrorPayload(errorData);
       throw mcpError;
     }
 
@@ -159,7 +189,7 @@ if (!this.postUrl) throw new Error('MCP Client not connected (no POST URL)');
     if (data.error) {
       const errorMsg = data.error.message || 'Unknown MCP Error';
       const mcpError: any = new Error(`MCP Error: ${errorMsg}`);
-      mcpError.data = data.error;
+      mcpError.data = sanitizeErrorPayload(data.error);
       throw mcpError;
     }
     return data.result;
@@ -300,7 +330,7 @@ if (this.isOpenApi) {
       }
 
       const openApiError: any = new Error(`API Error ${response.status}`);
-      openApiError.data = errorData;
+      openApiError.data = sanitizeErrorPayload(errorData);
       throw openApiError;
     }
     const contentType = response.headers.get('content-type') || '';

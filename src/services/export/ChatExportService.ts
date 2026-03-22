@@ -121,16 +121,24 @@ function toMarkdown(conversation: Conversation, opts: ExportOptions): string {
 
 // ─── JSON Export ─────────────────────────────────────────────────────────────
 
-function toJson(conversation: Conversation): string {
+function toJson(conversation: Conversation, opts: ExportOptions): string {
+  const toolMessages = conversation.messages.filter(m => m.role === 'tool');
+
   const openAiMessages = conversation.messages
-    .filter(m => m.role !== 'system' || m.content?.trim())
+    .filter(m => {
+      // Always include system messages that have content
+      if (m.role === 'system') return !!m.content?.trim();
+      // Filter out tool result messages when includeToolOutput is false
+      if (m.role === 'tool') return opts.includeToolOutput;
+      return true;
+    })
     .map(msg => {
       const base: any = {
         role: msg.role,
         content: msg.content || '',
       };
 
-      if (msg.reasoning?.trim()) {
+      if (opts.includeThinking && msg.reasoning?.trim()) {
         base.reasoning = msg.reasoning.trim();
       }
 
@@ -139,14 +147,28 @@ function toJson(conversation: Conversation): string {
       }
 
       if (msg.toolCalls?.length) {
-        base.tool_calls = msg.toolCalls.map(tc => ({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: tc.arguments,
-          },
-        }));
+        base.tool_calls = msg.toolCalls.map(tc => {
+          const toolCall: any = {
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: opts.includeToolInput ? tc.arguments : '',
+            },
+          };
+
+          if (opts.includeToolOutput) {
+            const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
+            if (toolMsg?.content) {
+              toolCall.output = toolMsg.content;
+            }
+            if (tc.error) {
+              toolCall.error = tc.error;
+            }
+          }
+
+          return toolCall;
+        });
       }
 
       return base;
@@ -308,7 +330,7 @@ export async function exportChat(
     }
 
     case 'json': {
-      const content = toJson(conversation);
+      const content = toJson(conversation, opts);
       const file = new File(Paths.cache, `${safeTitle}.json`);
       file.write(content);
       await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Export Chat' });

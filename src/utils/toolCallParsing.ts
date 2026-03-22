@@ -241,7 +241,8 @@ export const tryParseJsonWithRepair = (value: string): any => {
   } catch {
     const repaired = normalized
       .replace(/([{,]\s*)'([^']+?)'\s*:/g, '$1"$2":')
-      .replace(/:\s*'([^']*)'/g, ': "$1"');
+      .replace(/:\s*'([^']*)'/g, ': "$1"')
+      .replace(/([\[,]\s*)'([^']*)'/g, '$1"$2"');
     return JSON.parse(repaired);
   }
 };

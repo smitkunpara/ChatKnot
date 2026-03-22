@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Trash2, Plus, Info, ChevronRight, X, Eye, EyeOff, Check, AlertCircle } from 'lucide-react-native';
+import { Trash2, Plus, ChevronRight, X, Eye, EyeOff, Check, AlertCircle } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import * as Clipboard from 'expo-clipboard';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -28,7 +28,6 @@ import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
 import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import { isModelIdLikelyTextOutput } from '../services/llm/modelFilter';
 import { McpManager, McpServerRuntimeState } from '../services/mcp/McpManager';
-import { getProviderVisibleModels } from '../services/llm/modelSelection';
 import { KeyboardAwareContainer } from '../components/Common/KeyboardAwareContainer';
 import {
   beginProviderDraft,
@@ -53,8 +52,6 @@ import {
 } from '../services/mcp/OpenApiValidationService';
 import {
   hasServerDraftChanges,
-  toggleAllowedToolInDraft,
-  toggleAutoApprovedToolInDraft,
 } from './settingsServerPolicy';
 import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
 import { validateImportPayload } from '../utils/settingsValidation';
@@ -136,10 +133,8 @@ export const SettingsScreen = () => {
     setDefaultMode,
     setTheme,
     replaceAllSettings,
-    setModelVisibility,
   } = useSettingsStore();
 
-  const [serverValidationErrors, setServerValidationErrors] = useState<Record<string, string>>({});
   const [validatingServerId, setValidatingServerId] = useState<string | null>(null);
   const [isFetchingModels, setIsFetchingModels] = useState<string | null>(null);
   const [modelPickerVisible, setModelPickerVisible] = useState(false);
@@ -149,10 +144,8 @@ export const SettingsScreen = () => {
   const [providerDrafts, setProviderDrafts] = useState<ProviderDraftMap>({});
   const [serverDrafts, setServerDrafts] = useState<McpServerDraftMap>({});
   const [editingProviders, setEditingProviders] = useState<Record<string, boolean>>({});
-  const [editingServers, setEditingServers] = useState<Record<string, boolean>>({});
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
-  const [draftAvailableModels, setDraftAvailableModels] = useState<Record<string, string[]>>({});
   const [draftModelCapabilities, setDraftModelCapabilities] = useState<Record<string, Record<string, ModelCapabilities>>>({});
   const [activeView, setActiveView] = useState<SettingsView>('index');
   const [importModalVisible, setImportModalVisible] = useState(false);
@@ -181,10 +174,10 @@ export const SettingsScreen = () => {
     setEditingServerId(null);
     setEditingModeId(null);
     setEditingProviders({});
-    setEditingServers({});
+
     setProviderDrafts({});
     setServerDrafts({});
-    setDraftAvailableModels({});
+
     setDraftModelCapabilities({});
     setModelPickerVisible(false);
     setActiveProviderIdForPicker(null);
@@ -283,18 +276,6 @@ export const SettingsScreen = () => {
     navigateToProviderEditor(provider);
   };
 
-  const clearServerValidationError = (serverId: string) => {
-    setServerValidationErrors(prev => {
-      if (!prev[serverId]) {
-        return prev;
-      }
-
-      const next = { ...prev };
-      delete next[serverId];
-      return next;
-    });
-  };
-
   const fetchProviderModels = useCallback(async (providerId: string) => {
     const provider = providers.find((p) => p.id === providerId);
     if (!provider) return;
@@ -358,10 +339,6 @@ export const SettingsScreen = () => {
 
   const beginProviderEdit = (provider: LlmProviderConfig) => {
     setProviderDrafts(prev => beginProviderDraft(prev, provider));
-    setDraftAvailableModels(prev => ({
-      ...prev,
-      [provider.id]: provider.availableModels || [],
-    }));
     setEditingProviders(prev => ({
       ...prev,
       [provider.id]: true,
@@ -374,11 +351,7 @@ export const SettingsScreen = () => {
       ...prev,
       [providerId]: false,
     }));
-    setDraftAvailableModels(prev => {
-      const next = { ...prev };
-      delete next[providerId];
-      return next;
-    });
+
     setDraftModelCapabilities(prev => {
       const next = { ...prev };
       delete next[providerId];
@@ -391,47 +364,12 @@ export const SettingsScreen = () => {
     }
   };
 
-  const saveProviderEdit = (provider: LlmProviderConfig) => {
-    const draftCaps = draftModelCapabilities[provider.id];
-    const providerWithDraftData = {
-      ...provider,
-      availableModels: draftAvailableModels[provider.id] || provider.availableModels,
-      ...(draftCaps ? { modelCapabilities: { ...(provider.modelCapabilities || {}), ...draftCaps } } : {}),
-    };
-
-    setProviderDrafts(prev => saveProviderDraft(prev, providerWithDraftData, updateProvider));
-    setEditingProviders(prev => ({
-      ...prev,
-      [provider.id]: false,
-    }));
-    setDraftAvailableModels(prev => {
-      const next = { ...prev };
-      delete next[provider.id];
-      return next;
-    });
-    setDraftModelCapabilities(prev => {
-      const next = { ...prev };
-      delete next[provider.id];
-      return next;
-    });
-  };
-
   const beginServerEdit = (server: McpServerConfig) => {
-    clearServerValidationError(server.id);
     setServerDrafts(prev => beginServerDraft(prev, server));
-    setEditingServers(prev => ({
-      ...prev,
-      [server.id]: true,
-    }));
   };
 
   const cancelServerEdit = (serverId: string) => {
-    clearServerValidationError(serverId);
     setServerDrafts(prev => discardServerDraft(prev, serverId));
-    setEditingServers(prev => ({
-      ...prev,
-      [serverId]: false,
-    }));
   };
 
   const updateServerDraftHeader = (serverId: string, headerId: string, patch: { key?: string; value?: string }) => {
@@ -499,28 +437,6 @@ export const SettingsScreen = () => {
       return updateServerDraft(prev, serverId, {
         headers: existingHeaders.filter(header => header.id !== headerId),
       });
-    });
-  };
-
-  const toggleServerDraftAllowedTool = (serverId: string, toolName: string, allToolNames: string[]) => {
-    setServerDrafts(prev => {
-      const draft = prev[serverId];
-      if (!draft) {
-        return prev;
-      }
-
-      return updateServerDraft(prev, serverId, toggleAllowedToolInDraft(draft, toolName, allToolNames));
-    });
-  };
-
-  const toggleServerDraftAutoApprovedTool = (serverId: string, toolName: string, allToolNames: string[]) => {
-    setServerDrafts(prev => {
-      const draft = prev[serverId];
-      if (!draft) {
-        return prev;
-      }
-
-      return updateServerDraft(prev, serverId, toggleAutoApprovedToolInDraft(draft, toolName, allToolNames));
     });
   };
 
@@ -709,7 +625,6 @@ export const SettingsScreen = () => {
 
   // ─── MCP Server editor helpers ───────────────────────────
   const editingServer = editingServerId ? mcpServers.find(s => s.id === editingServerId) ?? null : null;
-  const editingServerDraft = editingServerId ? serverDrafts[editingServerId] ?? null : null;
 
   const navigateToServerEditor = (server: McpServerConfig) => {
     closeAllEditModes();
@@ -834,7 +749,7 @@ export const SettingsScreen = () => {
 
   const saveServerEditGlobal = useCallback(async (server: McpServerConfig) => {
     setValidatingServerId(server.id);
-    clearServerValidationError(server.id);
+
     setServerError(null);
 
     const result = await saveServerDraftWithValidation({
@@ -1054,11 +969,9 @@ export const SettingsScreen = () => {
         report,
         allMcpServers,
         updated.providers,
-        updateMcpServer, 
-        updated.updateProvider,
-        updated.setModelVisibility
-      );
-
+        updateMcpServer,
+        updated.updateProvider
+        );
       setImportPayloadText('');
       setImportModalVisible(false);
       closeAllEditModes();
@@ -1486,17 +1399,6 @@ export const SettingsScreen = () => {
           <>
             <Text style={styles.sectionHeader}>MCP Servers</Text>
             {mcpServers.map(server => {
-              const runtime = mcpRuntimeById[server.id];
-              const status = runtime?.status || (server.enabled ? 'connecting' : 'disabled');
-              const statusLabel =
-                status === 'connected'
-                  ? `${runtime?.protocol === 'openapi' ? 'OpenAPI' : 'MCP'} • ${runtime?.toolsCount || 0} tools`
-                  : status === 'error'
-                    ? 'Connection failed'
-                    : status === 'disabled'
-                      ? 'Disabled'
-                      : 'Connecting...';
-
               return (
                 <View
                   key={server.id}
@@ -1571,7 +1473,7 @@ export const SettingsScreen = () => {
                   style={styles.input}
                   value={serverDraft?.url ?? editingServer.url}
                   onChangeText={url => {
-                    clearServerValidationError(editingServer.id);
+
                     updateServerDraftLocal({ url });
                   }}
                   placeholder="Server URL"
@@ -1600,7 +1502,7 @@ export const SettingsScreen = () => {
                       style={[styles.input, styles.headerInput]}
                       value={header.key}
                       onChangeText={value => {
-                        clearServerValidationError(editingServer.id);
+    
                         updateServerDraftHeader(editingServer.id, header.id, { key: value });
                       }}
                       placeholder="Header Name"
@@ -1610,7 +1512,7 @@ export const SettingsScreen = () => {
                       style={[styles.input, styles.headerInput]}
                       value={header.value}
                       onChangeText={value => {
-                        clearServerValidationError(editingServer.id);
+    
                         updateServerDraftHeader(editingServer.id, header.id, { value });
                       }}
                       placeholder="Header Value"
@@ -1619,7 +1521,7 @@ export const SettingsScreen = () => {
                     />
                     <TouchableOpacity
                       onPress={() => {
-                        clearServerValidationError(editingServer.id);
+    
                         removeServerDraftHeader(editingServer.id, header.id);
                       }}
                       style={styles.headerRemoveButton}
@@ -1631,7 +1533,7 @@ export const SettingsScreen = () => {
                 <TouchableOpacity
                   style={styles.addHeaderButton}
                   onPress={() => {
-                    clearServerValidationError(editingServer.id);
+
                     addServerDraftHeader(editingServer.id);
                   }}
                 >
@@ -1775,22 +1677,6 @@ export const SettingsScreen = () => {
 
           const updateProviderDraftLocal = (patch: Partial<LlmProviderConfig>) => {
             setProviderDrafts(prev => updateProviderDraft(prev, editingProvider.id, patch));
-          };
-
-          const toggleModelVisibilityLocal = (modelId: string) => {
-            if (!draft) return;
-            const hiddenModels = new Set(draft.hiddenModels || []);
-            if (hiddenModels.has(modelId)) {
-              hiddenModels.delete(modelId);
-            } else {
-              hiddenModels.add(modelId);
-            }
-            const nextHidden = Array.from(hiddenModels);
-            const modelCleared = nextHidden.includes(draft.model);
-            updateProviderDraftLocal({
-              hiddenModels: nextHidden,
-              ...(modelCleared ? { model: '' } : {}),
-            });
           };
 
           return (

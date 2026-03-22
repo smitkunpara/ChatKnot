@@ -4,7 +4,7 @@ import {
   OpenApiValidationFailure,
   OpenApiValidationResult,
 } from '../../types';
-import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
+import { ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
 
 type ValidateOpenApiEndpointInput = {
   url: string;

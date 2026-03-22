@@ -18,7 +18,6 @@ interface ShinyTextProps {
   style?: TextStyle;
   color?: string;
   shineColor?: string;
-  spread?: number;
 }
 
 /**
@@ -32,7 +31,6 @@ export const ShinyText: React.FC<ShinyTextProps> = ({
   style,
   color = '#b5b5b5',
   shineColor = '#ffffff',
-  spread = 120,
 }) => {
   const animatedValue = useRef(new Animated.Value(0)).current;
 
@@ -109,6 +107,3 @@ export const ShinyText: React.FC<ShinyTextProps> = ({
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-});

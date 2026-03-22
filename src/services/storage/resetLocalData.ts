@@ -4,12 +4,13 @@ import { useContextUsageStore } from '../../store/useContextUsageStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useChatRuntimeStore } from '../../store/useChatRuntimeStore';
 import { defaultSecretVault } from './SecretVault';
+import { STORAGE_KEYS } from '../../constants/storage';
 
-const CHAT_REALM_KEY_ALIAS = 'chat-realm_encryption-key';
-const SETTINGS_STORAGE_KEY_ALIAS = 'settings-storage_encryption-key';
-const DRAFT_STORAGE_KEY_ALIAS = 'chat-draft-storage_encryption-key';
-const CONTEXT_STORAGE_KEY_ALIAS = 'context-usage-storage_encryption-key';
-const CHAT_STORAGE_KEY_ALIAS = 'chat-storage_encryption-key';
+const CHAT_REALM_KEY_ALIAS = STORAGE_KEYS.CHAT_REALM_KEY_ALIAS;
+const SETTINGS_STORAGE_KEY_ALIAS = STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS;
+const DRAFT_STORAGE_KEY_ALIAS = STORAGE_KEYS.CHAT_DRAFT_STORAGE_KEY_ALIAS;
+const CONTEXT_STORAGE_KEY_ALIAS = STORAGE_KEYS.CONTEXT_USAGE_STORAGE_KEY_ALIAS;
+const CHAT_STORAGE_KEY_ALIAS = STORAGE_KEYS.CHAT_STORAGE_KEY_ALIAS;
 
 const extractVaultKeyFromRef = (ref?: string): string | null => {
   if (!ref || typeof ref !== 'string') {

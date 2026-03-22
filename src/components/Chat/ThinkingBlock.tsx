@@ -129,11 +129,6 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
     const ChevronIcon = expanded ? ChevronUp : ChevronDown;
     const durationText = formatDuration(isStreaming ? elapsedMs : (durationMs ?? 0));
 
-    // Header label: while streaming show "Thinking…" or "Thinking for Xs"; when done "Thought for Xs"
-    const headerLabel = isStreaming
-        ? `Thinking${durationText ? ` for ${durationText}` : '…'}`
-        : `Thought${durationText ? ` for ${durationText}` : ''}`;
-
     return (
         <View style={styles.container}>
             <TouchableOpacity

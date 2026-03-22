@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { useSettingsStore } from './src/store/useSettingsStore';
 import { useChatStore } from './src/store/useChatStore';
 import { useChatDraftStore } from './src/store/useChatDraftStore';
+import { useContextUsageStore } from './src/store/useContextUsageStore';
 import { useChatRuntimeStore } from './src/store/useChatRuntimeStore';
 import { McpManager } from './src/services/mcp/McpManager';
 import { useAppTheme } from './src/theme/useAppTheme';
@@ -61,6 +62,7 @@ console.warn('Storage hardening bootstrap failed. Continuing with compatibility 
           useSettingsStore.persist.rehydrate(),
           useChatStore.getState().hydrateFromDatabase(),
           useChatDraftStore.persist.rehydrate(),
+          useContextUsageStore.persist.rehydrate(),
         ]);
 } catch (error) {
 console.warn('Store rehydration after bootstrap failed. Continuing app startup.', error);
@@ -71,13 +73,13 @@ console.warn('Store rehydration after bootstrap failed. Continuing app startup.'
       setLoadingProgress(15);
 
       // Step 2: Run startup health checks
-      const { providers, mcpServers: bootGlobalServers, modes: bootModes, lastUsedModeId: bootModeId, updateMcpServer, updateProvider, setModelVisibility } =
+      const { providers, mcpServers: bootGlobalServers, modes: bootModes, lastUsedModeId: bootModeId, updateMcpServer, updateProvider } =
         useSettingsStore.getState();
       const bootMode = bootModes.find(m => m.id === bootModeId) ?? bootModes[0] ?? null;
       const servers = mergeServersWithOverrides(bootGlobalServers, bootMode?.mcpServerOverrides ?? {});
 
       try {
-        const report = await runStartupHealthCheck(servers, providers, (phase, msg, pct) => {
+        const report = await runStartupHealthCheck(servers, providers, (_phase, msg, pct) => {
 if (isMounted) {
             setLoadingStatus(msg);
             if (pct != null) setLoadingProgress(pct);
@@ -91,8 +93,7 @@ if (isMounted) {
             bootGlobalServers,
             providers,
             updateMcpServer,
-            updateProvider,
-            setModelVisibility
+            updateProvider
           );
 
           if (report.warnings.length > 0) {

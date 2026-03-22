@@ -326,8 +326,7 @@ export function applyHealthCheckReport(
   servers: McpServerConfig[],
   providers: LlmProviderConfig[],
   updateMcpServer: (server: McpServerConfig) => void,
-  updateProvider: (provider: LlmProviderConfig) => void,
-  setModelVisibility: (providerId: string, model: string, visible: boolean) => void
+  updateProvider: (provider: LlmProviderConfig) => void
 ): void {
   // Disable unreachable MCP servers
   for (const serverId of report.disabledMcpServers) {

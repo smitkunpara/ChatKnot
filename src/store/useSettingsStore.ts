@@ -14,12 +14,12 @@ import {
   hydratePersistedSettingsPayload,
   migratePersistedSettingsPayload,
 } from '../services/storage/migrations';
-import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
+import { MAX_MODE_NAME_LENGTH, STORAGE_KEYS } from '../constants/storage';
 import 'react-native-get-random-values';
 
 const rawSettingsPersistStorage = createEncryptedStateStorage({
-  id: 'settings-storage',
-  keyAlias: 'settings-storage:encryption-key',
+  id: STORAGE_KEYS.SETTINGS_STORAGE,
+  keyAlias: STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS,
 });
 
 const settingsPersistStorage = {

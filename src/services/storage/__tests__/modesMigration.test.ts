@@ -8,8 +8,6 @@ import {
   migrateLegacySettingsToModes,
   hydratePersistedSettingsPayload,
   migratePersistedSettingsPayloadDetailed,
-  type MigrationVault,
-  type MigrationLogger,
 } from '../migrations.ts';
 
 interface MemoryVault {

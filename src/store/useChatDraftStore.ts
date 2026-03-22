@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+import { STORAGE_KEYS } from '../constants/storage';
 
 const draftPersistStorage = createEncryptedStateStorage({
   id: 'chat-draft-storage',
-  keyAlias: 'chat-draft-storage:encryption-key',
+  keyAlias: STORAGE_KEYS.CHAT_DRAFT_STORAGE_KEY_ALIAS,
 });
 
 interface ChatDraftState {

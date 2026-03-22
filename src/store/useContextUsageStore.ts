@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
+import { STORAGE_KEYS } from '../constants/storage';
 
 
 export interface TokenUsage {
@@ -30,7 +31,7 @@ interface ContextUsageState {
 
 const contextPersistStorage = createEncryptedStateStorage({
   id: 'context-usage-storage',
-  keyAlias: 'context-usage-storage:encryption-key',
+  keyAlias: STORAGE_KEYS.CONTEXT_USAGE_STORAGE_KEY_ALIAS,
 });
 
 export const useContextUsageStore = create<ContextUsageState>()(
