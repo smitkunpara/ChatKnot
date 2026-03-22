@@ -101,7 +101,7 @@ const generateKey = (): string => {
 export const createEncryptedStateStorage = (
   options: EncryptedStateStorageOptions
 ): StateStorage => {
-  const keyAlias = options.keyAlias ?? `${options.id}:encryption-key`;
+  const keyAlias = options.keyAlias ?? `${options.id}_encryption-key`;
   const vault = options.vault ?? defaultSecretVault;
   const fallbackStorage = options.fallbackStorage ?? resolveDefaultFallbackStorage();
   let resolvedStoragePromise: Promise<ResolvedStorage> | null = null;

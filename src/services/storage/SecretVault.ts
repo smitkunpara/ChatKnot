@@ -32,7 +32,7 @@ export class SecretVault {
   }
 
   private toNamespacedKey(key: string): string {
-    return `${this.namespace}:${key}`;
+    return `${this.namespace}_${key}`;
   }
 
   isPersistentStorageAvailable(): boolean {
