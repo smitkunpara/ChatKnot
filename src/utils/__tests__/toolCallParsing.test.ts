@@ -75,6 +75,24 @@ describe('normalizeToolCalls', () => {
         ]);
         expect(result).toHaveLength(2);
     });
+
+    it('handles null input gracefully', () => {
+        expect(normalizeToolCalls(null as any)).toEqual([]);
+    });
+
+    it('drops entries with null function', () => {
+        const result = normalizeToolCalls([
+            { id: 'tc-1', function: null } as any,
+        ]);
+        expect(result).toEqual([]);
+    });
+
+    it('drops entries with undefined function', () => {
+        const result = normalizeToolCalls([
+            { id: 'tc-1', function: undefined } as any,
+        ]);
+        expect(result).toEqual([]);
+    });
 });
 
 // ─── buildToolExecutionQueue ────────────────────────────────
@@ -109,6 +127,24 @@ describe('buildToolExecutionQueue', () => {
 
     it('returns empty array for empty input', () => {
         expect(buildToolExecutionQueue([])).toEqual([]);
+    });
+
+    it('handles calls with undefined arguments', () => {
+        const calls = [
+            { id: 'a', name: 'tool', arguments: undefined as any },
+        ];
+        const result = buildToolExecutionQueue(calls);
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('a');
+    });
+
+    it('handles calls with null arguments', () => {
+        const calls = [
+            { id: 'a', name: 'tool', arguments: null as any },
+        ];
+        const result = buildToolExecutionQueue(calls);
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('a');
     });
 });
 

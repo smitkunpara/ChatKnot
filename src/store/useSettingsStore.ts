@@ -15,7 +15,6 @@ import {
   migratePersistedSettingsPayload,
 } from '../services/storage/migrations';
 import { MAX_MODE_NAME_LENGTH, STORAGE_KEYS } from '../constants/storage';
-import 'react-native-get-random-values';
 
 const rawSettingsPersistStorage = createEncryptedStateStorage({
   id: STORAGE_KEYS.SETTINGS_STORAGE,
@@ -360,7 +359,7 @@ set({
             : [];
 
           const nextLastUsedModeId =
-            typeof settings.lastUsedModeId === 'string'
+            typeof settings.lastUsedModeId === 'string' && nextModes.some(m => m.id === settings.lastUsedModeId)
               ? settings.lastUsedModeId
               : (nextModes[0]?.id ?? null);
 

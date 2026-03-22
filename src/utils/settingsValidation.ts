@@ -1,5 +1,14 @@
 import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
 
+const isValidUrl = (url: string): boolean => {
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
 const validateMcpServerArray = (mcpServers: any[], label: string): string | null => {
     for (let i = 0; i < mcpServers.length; i++) {
         const s = mcpServers[i];
@@ -14,6 +23,9 @@ const validateMcpServerArray = (mcpServers: any[], label: string): string | null
         }
         if (typeof s.url !== 'string' || !s.url.trim()) {
             return `${label} MCP server "${s.name || i}" is missing a valid "url".`;
+        }
+        if (!isValidUrl(s.url)) {
+            return `${label} MCP server "${s.name || i}" has an invalid URL format.`;
         }
     }
     return null;
@@ -45,6 +57,9 @@ export const validateImportPayload = (settings: any): string | null => {
             }
             if (typeof p.baseUrl !== 'string' || !p.baseUrl.trim()) {
                 return `Provider "${p.name || i}" is missing a valid "baseUrl".`;
+            }
+            if (!isValidUrl(p.baseUrl)) {
+                return `Provider "${p.name || i}" has an invalid "baseUrl" format.`;
             }
         }
     }

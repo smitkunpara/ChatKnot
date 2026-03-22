@@ -21,63 +21,21 @@ import {
   createMarkdownStyles,
   createTableRenderRules,
   getTableColumnWidth,
+  MarkdownStyles,
+  TableRenderRules,
 } from './chatMarkdownStyles';
+import { parseThinkingBlocks, ContentBlock } from '../../utils/parseThinkingBlocks';
 
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
-  onEdit?: (id: string, content: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
   pendingToolApprovalIds?: Record<string, true>;
   onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
   onRetryAssistant?: (messageId: string) => void;
-  /** Current request phase — drives the status indicator above streamed content. */
-  requestPhase?: RequestPhase;
-  /** Live API request details for the 'api_request' phase indicator. */
+  requestPhase?: RequestPhase | null;
   apiRequestDetails?: ApiRequestDetails | null;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers: parse <think>…</think> blocks out of assistant content
-// ---------------------------------------------------------------------------
-
-interface ContentBlock {
-  type: 'text' | 'think';
-  content: string;
-}
-
-/**
- * Split raw assistant content into an ordered list of text and think blocks.
- * Handles both complete `<think>…</think>` pairs and an un-closed trailing
- * `<think>…` (which happens while the model is still streaming its thinking).
- */
-const parseThinkingBlocks = (raw: string): ContentBlock[] => {
-  const blocks: ContentBlock[] = [];
-  // Regex matches <think>…</think> (greedy-lazy) as well as a trailing <think>… with no close
-  const regex = /<think>([\s\S]*?)(<\/think>|$)/gi;
-
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(raw)) !== null) {
-    // Any text before this <think> block
-    if (match.index > lastIndex) {
-      blocks.push({ type: 'text', content: raw.slice(lastIndex, match.index) });
-    }
-    blocks.push({ type: 'think', content: match[1] });
-    lastIndex = regex.lastIndex;
-  }
-
-  // Remaining text after the last match
-  if (lastIndex < raw.length) {
-    blocks.push({ type: 'text', content: raw.slice(lastIndex) });
-  }
-
-  return blocks;
-};
-
-// ---------------------------------------------------------------------------
-// MessageBubble
-// ---------------------------------------------------------------------------
 
 const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   message,
@@ -89,10 +47,10 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   requestPhase,
   apiRequestDetails,
 }) => {
-const { colors } = useAppTheme();
+  const { colors } = useAppTheme();
   const { width: viewportWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const markdownStyles = createMarkdownStyles(colors) as any;
+  const markdownStyles = useMemo(() => createMarkdownStyles(colors), [colors]);
   const tableRenderRules = useMemo(
     () => createTableRenderRules(colors, getTableColumnWidth(viewportWidth)),
     [colors, viewportWidth]
@@ -106,9 +64,7 @@ const { colors } = useAppTheme();
   const hasReasoning = !!message.reasoning?.trim();
   const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
 
-  // Show assistant message if it has content OR if retry is available (for empty messages that were stopped)
   const shouldShowAssistant = !isUser && onRetryAssistant;
-  // Condition to hide the bubble - used below to conditionally render content
   const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
 
   const copyToClipboard = async () => {
@@ -116,18 +72,11 @@ const { colors } = useAppTheme();
     await Clipboard.setStringAsync(message.content || '');
   };
 
-  // ---------------------------------------------------------------------------
-  // Resolve thinking content from TWO sources:
-  // 1. message.reasoning — streamed separately via delta.reasoning_content (OpenAI-compat)
-  // 2. Inline <think>…</think> tags in message.content (DeepSeek-style)
-  // If message.reasoning exists, prefer it and strip any <think> tags from content.
-  // ---------------------------------------------------------------------------
   const hasStreamedReasoning = !!message.reasoning;
 
   const contentBlocks: ContentBlock[] = useMemo(() => {
     if (isUser) return [{ type: 'text' as const, content: message.content || '' }];
 
-    // When reasoning arrived via delta.reasoning_content, build blocks from it
     if (hasStreamedReasoning) {
       const rawContent = message.content || '';
       const strippedContent = rawContent.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
@@ -138,7 +87,6 @@ const { colors } = useAppTheme();
       return blocks;
     }
 
-    // Parse inline <think> tags from the content itself
     if (message.content) {
       return parseThinkingBlocks(message.content);
     }
@@ -146,23 +94,17 @@ const { colors } = useAppTheme();
     return [{ type: 'text' as const, content: '' }];
   }, [message.content, message.reasoning, isUser, hasStreamedReasoning]);
 
-  // Check if the model is currently streaming thinking
-  // - For streamed reasoning: streaming + reasoning exists but no visible text content yet
-  // - For <think> tags: last block is think type & still streaming
   const isStreamingThinking = !!isStreaming && (
     (hasStreamedReasoning && !contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0)) ||
     (contentBlocks.length > 0 && contentBlocks[contentBlocks.length - 1].type === 'think')
   );
 
-  // Derive whether there's any visible text content (non-think) to display
   const showCopyAction = !isStreaming && hasText;
   const showRetryAction = !isUser && !isStreaming && !!onRetryAssistant;
   const showEditAction = isUser && !!onEdit;
   const hasAnyActions = showCopyAction || showRetryAction || showEditAction;
   const isToolOnlyAssistant = !isUser && hasToolCalls && !hasText && !hasReasoning && !message.isError;
 
-  // Always return a consistent component structure to avoid React hook count issues
-  // when FlatList recycles component instances. Render empty view when hidden.
   if (shouldHideBubble) {
     return <View style={{ height: 0 }} />;
   }
@@ -221,7 +163,6 @@ const { colors } = useAppTheme();
                 </View>
               ) : (
                 <>
-                  {/* Phase indicator: stays permanently if we have apiRequestDetails, or actively streaming query phase */}
                   {(requestPhase || message.apiRequestDetails || apiRequestDetails) && (
                     <RequestPhaseIndicator
                       phase={requestPhase}
@@ -241,7 +182,6 @@ const { colors } = useAppTheme();
                         />
                       );
                     }
-                    // text block
                     if (!block.content.trim()) return null;
                     return (
                       <View key={`text-${idx}`}>
@@ -305,7 +245,7 @@ const { colors } = useAppTheme();
 
 export const MessageBubble = React.memo(MessageBubbleComponent);
 
-const createStyles = (colors: AppPalette) =>
+export const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       marginVertical: 6,

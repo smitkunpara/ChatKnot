@@ -46,16 +46,23 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
     // ---- Elapsed timer for api_request phase ----
     const [elapsedMs, setElapsedMs] = useState(0);
     const timerStartRef = useRef<number>(0);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         if (phase === 'api_request' && apiRequestDetails) {
             timerStartRef.current = apiRequestDetails.requestedAt;
             setElapsedMs(Date.now() - timerStartRef.current);
-            const interval = setInterval(() => {
+            intervalRef.current = setInterval(() => {
                 setElapsedMs(Date.now() - timerStartRef.current);
             }, 100);
-            return () => clearInterval(interval);
         }
+        
+        return () => {
+            if (intervalRef.current !== null) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
+        };
     }, [phase, apiRequestDetails]);
 
     // ---- Expand/collapse for api_request ----

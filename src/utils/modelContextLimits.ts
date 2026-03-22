@@ -92,6 +92,8 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
 
 const DEFAULT_CONTEXT_LIMIT = 128000;
 
+const SORTED_KEYS = Object.keys(MODEL_CONTEXT_LIMITS).sort((a, b) => b.length - a.length);
+
 export const getContextLimitForModel = (model: string): number => {
   if (!model) return DEFAULT_CONTEXT_LIMIT;
 
@@ -103,9 +105,8 @@ export const getContextLimitForModel = (model: string): number => {
   }
 
   // Prefix match - try matching from most specific to least
-  const sortedKeys = Object.keys(MODEL_CONTEXT_LIMITS).sort((a, b) => b.length - a.length);
-  for (const key of sortedKeys) {
-    if (normalizedModel.startsWith(key) || normalizedModel.includes(key)) {
+  for (const key of SORTED_KEYS) {
+    if (normalizedModel.startsWith(key)) {
       return MODEL_CONTEXT_LIMITS[key];
     }
   }

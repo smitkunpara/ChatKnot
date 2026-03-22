@@ -1,8 +1,8 @@
 import Realm from 'realm';
-import 'react-native-get-random-values';
 import { Attachment, Conversation, Message, ToolCall } from '../../types';
 import { defaultSecretVault } from '../storage/SecretVault';
 import { STORAGE_KEYS } from '../../constants/storage';
+import { hexToBytes, generateKey } from '../../utils/crypto';
 
 const CHAT_REALM_PATH = 'chat.realm';
 const CHAT_REALM_KEY_ALIAS = STORAGE_KEYS.CHAT_REALM_KEY_ALIAS;
@@ -53,6 +53,9 @@ interface ToolCallRecordShape {
   error?: string;
 }
 
+// Note: AttachmentRecordShape intentionally excludes the optional `base64` field
+// from the Attachment type. base64 data is stripped before persistence to keep
+// the Realm database compact; it is re-read lazily from the uri when needed.
 interface AttachmentRecordShape {
   id: string;
   messageId: string;
@@ -190,47 +193,18 @@ const emptyState = (): ChatPersistedState => ({
   activeConversationId: null,
 });
 
-const getRandomValues = (buffer: Uint8Array): void => {
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
-    return;
-  }
-
-  throw new Error('No cryptographically secure random source available for Realm encryption key');
-};
-
-const bytesToHex = (buffer: Uint8Array): string => {
-  let output = '';
-  for (let i = 0; i < buffer.length; i += 1) {
-    output += buffer[i].toString(16).padStart(2, '0');
-  }
-  return output;
-};
-
-const hexToBytes = (value: string): Uint8Array => {
-  const size = Math.floor(value.length / 2);
-  const output = new Uint8Array(size);
-  for (let i = 0; i < size; i += 1) {
-    output[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16);
-  }
-  return output;
-};
-
 const getRealmEncryptionKey = async (): Promise<Int8Array> => {
   let keyHex = await defaultSecretVault.getSecret(CHAT_REALM_KEY_ALIAS);
 
   if (!keyHex) {
-    const random = new Uint8Array(64);
-    getRandomValues(random);
-    keyHex = bytesToHex(random);
-    await defaultSecretVault.setSecret(CHAT_REALM_KEY_ALIAS, keyHex);
+    const freshKey = generateKey(64);
+    await defaultSecretVault.setSecret(CHAT_REALM_KEY_ALIAS, freshKey);
+    return Int8Array.from(hexToBytes(freshKey));
   }
 
   const bytes = hexToBytes(keyHex);
   if (bytes.length !== 64) {
-    const random = new Uint8Array(64);
-    getRandomValues(random);
-    const freshKey = bytesToHex(random);
+    const freshKey = generateKey(64);
     await defaultSecretVault.setSecret(CHAT_REALM_KEY_ALIAS, freshKey);
     return Int8Array.from(hexToBytes(freshKey));
   }
@@ -251,15 +225,58 @@ const openRealm = async (): Promise<Realm> => {
     ],
     schemaVersion: 2,
     encryptionKey,
+    onMigration: (oldRealm, newRealm) => {
+      console.info(`Realm migration from schema ${oldRealm.schemaVersion} to ${newRealm.schemaVersion}`);
+    },
   });
 };
 
 const getRealm = async (): Promise<Realm> => {
   if (!realmPromise) {
-    realmPromise = openRealm();
+    realmPromise = openRealm().catch((error) => {
+      realmPromise = null;
+      throw error;
+    });
   }
   return realmPromise;
 };
+
+export const closeRealm = (): void => {
+  if (realmPromise) {
+    realmPromise
+      .then((realm) => {
+        if (!realm.isClosed) {
+          realm.close();
+        }
+      })
+      .catch(() => {
+        // Ignore errors during close
+      });
+    realmPromise = null;
+  }
+};
+
+export const deleteRealmFile = async (): Promise<void> => {
+  closeRealm();
+  try {
+    Realm.deleteFile({ path: CHAT_REALM_PATH });
+  } catch {
+    // Best-effort; the encryption-key deletion already makes the old file unreadable.
+  }
+};
+
+const VALID_TOOL_CALL_STATUSES: ReadonlySet<string> = new Set(['pending', 'running', 'completed', 'failed']);
+const VALID_ATTACHMENT_TYPES: ReadonlySet<string> = new Set(['image', 'file']);
+const VALID_MESSAGE_ROLES: ReadonlySet<string> = new Set(['system', 'user', 'assistant', 'tool']);
+
+const asToolCallStatus = (value: string): ToolCall['status'] =>
+  VALID_TOOL_CALL_STATUSES.has(value) ? value as ToolCall['status'] : 'pending';
+
+const asAttachmentType = (value: string): Attachment['type'] =>
+  VALID_ATTACHMENT_TYPES.has(value) ? value as Attachment['type'] : 'file';
+
+const asMessageRole = (value: string): Message['role'] =>
+  VALID_MESSAGE_ROLES.has(value) ? value as Message['role'] : 'user';
 
 const safeParseJson = <T>(value?: string): T | null => {
   if (!value) {
@@ -294,14 +311,14 @@ const mapMessageRecords = (
       id: entry.id,
       name: entry.name,
       arguments: entry.arguments,
-      status: entry.status as ToolCall['status'],
+      status: asToolCallStatus(entry.status),
       ...(entry.result ? { result: entry.result } : {}),
       ...(entry.error ? { error: entry.error } : {}),
     }));
 
     const attachments: Attachment[] = attachmentRecords.map((entry) => ({
       id: entry.id,
-      type: entry.type as Attachment['type'],
+      type: asAttachmentType(entry.type),
       uri: entry.uri,
       name: entry.name,
       mimeType: entry.mimeType,
@@ -312,7 +329,7 @@ const mapMessageRecords = (
 
     return {
       id: record.id,
-      role: record.role as Message['role'],
+      role: asMessageRole(record.role),
       content: record.content,
       timestamp: record.timestamp,
       ...(record.toolCallId ? { toolCallId: record.toolCallId } : {}),
@@ -357,78 +374,82 @@ export const loadChatStateFromRealm = async (): Promise<ChatPersistedState> => {
 };
 
 export const saveChatStateToRealm = async (state: ChatPersistedState): Promise<void> => {
-  const realm = await getRealm();
+  try {
+    const realm = await getRealm();
 
-  realm.write(() => {
-    realm.delete(realm.objects('ToolCallRecord'));
-    realm.delete(realm.objects('AttachmentRecord'));
-    realm.delete(realm.objects('MessageRecord'));
-    realm.delete(realm.objects('ConversationRecord'));
+    realm.write(() => {
+      realm.delete(realm.objects('ToolCallRecord'));
+      realm.delete(realm.objects('AttachmentRecord'));
+      realm.delete(realm.objects('MessageRecord'));
+      realm.delete(realm.objects('ConversationRecord'));
 
-    for (const conversation of state.conversations) {
-      realm.create('ConversationRecord', {
-        id: conversation.id,
-        title: conversation.title,
-        providerId: conversation.providerId,
-        modeId: conversation.modeId,
-        modelOverride: conversation.modelOverride,
-        systemPrompt: conversation.systemPrompt,
-        createdAt: conversation.createdAt,
-        updatedAt: conversation.updatedAt,
-      }, Realm.UpdateMode.Modified);
-
-      for (const message of conversation.messages) {
-        realm.create('MessageRecord', {
-          id: message.id,
-          conversationId: conversation.id,
-          role: message.role,
-          content: message.content,
-          toolCallId: message.toolCallId,
-          timestamp: message.timestamp,
-          isError: !!message.isError,
-          reasoning: message.reasoning,
-          thoughtDurationMs: message.thoughtDurationMs,
-          apiRequestDetailsJson: message.apiRequestDetails
-            ? JSON.stringify(message.apiRequestDetails)
-            : undefined,
+      for (const conversation of state.conversations) {
+        realm.create('ConversationRecord', {
+          id: conversation.id,
+          title: conversation.title,
+          providerId: conversation.providerId,
+          modeId: conversation.modeId,
+          modelOverride: conversation.modelOverride,
+          systemPrompt: conversation.systemPrompt,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
         }, Realm.UpdateMode.Modified);
 
-        for (const toolCall of message.toolCalls || []) {
-          realm.create('ToolCallRecord', {
-            id: toolCall.id,
-            messageId: message.id,
-            name: toolCall.name,
-            arguments: toolCall.arguments,
-            status: toolCall.status,
-            result: toolCall.result,
-            error: toolCall.error,
+        for (const message of conversation.messages) {
+          realm.create('MessageRecord', {
+            id: message.id,
+            conversationId: conversation.id,
+            role: message.role,
+            content: message.content,
+            toolCallId: message.toolCallId,
+            timestamp: message.timestamp,
+            isError: !!message.isError,
+            reasoning: message.reasoning,
+            thoughtDurationMs: message.thoughtDurationMs,
+            apiRequestDetailsJson: message.apiRequestDetails
+              ? JSON.stringify(message.apiRequestDetails)
+              : undefined,
           }, Realm.UpdateMode.Modified);
-        }
 
-        for (const attachment of message.attachments || []) {
-          realm.create('AttachmentRecord', {
-            id: attachment.id,
-            messageId: message.id,
-            type: attachment.type,
-            uri: attachment.uri,
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            size: attachment.size,
-          }, Realm.UpdateMode.Modified);
+          for (const toolCall of message.toolCalls || []) {
+            realm.create('ToolCallRecord', {
+              id: toolCall.id,
+              messageId: message.id,
+              name: toolCall.name,
+              arguments: toolCall.arguments,
+              status: toolCall.status,
+              result: toolCall.result,
+              error: toolCall.error,
+            }, Realm.UpdateMode.Modified);
+          }
+
+          for (const attachment of message.attachments || []) {
+            realm.create('AttachmentRecord', {
+              id: attachment.id,
+              messageId: message.id,
+              type: attachment.type,
+              uri: attachment.uri,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              size: attachment.size,
+            }, Realm.UpdateMode.Modified);
+          }
         }
       }
-    }
 
-    realm.create(
-      'ChatAppStateRecord',
-      {
-        id: CHAT_STATE_ID,
-        activeConversationId: state.activeConversationId ?? undefined,
-        updatedAt: Date.now(),
-      },
-      Realm.UpdateMode.Modified
-    );
-  });
+      realm.create(
+        'ChatAppStateRecord',
+        {
+          id: CHAT_STATE_ID,
+          activeConversationId: state.activeConversationId ?? undefined,
+          updatedAt: Date.now(),
+        },
+        Realm.UpdateMode.Modified
+      );
+    });
+  } catch (error) {
+    console.warn('Failed to save chat state to Realm.', error);
+  }
 };
 
 export const clearChatStateFromRealm = async (): Promise<void> => {

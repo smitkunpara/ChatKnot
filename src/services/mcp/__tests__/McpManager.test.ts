@@ -1,4 +1,4 @@
-import { McpManager } from '../McpManager.ts';
+import { McpManager } from '../McpManager';
 import { McpServerConfig, McpToolSchema } from '../../../types';
 
 const toolsByServerId: Record<string, McpToolSchema[]> = {};
@@ -28,12 +28,12 @@ jest.mock('../McpClient', () => ({
 const createServer = (
   id: string,
   name: string,
-  options: Partial<Pick<McpServerConfig, 'allowedTools' | 'autoApprovedTools'>> = {}
+  options: Partial<Pick<McpServerConfig, 'allowedTools' | 'autoApprovedTools' | 'enabled'>> = {}
 ): McpServerConfig => ({
   id,
   name,
   url: `https://${id}.example.com`,
-  enabled: true,
+  enabled: options.enabled ?? true,
   tools: [],
   allowedTools: options.allowedTools ?? [],
   autoApprovedTools: options.autoApprovedTools ?? [],
@@ -124,7 +124,6 @@ describe('McpManager', () => {
         inputSchema: { type: 'object', properties: {} },
       },
     ];
-    // Another server with same tool name to trigger namespacing
     toolsByServerId['other-server'] = [
       {
         name: 'search',
@@ -141,14 +140,10 @@ describe('McpManager', () => {
     const allTools = McpManager.getTools();
     const toolNames = allTools.map(t => t.name);
 
-    // 1. Check dot sanitization: 'get-user.details' -> 'get_user_details'
     expect(toolNames).toContain('get_user_details');
-    
-    // 2. Check namespace separator: 'complex_server__search' instead of 'complex_server.search'
     expect(toolNames).toContain('complex_server__search');
     expect(toolNames).toContain('other_server__search');
 
-    // 3. Ensure no dots or invalid chars in any tool name
     toolNames.forEach(name => {
       expect(name).toMatch(/^[a-zA-Z0-9_-]+$/);
     });
@@ -226,5 +221,115 @@ describe('McpManager', () => {
     expect(policy.found).toBe(true);
     expect(policy.enabled).toBe(true);
     expect(policy.autoAllow).toBe(true);
+  });
+
+  it('sets error state when server connection fails', async () => {
+    const { McpClient } = require('../McpClient');
+    (McpClient as jest.Mock).mockImplementationOnce((config: McpServerConfig) => ({
+      connect: jest.fn(async () => { throw new Error('Connection refused'); }),
+      disconnect: jest.fn(),
+      getTools: jest.fn(() => []),
+      getProtocol: jest.fn(() => 'mcp'),
+      getOpenApiMetadata: jest.fn(() => null),
+      getOpenApiContext: jest.fn(() => null),
+      callTool: jest.fn(),
+    }));
+
+    await McpManager.initialize([
+      createServer('failing-server', 'Failing Server'),
+    ]);
+
+    const state = McpManager.getRuntimeState('failing-server');
+    expect(state?.status).toBe('error');
+    expect(state?.error).toBe('Connection refused');
+    expect(state?.toolsCount).toBe(0);
+  });
+
+  it('skips disabled servers during initialization', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'search',
+        description: 'Server A search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server', { enabled: true }),
+      createServer('server-b', 'Beta Server', { enabled: false }),
+    ]);
+
+    const stateA = McpManager.getRuntimeState('server-a');
+    const stateB = McpManager.getRuntimeState('server-b');
+
+    expect(stateA?.status).toBe('connected');
+    expect(stateB?.status).toBe('disabled');
+    expect(clientsByServerId['server-b']).toBeUndefined();
+  });
+
+  it('notifies listeners on state changes and cleans up on unsubscribe', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'search',
+        description: 'Server A search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    const listener = jest.fn();
+    const unsubscribe = McpManager.subscribe(listener);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server'),
+    ]);
+
+    expect(listener).toHaveBeenCalledTimes(3); // initial + connecting + connected
+    unsubscribe();
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server'),
+    ]);
+
+    // Should not be called again after unsubscribe
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+
+  it('disconnects old clients on re-initialization', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'search',
+        description: 'Server A search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server'),
+    ]);
+
+    const oldClient = clientsByServerId['server-a'];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server v2'),
+    ]);
+
+    expect(oldClient.disconnect).toHaveBeenCalled();
+  });
+
+  it('returns undefined for unknown server runtime state', () => {
+    expect(McpManager.getRuntimeState('nonexistent')).toBeUndefined();
+  });
+
+  it('returns not-found policy for unknown tool name', () => {
+    const policy = McpManager.getToolExecutionPolicy('nonexistent_tool');
+    expect(policy.found).toBe(false);
+    expect(policy.enabled).toBe(false);
+    expect(policy.autoAllow).toBe(false);
+  });
+
+  it('throws when executing a tool that does not exist', async () => {
+    await expect(McpManager.executeTool('ghost', {})).rejects.toThrow('Tool ghost not found');
   });
 });

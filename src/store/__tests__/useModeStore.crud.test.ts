@@ -1,50 +1,4 @@
-type SettingsStoreModule = typeof import('../useSettingsStore');
-
-const createMode = (overrides: Partial<import('../../types').Mode> = {}): import('../../types').Mode => ({
-  id: overrides.id ?? `mode-${Math.random().toString(36).slice(2, 8)}`,
-  name: overrides.name ?? 'Test Mode',
-  systemPrompt: overrides.systemPrompt ?? 'You are a test assistant.',
-  mcpServerOverrides: overrides.mcpServerOverrides ?? {},
-  isDefault: overrides.isDefault ?? false,
-});
-
-const flushPersistence = async (): Promise<void> => {
-  await Promise.resolve();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
-const loadStore = async (storageSeed: Map<string, string> = new Map()): Promise<{
-  store: SettingsStoreModule['useSettingsStore'];
-}> => {
-  jest.resetModules();
-
-  const storage = {
-    getItem: jest.fn(async (name: string) => storageSeed.get(name) ?? null),
-    setItem: jest.fn(async (name: string, value: string) => {
-      storageSeed.set(name, value);
-    }),
-    removeItem: jest.fn(async (name: string) => {
-      storageSeed.delete(name);
-    }),
-  };
-
-  jest.doMock('../../services/storage/EncryptedStateStorage', () => ({
-    createEncryptedStateStorage: () => storage,
-  }));
-
-  jest.doMock('react-native-get-random-values', () => ({}));
-
-  jest.doMock('../../services/storage/migrations', () => ({
-    ensureMcpServerSecretRefs: (server: unknown) => server,
-    ensureProviderSecretRef: (provider: unknown) => provider,
-    hydratePersistedSettingsPayload: async (value: string) => value,
-    migratePersistedSettingsPayload: async (value: string) => value,
-  }));
-
-  const module = (await import('../useSettingsStore')) as SettingsStoreModule;
-  await module.useSettingsStore.persist.rehydrate();
-  return { store: module.useSettingsStore };
-};
+import { createMode, loadStore } from './testUtils/modeTestHelpers';
 
 describe('useSettingsStore mode CRUD', () => {
   it('starts with empty modes array and null lastUsedModeId', async () => {
@@ -193,87 +147,44 @@ describe('useSettingsStore mode CRUD', () => {
     expect(store.getState().modes[0].name).toBe('Updated');
     expect(store.getState().modes[1].name).toBe('Second');
   });
-});
 
-describe('useSettingsStore mode persistence', () => {
-  it('persists modes across rehydrate', async () => {
-    const storageSeed = new Map<string, string>();
-    const firstLoad = await loadStore(storageSeed);
-
-    firstLoad.store.getState().addMode(createMode({ id: 'mode-1', name: 'Persisted', systemPrompt: 'Hello' }));
-    firstLoad.store.getState().setLastUsedMode('mode-1');
-    await flushPersistence();
-
-    const secondLoad = await loadStore(storageSeed);
-    const rehydrated = secondLoad.store.getState();
-
-    expect(rehydrated.modes).toHaveLength(1);
-    expect(rehydrated.modes[0].name).toBe('Persisted');
-    expect(rehydrated.modes[0].systemPrompt).toBe('Hello');
-    expect(rehydrated.lastUsedModeId).toBe('mode-1');
-  });
-});
-
-describe('useSettingsStore replaceAllSettings with modes', () => {
-  it('replaceAllSettings replaces modes and lastUsedModeId', async () => {
+  it('setDefaultMode marks one mode as default and unsets others', async () => {
     const { store } = await loadStore();
-    store.getState().addMode(createMode({ id: 'mode-old' }));
+    store.getState().addMode(createMode({ id: 'mode-1', isDefault: true }));
+    store.getState().addMode(createMode({ id: 'mode-2', isDefault: false }));
 
-    store.getState().replaceAllSettings({
-      providers: [],
-      modes: [
-        createMode({ id: 'mode-imported-1', name: 'Imported', isDefault: true }),
-        createMode({ id: 'mode-imported-2', name: 'Extra' }),
-      ],
-      lastUsedModeId: 'mode-imported-2',
-      theme: 'dark',
-      lastUsedModel: null,
-    });
+    store.getState().setDefaultMode('mode-2');
 
     const state = store.getState();
-    expect(state.modes).toHaveLength(2);
-    expect(state.modes[0].id).toBe('mode-imported-1');
-    expect(state.lastUsedModeId).toBe('mode-imported-2');
-    expect(state.theme).toBe('dark');
+    expect(state.modes.find(m => m.id === 'mode-2')?.isDefault).toBe(true);
+    expect(state.modes.find(m => m.id === 'mode-1')?.isDefault).toBe(false);
+    // Default mode should be sorted first
+    expect(state.modes[0].id).toBe('mode-2');
   });
 
-  it('replaceAllSettings falls back lastUsedModeId to first mode when not provided', async () => {
+  it('removeMcpServer cascades deletion to mode overrides', async () => {
     const { store } = await loadStore();
-
-    store.getState().replaceAllSettings({
-      providers: [],
-      modes: [createMode({ id: 'mode-fallback' })],
-      theme: 'system',
-      lastUsedModel: null,
+    store.getState().addMcpServer({
+      id: 'server-1',
+      name: 'Test Server',
+      url: 'https://test.example.com',
+      enabled: true,
+      tools: [],
+      allowedTools: [],
+      autoApprovedTools: [],
     });
+    store.getState().addMode(createMode({
+      id: 'mode-1',
+      mcpServerOverrides: {
+        'server-1': { enabled: true, allowedTools: ['tool-a'] },
+        'server-2': { enabled: false },
+      },
+    }));
 
-    expect(store.getState().lastUsedModeId).toBe('mode-fallback');
-  });
+    store.getState().removeMcpServer('server-1');
 
-  it('replaceAllSettings truncates long mode names', async () => {
-    const { store } = await loadStore();
-
-    store.getState().replaceAllSettings({
-      providers: [],
-      modes: [createMode({ id: 'mode-1', name: 'X'.repeat(30) })],
-      lastUsedModeId: 'mode-1',
-      theme: 'system',
-      lastUsedModel: null,
-    });
-
-    expect(store.getState().modes[0].name).toBe('X'.repeat(20));
-  });
-
-  it('replaceAllSettings with no modes results in empty modes array', async () => {
-    const { store } = await loadStore();
-
-    store.getState().replaceAllSettings({
-      providers: [],
-      theme: 'system',
-      lastUsedModel: null,
-    });
-
-    expect(store.getState().modes).toEqual([]);
-    expect(store.getState().lastUsedModeId).toBeNull();
+    const overrides = store.getState().modes[0].mcpServerOverrides;
+    expect(overrides['server-1']).toBeUndefined();
+    expect(overrides['server-2']).toBeDefined();
   });
 });

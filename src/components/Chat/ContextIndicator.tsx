@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
-import { ContextUsageData, useContextUsageStore } from '../../store/useContextUsageStore';
+import { useContextUsageStore } from '../../store/useContextUsageStore';
 import { formatTokenCount } from '../../utils/modelContextLimits';
 
 interface ContextIndicatorProps {
@@ -27,7 +27,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [popupVisible, setPopupVisible] = useState(false);
 
-  const usage = useContextUsageStore(
+  const usageData = useContextUsageStore(
     (state) => {
       if (!conversationId) return null;
       const data = state.usageByConversation[conversationId];
@@ -36,8 +36,6 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
       return data;
     }
   );
-
-  const usageData = usage as ContextUsageData | null;
 
   const fillPercent = useMemo(() => {
     if (!usageData || usageData.contextLimit <= 0) return 0;
@@ -185,14 +183,14 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
                       style={[
                         styles.progressBarFill,
                         {
-                          width: `${Math.min(100, (usageData?.lastUsage.promptTokens ?? 0) / (usageData?.contextLimit ?? 1) * 100)}%`,
+                          width: `${(usageData?.contextLimit ?? 0) > 0 ? Math.min(100, (usageData!.lastUsage.promptTokens / usageData!.contextLimit) * 100) : 0}%`,
                           backgroundColor: fillColor,
                         },
                       ]}
                     />
                   </View>
                   <Text style={styles.progressBarText}>
-                    {usageData
+                    {usageData && usageData.contextLimit > 0
                       ? `${Math.round((usageData.lastUsage.promptTokens / usageData.contextLimit) * 100)}% of context used`
                       : 'No data'}
                   </Text>

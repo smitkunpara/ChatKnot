@@ -85,7 +85,7 @@ export interface LlmProviderConfig {
 export interface McpToolSchema {
   name: string;
   description?: string;
-  inputSchema: any;
+  inputSchema: Record<string, unknown>;
   _meta?: {
     path: string;
     method: string;
@@ -122,7 +122,7 @@ export interface OpenApiValidationSuccess {
   normalizedInputUrl: string;
   resolvedSpecUrl: string;
   resolvedBaseUrl: string;
-  spec: any;
+  spec: Record<string, unknown>;
   tools: McpToolSchema[];
 }
 

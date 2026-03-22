@@ -44,27 +44,34 @@ describe('useContextUsageStore', () => {
     };
 
     store.updateUsage(data);
-    
+
     expect(store.getUsage('chat2')).toEqual(data);
     expect(store.getUsage('nonexistent')).toBeNull();
   });
 
-  it('retrieves usage data only if provider and model match', () => {
+  it('overwrites usage when same conversation is updated', () => {
     const store = useContextUsageStore.getState();
-    const data = {
-      conversationId: 'chat3',
-      providerId: 'prov3',
-      model: 'model3',
-      contextLimit: 4000,
-      lastUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
-      timestamp: 3000,
+    const data1 = {
+      conversationId: 'chat-ow',
+      providerId: 'prov1',
+      model: 'gpt-4',
+      contextLimit: 8192,
+      lastUsage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      timestamp: 1000,
+    };
+    const data2 = {
+      conversationId: 'chat-ow',
+      providerId: 'prov2',
+      model: 'claude',
+      contextLimit: 200000,
+      lastUsage: { promptTokens: 500, completionTokens: 250, totalTokens: 750 },
+      timestamp: 2000,
     };
 
-    store.updateUsage(data);
+    store.updateUsage(data1);
+    store.updateUsage(data2);
 
-    expect(store.getUsageForModel('chat3', 'prov3', 'model3')).toEqual(data);
-    expect(store.getUsageForModel('chat3', 'wrong-prov', 'model3')).toBeNull();
-    expect(store.getUsageForModel('chat3', 'prov3', 'wrong-model')).toBeNull();
+    expect(useContextUsageStore.getState().usageByConversation['chat-ow']).toEqual(data2);
   });
 
   it('clears usage for a specific conversation', () => {
@@ -81,6 +88,17 @@ describe('useContextUsageStore', () => {
 
     expect(useContextUsageStore.getState().usageByConversation['chat4']).toBeUndefined();
     expect(useContextUsageStore.getState().usageByConversation['chat5']).toBeDefined();
+  });
+
+  it('clearing nonexistent conversation is a no-op', () => {
+    const store = useContextUsageStore.getState();
+    store.updateUsage({ conversationId: 'chat-nz', providerId: 'p', model: 'm', contextLimit: 1, lastUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, timestamp: 1 });
+
+    const stateBefore = useContextUsageStore.getState();
+    store.clearUsage('does-not-exist');
+    const stateAfter = useContextUsageStore.getState();
+
+    expect(stateAfter.usageByConversation).toEqual(stateBefore.usageByConversation);
   });
 
   it('clears all usage data', () => {

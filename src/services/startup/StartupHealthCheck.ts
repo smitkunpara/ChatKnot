@@ -1,4 +1,4 @@
-import { McpServerConfig, LlmProviderConfig, ModelCapabilities } from '../../types';
+import { McpServerConfig, LlmProviderConfig, McpToolSchema, ModelCapabilities } from '../../types';
 import { validateOpenApiEndpoint } from '../mcp/OpenApiValidationService';
 import { OpenAiService } from '../llm/OpenAiService';
 
@@ -18,7 +18,7 @@ export interface McpHealthResult {
   toolsChanged: boolean;
   removedTools: string[];
   currentTools: string[];
-  validatedTools?: any[];
+  validatedTools?: McpToolSchema[];
   error?: string;
 }
 
@@ -50,31 +50,43 @@ export type HealthCheckProgressCallback = (
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let settled = false;
 
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutId = setTimeout(() => {
-      reject(new Error(`${label}: network timeout after ${ms / 1000}s`));
+      if (!settled) {
+        reject(new Error(`${label}: network timeout after ${ms / 1000}s`));
+      }
     }, ms);
   });
 
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-  });
+  return Promise.race([promise, timeoutPromise])
+    .finally(() => {
+      settled = true;
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
+    });
 }
+
+const CREDENTIAL_PATTERN = /\b(api[_-]?key|token|secret|authorization|bearer)\s*=\s*\S+/gi;
+
+const sanitizeErrorForDisplay = (reason: string): string =>
+  reason.replace(CREDENTIAL_PATTERN, '$1=[REDACTED]');
 
 const normalizeHealthReason = (reason?: string): string => {
   if (!reason || !reason.trim()) {
     return 'unknown connectivity issue';
   }
 
-  return reason
-    .replace(/^Unable to fetch models:\s*/i, '')
-    .replace(/^Failed to fetch models from \S+\s*\(/i, 'Failed to fetch models (')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[.]+$/, '');
+  return sanitizeErrorForDisplay(
+    reason
+      .replace(/^Unable to fetch models:\s*/i, '')
+      .replace(/^Failed to fetch models from \S+\s*\(/i, 'Failed to fetch models (')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[.]+$/, '')
+  );
 };
 
 const toWarningLabel = (name: string, suffix: string): string => {
@@ -94,7 +106,8 @@ const isLikelyNetworkIssue = (reason?: string): boolean => {
     return false;
   }
 
-  const statusCodeMatch = message.match(/\b([1-5]\d{2})\b/);
+  // Check for HTTP status codes in common patterns like "(401 Unauthorized)", "HTTP 500", "status: 503"
+  const statusCodeMatch = message.match(/(?:http|status|code)?\s*(?:\(|:|\s)\s*([1-5]\d{2})\b/i);
   if (statusCodeMatch) {
     const statusCode = Number(statusCodeMatch[1]);
     if (statusCode >= 400 && statusCode < 500) {
@@ -148,15 +161,15 @@ async function checkMcpServer(
 
     if (validation.ok) {
       result.reachable = true;
-      const newToolNames = validation.tools.map((t: any) => t.name);
+      const newToolNames = validation.tools.map((t) => t.name);
       result.currentTools = newToolNames;
       result.validatedTools = validation.tools;
 
       const oldToolNames = (server.tools || []).map(t => t.name);
       const removed = oldToolNames.filter(name => !newToolNames.includes(name));
-      const added = newToolNames.filter((name: string) => !oldToolNames.includes(name));
+      const hasAdded = newToolNames.some(name => !oldToolNames.includes(name));
 
-      if (removed.length > 0 || added.length > 0) {
+      if (removed.length > 0 || hasAdded) {
         result.toolsChanged = true;
         result.removedTools = removed;
       }
@@ -194,12 +207,11 @@ async function checkAiProvider(
     result.currentModels = models;
     result.capabilities = capabilities;
 
-    // Check if any previously visible models are no longer available
     const previousModels = provider.availableModels || [];
     const removed = previousModels.filter(m => !models.includes(m));
-    const added = models.filter(m => !previousModels.includes(m));
+    const hasAdded = models.some(m => !previousModels.includes(m));
     result.removedModels = removed;
-    result.modelsChanged = removed.length > 0 || added.length > 0;
+    result.modelsChanged = removed.length > 0 || hasAdded;
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
   }
@@ -221,90 +233,103 @@ export async function runStartupHealthCheck(
     removedVisibleModels: [],
   };
 
-  // Phase 1: Check MCP connections
   const enabledServers = servers.filter(s => s.enabled);
+  const enabledProviders = providers.filter(
+    (p) => p.enabled && ((p.apiKey && p.apiKey.trim()) || p.apiKeyRef) && p.baseUrl?.trim()
+  );
+
   if (enabledServers.length > 0) {
     onProgress('checking-mcp', `Verifying ${enabledServers.length} MCP connection${enabledServers.length > 1 ? 's' : ''}...`);
-
-    for (let i = 0; i < enabledServers.length; i++) {
-      const server = enabledServers[i];
-      onProgress(
-        'checking-mcp',
-        `Checking MCP: ${server.name}...`,
-        ((i + 1) / enabledServers.length) * 50
-      );
-      const mcpResult = await checkMcpServer(server);
-      report.mcpResults.push(mcpResult);
-
-      if (!mcpResult.reachable) {
-        const reason = normalizeHealthReason(mcpResult.error);
-        if (isLikelyNetworkIssue(reason)) {
-          report.disabledMcpServers.push(server.id);
-          report.warnings.push(`(${toWarningLabel(server.name, 'mcp')}) is turned off due to ${reason}.`);
-        } else {
-          report.warnings.push(`MCP "${server.name}" check failed: ${reason}.`);
-        }
-      } else if (mcpResult.toolsChanged) {
-        // Only warn for removed tools that were enabled (in allowedTools, or all if allowedTools is empty)
-        const enabledSet = (server.allowedTools && server.allowedTools.length > 0)
-          ? new Set(server.allowedTools)
-          : new Set((server.tools || []).map(t => t.name));
-        const removedEnabledTools = mcpResult.removedTools.filter(t => enabledSet.has(t));
-        if (removedEnabledTools.length > 0) {
-          const toolsList = removedEnabledTools.map(t => `"${t}"`).join(', ');
-          report.warnings.push(
-            `Tool${removedEnabledTools.length > 1 ? 's' : ''} removed from "${server.name}": ${toolsList}.`
-          );
-        }
-      }
-    }
   } else {
     onProgress('checking-mcp', 'No MCP servers configured.', 50);
   }
 
-  // Phase 2: Check AI providers
-  const enabledProviders = providers.filter(
-    (p) => p.enabled && ((p.apiKey && p.apiKey.trim()) || p.apiKeyRef) && p.baseUrl?.trim()
-  );
   if (enabledProviders.length > 0) {
     onProgress('checking-ai', `Verifying ${enabledProviders.length} AI endpoint${enabledProviders.length > 1 ? 's' : ''}...`);
-
-    for (let i = 0; i < enabledProviders.length; i++) {
-      const provider = enabledProviders[i];
-      onProgress(
-        'checking-ai',
-        `Checking AI: ${provider.name}...`,
-        50 + ((i + 1) / enabledProviders.length) * 40
-      );
-      const aiResult = await checkAiProvider(provider);
-      report.aiResults.push(aiResult);
-
-      if (!aiResult.reachable) {
-        const reason = normalizeHealthReason(aiResult.error);
-        if (isLikelyNetworkIssue(reason)) {
-          report.disabledAiProviders.push(provider.id);
-          report.warnings.push(`(${toWarningLabel(provider.name, 'ai_provider')}) is turned off due to ${reason}.`);
-        } else {
-          report.warnings.push(`AI provider "${provider.name}" check failed: ${reason}.`);
-        }
-      } else if (aiResult.modelsChanged) {
-        // Only warn for removed models that were visible (not in hiddenModels)
-        const hiddenSet = new Set(provider.hiddenModels || []);
-        const removedVisibleModels = aiResult.removedModels.filter(m => !hiddenSet.has(m));
-        if (removedVisibleModels.length > 0) {
-          const modelsList = removedVisibleModels.map(m => `"${m}"`).join(', ');
-          report.warnings.push(
-            `Model${removedVisibleModels.length > 1 ? 's' : ''} removed from "${provider.name}": ${modelsList}.`
-          );
-          report.removedVisibleModels.push({
-            providerId: provider.id,
-            models: removedVisibleModels,
-          });
-        }
-      }
-    }
   } else {
     onProgress('checking-ai', 'No AI providers configured.', 90);
+  }
+
+  const mcpPromises = enabledServers.map(async (server, i) => {
+    onProgress(
+      'checking-mcp',
+      `Checking MCP: ${server.name}...`,
+      ((i + 1) / Math.max(enabledServers.length, 1)) * 50
+    );
+    return checkMcpServer(server);
+  });
+
+  const aiPromises = enabledProviders.map(async (provider, i) => {
+    onProgress(
+      'checking-ai',
+      `Checking AI: ${provider.name}...`,
+      50 + ((i + 1) / Math.max(enabledProviders.length, 1)) * 40
+    );
+    return checkAiProvider(provider);
+  });
+
+  const [mcpResults, aiResults] = await Promise.all([
+    Promise.allSettled(mcpPromises).then(results =>
+      results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean)
+    ),
+    Promise.allSettled(aiPromises).then(results =>
+      results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean)
+    ),
+  ]);
+
+  report.mcpResults = mcpResults as McpHealthResult[];
+  report.aiResults = aiResults as AiHealthResult[];
+
+  for (let i = 0; i < report.mcpResults.length; i++) {
+    const mcpResult = report.mcpResults[i];
+    const server = enabledServers[i];
+    if (!mcpResult.reachable) {
+      const reason = normalizeHealthReason(mcpResult.error);
+      if (isLikelyNetworkIssue(reason)) {
+        report.disabledMcpServers.push(server.id);
+        report.warnings.push(`(${toWarningLabel(server.name, 'mcp')}) is turned off due to ${reason}.`);
+      } else {
+        report.warnings.push(`MCP "${server.name}" check failed: ${reason}.`);
+      }
+    } else if (mcpResult.toolsChanged) {
+      const enabledSet = (server.allowedTools && server.allowedTools.length > 0)
+        ? new Set(server.allowedTools)
+        : new Set((server.tools || []).map(t => t.name));
+      const removedEnabledTools = mcpResult.removedTools.filter(t => enabledSet.has(t));
+      if (removedEnabledTools.length > 0) {
+        const toolsList = removedEnabledTools.map(t => `"${t}"`).join(', ');
+        report.warnings.push(
+          `Tool${removedEnabledTools.length > 1 ? 's' : ''} removed from "${server.name}": ${toolsList}.`
+        );
+      }
+    }
+  }
+
+  for (let i = 0; i < report.aiResults.length; i++) {
+    const aiResult = report.aiResults[i];
+    const provider = enabledProviders[i];
+    if (!aiResult.reachable) {
+      const reason = normalizeHealthReason(aiResult.error);
+      if (isLikelyNetworkIssue(reason)) {
+        report.disabledAiProviders.push(provider.id);
+        report.warnings.push(`(${toWarningLabel(provider.name, 'ai_provider')}) is turned off due to ${reason}.`);
+      } else {
+        report.warnings.push(`AI provider "${provider.name}" check failed: ${reason}.`);
+      }
+    } else if (aiResult.modelsChanged) {
+      const hiddenSet = new Set(provider.hiddenModels || []);
+      const removedVisibleModels = aiResult.removedModels.filter(m => !hiddenSet.has(m));
+      if (removedVisibleModels.length > 0) {
+        const modelsList = removedVisibleModels.map(m => `"${m}"`).join(', ');
+        report.warnings.push(
+          `Model${removedVisibleModels.length > 1 ? 's' : ''} removed from "${provider.name}": ${modelsList}.`
+        );
+        report.removedVisibleModels.push({
+          providerId: provider.id,
+          models: removedVisibleModels,
+        });
+      }
+    }
   }
 
   onProgress('reconciling', 'Applying updates...', 95);
@@ -312,15 +337,36 @@ export async function runStartupHealthCheck(
   return report;
 }
 
-/**
- * Apply the health check findings to the stores.
- * Rules:
- *  - New AI models: hidden by default (only user can make visible)
- *  - Removed AI models: removed from hidden list silently
- *  - New MCP tools: disabled by default
- *  - User-enabled tools: NOT re-disabled
- *  - Existing settings preserved — only new items get defaults
- */
+export function reconcileMcpTools(
+  server: McpServerConfig,
+  validatedTools: McpToolSchema[],
+  removedTools: string[],
+  currentTools: string[]
+): McpServerConfig {
+  const removedSet = new Set(removedTools);
+  const currentToolSet = new Set(currentTools);
+  const oldToolNames = new Set((server.tools || []).map(t => t.name));
+  const newToolNames = currentTools.filter(t => !oldToolNames.has(t));
+
+  const cleanedAllowed = (server.allowedTools || [])
+    .filter(t => !removedSet.has(t) && currentToolSet.has(t));
+  const cleanedAutoApproved = (server.autoApprovedTools || [])
+    .filter(t => !removedSet.has(t) && currentToolSet.has(t));
+
+  let nextAllowed = [...cleanedAllowed];
+  const hadPreviousTools = (server.tools || []).length > 0;
+  if (newToolNames.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
+    nextAllowed = currentTools.filter(t => !newToolNames.includes(t));
+  }
+
+  return {
+    ...server,
+    tools: validatedTools,
+    allowedTools: nextAllowed,
+    autoApprovedTools: cleanedAutoApproved,
+  };
+}
+
 export function applyHealthCheckReport(
   report: HealthCheckReport,
   servers: McpServerConfig[],
@@ -328,7 +374,6 @@ export function applyHealthCheckReport(
   updateMcpServer: (server: McpServerConfig) => void,
   updateProvider: (provider: LlmProviderConfig) => void
 ): void {
-  // Disable unreachable MCP servers
   for (const serverId of report.disabledMcpServers) {
     const server = servers.find(s => s.id === serverId);
     if (server) {
@@ -336,7 +381,6 @@ export function applyHealthCheckReport(
     }
   }
 
-  // Disable AI providers that failed startup connectivity checks
   for (const providerId of report.disabledAiProviders) {
     const provider = providers.find(p => p.id === providerId);
     if (provider) {
@@ -344,46 +388,17 @@ export function applyHealthCheckReport(
     }
   }
 
-  // Update MCP tool lists where tools changed
   for (const mcpResult of report.mcpResults) {
     if (!mcpResult.reachable || !mcpResult.validatedTools) continue;
 
     const server = servers.find(s => s.id === mcpResult.serverId);
     if (!server) continue;
 
-    const removedSet = new Set(mcpResult.removedTools);
-    const oldToolNames = new Set((server.tools || []).map(t => t.name));
-    const newToolNames = mcpResult.currentTools.filter(t => !oldToolNames.has(t));
-
-    // Preserve existing allowedTools/autoApprovedTools for tools that still exist
-    // Remove entries for tools that were removed from the server
-    const cleanedAllowed = (server.allowedTools || []).filter(t => !removedSet.has(t));
-    const cleanedAutoApproved = (server.autoApprovedTools || []).filter(t => !removedSet.has(t));
-
-    // Also strictly remove any tools that completely missed old caching
-    const strictlyCleanedAllowed = cleanedAllowed.filter(t => mcpResult.currentTools.includes(t));
-    const strictlyCleanedAutoApproved = cleanedAutoApproved.filter(t => mcpResult.currentTools.includes(t));
-
-    // New tools are disabled by default.
-    // If allowedTools was empty (all enabled) and there are known previous tools,
-    // explicitly list old tools so new ones remain disabled.
-    // If allowedTools was non-empty, new tools simply aren't added → disabled.
-    let nextAllowed = [...strictlyCleanedAllowed];
-    const hadPreviousTools = (server.tools || []).length > 0;
-    if (newToolNames.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
-      // was all-enabled; keep prior tools enabled, new ones excluded (disabled)
-      nextAllowed = mcpResult.currentTools.filter(t => !newToolNames.includes(t));
-    }
-
-    updateMcpServer({
-      ...server,
-      tools: mcpResult.validatedTools,
-      allowedTools: nextAllowed,
-      autoApprovedTools: strictlyCleanedAutoApproved,
-    });
+    updateMcpServer(
+      reconcileMcpTools(server, mcpResult.validatedTools, mcpResult.removedTools, mcpResult.currentTools)
+    );
   }
 
-  // Update AI provider available models and capabilities
   for (const aiResult of report.aiResults) {
     if (!aiResult.reachable) continue;
 
@@ -394,12 +409,10 @@ export function applyHealthCheckReport(
     const currentModels = aiResult.currentModels;
     const currentModelSet = new Set(currentModels);
 
-    // Check if model list actually changed
     const hasModelChange =
       prevModels.size !== currentModelSet.size ||
       [...prevModels].some(m => !currentModelSet.has(m));
 
-    // Check if capabilities need updating
     const nextCapabilities = Object.fromEntries(
       Object.entries({
         ...(provider.modelCapabilities || {}),
@@ -412,22 +425,18 @@ export function applyHealthCheckReport(
 
     if (!hasModelChange && !capabilityChanged) continue;
 
-    // New models are hidden by default (user must explicitly make them visible)
     const hiddenModels = new Set(provider.hiddenModels || []);
 
-    // Add newly appeared models to hidden list
     const newModels = currentModels.filter(m => !prevModels.has(m));
     for (const model of newModels) {
       hiddenModels.add(model);
     }
 
-    // Removed models: clean from hidden list (no longer relevant)
     const removedModels = [...prevModels].filter(m => !currentModelSet.has(m));
     for (const model of removedModels) {
       hiddenModels.delete(model);
     }
 
-    // Also clean hidden entries for models that no longer exist at all
     for (const model of hiddenModels) {
       if (!currentModelSet.has(model)) {
         hiddenModels.delete(model);

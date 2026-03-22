@@ -5,6 +5,7 @@ import {
   OpenApiValidationError,
   OpenApiValidationResult,
 } from '../types';
+import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
 import {
   formatOpenApiValidationError,
   validateOpenApiEndpoint,
@@ -325,7 +326,7 @@ export const saveModeDraft = (
   }
 
   commit(mode.id, {
-    name: draft.name,
+    name: draft.name.slice(0, MAX_MODE_NAME_LENGTH),
     systemPrompt: draft.systemPrompt,
     mcpServerOverrides: draft.mcpServerOverrides,
   });

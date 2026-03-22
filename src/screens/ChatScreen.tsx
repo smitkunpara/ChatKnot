@@ -59,6 +59,7 @@ import {
 } from '../utils/chatHelpers';
 import { formatLocalDateTime } from '../utils/dateFormat';
 import { mergeServersWithOverrides } from '../utils/mcpMerge';
+import { getActiveMode } from '../utils/getActiveMode';
 import * as FileSystem from 'expo-file-system';
 import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
 import {
@@ -220,15 +221,10 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   }, [displayedMessages.length]);
   const [newChatDraft, setNewChatDraft] = useState('');
 
-  const activeMode = useMemo(() => {
-    if (activeConversationId) {
-      const currentConv = useChatStore.getState().conversations.find(c => c.id === activeConversationId);
-      const modeId = currentConv?.modeId || lastUsedModeId || modes[0]?.id;
-      const mode = modes.find(m => m.id === modeId) || modes[0];
-      if (mode) return mode;
-    }
-    return modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
-  }, [modes, lastUsedModeId, activeConversation?.modeId]);
+  const activeMode = useMemo(
+    () => getActiveMode(modes, lastUsedModeId, activeConversation?.modeId),
+    [modes, lastUsedModeId, activeConversation?.modeId],
+  );
 
   // Sync lastUsedModeId when active conversation changes
   useEffect(() => {
@@ -241,6 +237,15 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     () => mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {}),
     [globalMcpServers, activeMode?.mcpServerOverrides]
   );
+
+  // Reinitialize MCP manager when mode switch changes the effective server set
+  const previousModeIdRef = useRef<string | null | undefined>(activeMode?.id);
+  useEffect(() => {
+    if (previousModeIdRef.current !== activeMode?.id) {
+      previousModeIdRef.current = activeMode?.id;
+      McpManager.initialize(activeMcpServers).catch(console.error);
+    }
+  }, [activeMode?.id, activeMcpServers]);
   const [modeSelectorVisible, setModeSelectorVisible] = useState(false);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -491,11 +496,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     return unsubscribe;
   }, []);
 
-  // Re-initialize MCP tools
-  useEffect(() => {
-    // Reinitialization is handled globally in App.tsx
-    // McpManager.reinitialize(servers, modes, lastUsedModeId);
-  }, [activeMcpServers]);
+
 
   const handleEdit = useCallback((messageId: string, content: string) => {
     if (!activeConversationId) return;
@@ -598,11 +599,13 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     hasEnabledMcpServer &&
     (enabledMcpToolsCount > 0 || configuredEnabledMcpToolsCount > 0);
 
-  // Check if conversation has any image attachments in its history
+  // Check if conversation has any image attachments in its history or pending
   const conversationHasImages = useMemo(() => {
     if (!activeConversation) return false;
-    return activeConversation.messages.some(m => m.attachments?.some(a => a.type === 'image'));
-  }, [activeConversation]);
+    const hasHistoryImages = activeConversation.messages.some(m => m.attachments?.some(a => a.type === 'image'));
+    const hasPendingImages = attachments.some(a => a.type === 'image');
+    return hasHistoryImages || hasPendingImages;
+  }, [activeConversation, attachments]);
 
   const previousModelSelectionRef = useRef<string | undefined>(
     modelResolution.selection
@@ -641,6 +644,10 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   ]);
 
   const attachmentBase64Cache = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    attachmentBase64Cache.current.clear();
+  }, [activeConversationId]);
 
   const readFileAsBase64 = async (uri: string): Promise<string> => {
 if (attachmentBase64Cache.current.has(uri)) {
@@ -773,6 +780,20 @@ setChatError(null);
       return true;
     });
 
+    // Notify user when attachments were dropped due to model capabilities
+    const droppedImageCount = attachments.filter(a => a.type === 'image' && !currentModelCapabilities.vision).length;
+    const droppedFileCount = attachments.filter(a => a.type === 'file' && !currentModelCapabilities.fileInput).length;
+    if (droppedImageCount > 0 || droppedFileCount > 0) {
+      const parts: string[] = [];
+      if (droppedImageCount > 0) parts.push(`${droppedImageCount} image(s)`);
+      if (droppedFileCount > 0) parts.push(`${droppedFileCount} file(s)`);
+      Alert.alert(
+        'Attachments Not Sent',
+        `The following attachments were not sent because the current model doesn't support them: ${parts.join(', ')}. Only text content will be included.`,
+        [{ text: 'OK' }]
+      );
+    }
+
     // Prepare attachments — strip base64 to keep Zustand/MMKV ultra-light.
     // base64 will be read lazily from the uri only when sending to the LLM.
     let persistedAttachments: Attachment[] | undefined;
@@ -857,7 +878,7 @@ if (!currentAssistantMsgId) {
         }
 
         if (__DEV__) {
-          console.log('[ChatScreen] Prompting with context from mode:', activeMode.name);
+          console.log('[ChatScreen] Prompting with context from mode:', activeMode?.name ?? 'none');
           console.log(`[ChatKnot Debug] ⏳ Preparing payload — collecting context from storage (iteration ${absoluteIterationCount})...`);
         }
         const payloadStartTime = Date.now();
@@ -866,8 +887,8 @@ if (!currentAssistantMsgId) {
           .getState()
           .conversations.find(c => c.id === conversationId);
         if (!currentConv) break;
-const settingsState = useSettingsStore.getState();
-        const loopMode = settingsState.modes.find(m => m.id === settingsState.lastUsedModeId) ?? settingsState.modes[0] ?? null;
+        const settingsState = useSettingsStore.getState();
+        const loopMode = activeMode;
         const modelSelection = resolveModelSelection({
           providers: settingsState.providers,
           selectedProviderId: currentConv.providerId,
@@ -931,7 +952,8 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
                 try {
                   const b64 = await readFileAsBase64(att.uri);
                   return { ...att, base64: b64 };
-                } catch {
+                } catch (error) {
+                  console.warn(`[ChatScreen] Failed to read attachment file: ${att.name} (${att.uri})`, error);
                   return att;
                 }
               })
@@ -1081,7 +1103,9 @@ if (activeRequestControllersRef.current.get(conversationId) === requestControlle
         }
 
         const apiElapsed = Date.now() - apiStartTime;
-        console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
+        if (__DEV__) {
+          console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
+        }
         currentStreamController?.flush();
 
         if (isStopRequested(conversationId)) {
@@ -1151,11 +1175,15 @@ finalizedAssistantText = 'I received an empty response from the model.';
         }
         if (loopDetected) {
           setChatError('Process stopped: AI got stuck in a repetitive loop.');
-          updateMessage(
-            conversationId,
-            assistantMsgId,
-            'I stopped processing because I got stuck repeating the exact same tool call.'
-          );
+          const conversation = useChatStore.getState().conversations.find(c => c.id === conversationId);
+          const messageExists = conversation?.messages.some(m => m.id === assistantMsgId);
+          if (messageExists) {
+            updateMessage(
+              conversationId,
+              assistantMsgId,
+              'I stopped processing because I got stuck repeating the exact same tool call.'
+            );
+          }
           break;
         }
         // --- END LOOP DETECTION ---
@@ -1221,7 +1249,7 @@ const parsedArgs = parseToolArguments(call.arguments, call.name);
               content: resultStr,
               toolCallId: call.id,
             });
-          } catch (error: any) {
+          } catch (error: unknown) {
 const errorStr = serializeToolExecutionError(error);
 
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
@@ -1236,18 +1264,7 @@ const errorStr = serializeToolExecutionError(error);
         }
 
       }
-    } catch (error: any) {
-if (currentAssistantMsgId) {
-        if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
-          settleCurrentStream({
-            content: currentStreamedContent.trim(),
-            reasoning: currentStreamedReasoning,
-          });
-        } else {
-          settleCurrentStream({ clearOnly: true });
-        }
-      }
-
+    } catch (error: unknown) {
       const mounted = isMountedRef.current;
       const message = getErrorMessage(error);
       if (!isStopRequested(conversationId)) {
@@ -1271,7 +1288,7 @@ if (currentAssistantMsgId) {
         }
       }
     } finally {
-if (currentAssistantMsgId) {
+      if (currentAssistantMsgId) {
         if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
           settleCurrentStream({
             content: currentStreamedContent.trim(),
@@ -1334,7 +1351,7 @@ if (currentAssistantMsgId) {
 
   const hasAnyProvider = useMemo(() => {
     return providers.some(
-      (p) => p.enabled && (p.apiKey || p.apiKeyRef) && p.baseUrl
+      (p) => p.enabled && ((p.apiKey || '').trim().length > 0 || (p.apiKeyRef || '').trim().length > 0) && (p.baseUrl || '').trim().length > 0
     );
   }, [providers]);
 

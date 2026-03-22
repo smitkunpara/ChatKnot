@@ -14,6 +14,7 @@ import { useContextUsageStore } from '../../../store/useContextUsageStore';
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useChatRuntimeStore } from '../../../store/useChatRuntimeStore';
 import { defaultSecretVault } from '../SecretVault';
+import { clearMigrationMarker } from '../migrations';
 import { STORAGE_KEYS } from '../../../constants/storage';
 
 jest.mock('../../../store/useChatStore');
@@ -22,13 +23,19 @@ jest.mock('../../../store/useContextUsageStore');
 jest.mock('../../../store/useSettingsStore');
 jest.mock('../../../store/useChatRuntimeStore');
 jest.mock('../SecretVault');
+jest.mock('../migrations', () => ({
+  clearMigrationMarker: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../chat/ChatRealmRepository', () => ({
+  deleteRealmFile: jest.fn().mockResolvedValue(undefined),
+}));
 
 describe('resetAllLocalData', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should clear all stores, persist stores, and delete correct secrets', async () => {
+  it('should clear all stores, persist stores, delete correct secrets, and clear migration marker', async () => {
     const mockClearAllChatData = jest.fn();
     (useChatStore.getState as jest.Mock).mockReturnValue({
       clearAllChatData: mockClearAllChatData,
@@ -87,6 +94,8 @@ describe('resetAllLocalData', () => {
     expect(mockDraftClearStorage).toHaveBeenCalled();
     expect(mockContextClearStorage).toHaveBeenCalled();
     expect(mockSettingsClearStorage).toHaveBeenCalled();
+
+    expect(clearMigrationMarker).toHaveBeenCalled();
 
     const expectedSecretsToDelete = [
       STORAGE_KEYS.CHAT_REALM_KEY_ALIAS,

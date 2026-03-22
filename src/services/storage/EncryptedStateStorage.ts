@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 import type { StateStorage } from 'zustand/middleware';
 import { defaultSecretVault } from './SecretVault';
+import { generateKey } from '../../utils/crypto';
 
 export interface MMKVLike {
   getString(key: string): string | undefined;
@@ -65,39 +66,6 @@ const resolveMMKVCtor = (providedCtor?: MMKVCtor): MMKVCtor | undefined => {
   }
 };
 
-const getRandomValues = (buffer: Uint8Array): void => {
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
-    return;
-  }
-
-  try {
-    require('react-native-get-random-values');
-  } catch {
-    // Ignore; we still check availability below.
-  }
-
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
-    return;
-  }
-
-  throw new Error('No cryptographically secure random source available');
-};
-
-const generateKey = (): string => {
-  const bytes = new Uint8Array(32);
-  getRandomValues(bytes);
-
-  let key = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const byte = bytes[i];
-    key += byte.toString(16).padStart(2, '0');
-  }
-
-  return key;
-};
-
 export const createEncryptedStateStorage = (
   options: EncryptedStateStorageOptions
 ): StateStorage => {
@@ -121,8 +89,21 @@ export const createEncryptedStateStorage = (
         typeof vault.isPersistentStorageAvailable === 'function' &&
         !vault.isPersistentStorageAvailable()
       ) {
+        const declinedKey = `${options.id}:consent-declined`;
         const consentKey = `${options.id}:plaintext-consent`;
         const hasConsent = await fallbackStorage.getItem(consentKey);
+        const hasDeclined = await fallbackStorage.getItem(declinedKey);
+
+        if (hasDeclined === 'true') {
+          const memStore = new Map<string, string>();
+          return {
+            fallback: {
+              getItem: async (k: string) => memStore.get(k) ?? null,
+              setItem: async (k: string, v: string) => { memStore.set(k, v); },
+              removeItem: async (k: string) => { memStore.delete(k); },
+            },
+          };
+        }
 
         if (hasConsent !== 'true') {
           let consentGranted = false;
@@ -131,7 +112,13 @@ export const createEncryptedStateStorage = (
               'Security Warning',
               'Secure hardware is unavailable on this device. Your data and API keys will be saved in plaintext. Do you wish to continue?',
               [
-                { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
+                {
+                  text: 'Cancel', style: 'cancel', onPress: () => {
+                    Promise.resolve(fallbackStorage.setItem(declinedKey, 'true'))
+                      .catch(() => {})
+                      .finally(() => resolve());
+                  }
+                },
                 {
                   text: 'Continue', onPress: () => {
                     consentGranted = true;
@@ -165,11 +152,7 @@ export const createEncryptedStateStorage = (
         if (!encryptionKey) {
           const generatedKey = generateKey();
           await vault.setSecret(keyAlias, generatedKey);
-          encryptionKey = await vault.getSecret(keyAlias);
-
-          if (!encryptionKey) {
-            return { fallback: fallbackStorage };
-          }
+          encryptionKey = generatedKey;
         }
 
         return {
@@ -210,6 +193,7 @@ export const createEncryptedStateStorage = (
       const { encrypted, fallback } = await getResolvedStorage();
       if (encrypted) {
         encrypted.delete(name);
+        return;
       }
       await fallback.removeItem(name);
     },

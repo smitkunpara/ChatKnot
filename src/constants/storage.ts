@@ -5,7 +5,7 @@ export const STORAGE_KEYS = {
     SETTINGS_STORAGE_KEY_ALIAS: 'settings-storage:encryption-key',
     CHAT_DRAFT_STORAGE_KEY_ALIAS: 'chat-draft-storage:encryption-key',
     CONTEXT_USAGE_STORAGE_KEY_ALIAS: 'context-usage-storage:encryption-key',
-    CHAT_REALM_KEY_ALIAS: 'chat-realm.encryption-key',
+    CHAT_REALM_KEY_ALIAS: 'chat-realm:encryption-key',
     MIGRATION_MARKER_V1: 'storage-hardening:migration:v1',
 };
 

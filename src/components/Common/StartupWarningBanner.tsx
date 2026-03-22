@@ -16,7 +16,7 @@ interface Props {
   onDismiss: () => void;
 }
 
-export const StartupWarningModal: React.FC<Props> = ({
+export const StartupWarningBanner: React.FC<Props> = ({
   warnings,
   visible,
   onDismiss,
@@ -142,6 +142,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-// Backwards compatibility - alias export
-export const StartupWarningBanner = StartupWarningModal;

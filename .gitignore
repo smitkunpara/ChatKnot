@@ -12,6 +12,12 @@ web-build/
 expo-env.d.ts
 .expo-shared/
 
+# Test
+coverage/
+
+# Personal dev notes
+todo.md
+
 # Native
 *.orig.*
 *.jks
@@ -79,5 +85,5 @@ logs
 # /ios
 # /android
 
-needed_change.md
+# kilocode coverage/analysis tool artifacts
 .kilocode

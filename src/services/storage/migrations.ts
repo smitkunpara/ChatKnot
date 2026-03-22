@@ -44,9 +44,23 @@ interface SettingsMigrationOutcome<TState> {
   errors: string[];
 }
 
+interface LegacyMcpServerEntry {
+  id: string;
+  enabled?: boolean;
+  [key: string]: unknown;
+}
+
 interface PersistedSettingsMigrationResult {
   rawValue: string;
   errors: string[];
+}
+
+interface LegacyConversation {
+  id: string;
+  modeId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  [key: string]: unknown;
 }
 
 export interface StorageHardeningBootstrapOptions {
@@ -148,10 +162,7 @@ const parsePersistedState = <TState>(rawValue: string): ParsedPersistedState<TSt
       hasEnvelope: false,
     };
   } catch {
-    return {
-      rawValue,
-      errors: ['Persisted settings payload is invalid JSON. Migration skipped.'],
-    } as any;
+    return null;
   }
 };
 
@@ -513,10 +524,10 @@ export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecor
     );
     if (needsOverrideMigration) {
       // Lift per-mode mcpServers back to global, keeping overrides
-      let globalServers = Array.isArray(state.mcpServers) ? [...(state.mcpServers as any[])] : [];
-      const globalIds = new Set(globalServers.map((s: any) => s.id));
+      const globalServers = Array.isArray(state.mcpServers) ? [...(state.mcpServers as LegacyMcpServerEntry[])] : [];
+      const globalIds = new Set(globalServers.map((s) => s.id));
       const migratedModes = modes.map((m) => {
-        const modeServers = Array.isArray(m.mcpServers) ? (m.mcpServers as any[]) : [];
+        const modeServers = Array.isArray(m.mcpServers) ? (m.mcpServers as LegacyMcpServerEntry[]) : [];
         const overrides: Record<string, { enabled: boolean }> = {};
         for (const s of modeServers) {
           overrides[s.id] = { enabled: !!s.enabled };
@@ -538,7 +549,7 @@ export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecor
       ? state.systemPrompt
       : 'You are a helpful assistant.';
 
-  const legacyMcpServers = Array.isArray(state.mcpServers) ? state.mcpServers : [];
+  const legacyMcpServers: LegacyMcpServerEntry[] = Array.isArray(state.mcpServers) ? state.mcpServers : [];
 
   const defaultModeId = String(uuid.v4());
   const defaultMode = {
@@ -550,7 +561,7 @@ export const migrateLegacySettingsToModes = (state: UnknownRecord): UnknownRecor
   };
 
   // Build overrides from legacy servers' enabled
-  for (const server of legacyMcpServers as any[]) {
+  for (const server of legacyMcpServers) {
     defaultMode.mcpServerOverrides[server.id] = {
       enabled: !!server.enabled,
     };
@@ -631,8 +642,6 @@ export const executeStorageHardeningBootstrap = async (
   const encryptedSettingsStorage =
     options.encryptedSettingsStorage ??
     createDefaultEncryptedStorage(STORAGE_KEYS.SETTINGS_STORAGE, STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS);
-  const encryptedChatStorage =
-    options.encryptedChatStorage ?? createDefaultEncryptedStorage(STORAGE_KEYS.CHAT_STORAGE, STORAGE_KEYS.CHAT_STORAGE_KEY_ALIAS);
   const vault = options.vault ?? (defaultSecretVault as unknown as MigrationVault);
 
   const result: StorageHardeningBootstrapResult = {
@@ -680,29 +689,12 @@ export const executeStorageHardeningBootstrap = async (
       );
     }
 
+    // Chat data is now persisted in encrypted Realm, not in AsyncStorage/MMKV.
+    // Legacy chat data in AsyncStorage is cleaned up but not migrated to MMKV
+    // since Realm hydration reads exclusively from its own database.
     const legacyChatRaw = await legacyStorage.getItem(chatStorageKey);
     if (legacyChatRaw) {
-      // Add modeId migration for conversations during storage hardening
-      let migratedChatRaw = legacyChatRaw;
-      try {
-        const parsed = JSON.parse(legacyChatRaw);
-        const state = parsed.state || parsed;
-        if (Array.isArray(state.conversations)) {
-          state.conversations = state.conversations.map((c: any) => ({
-            ...c,
-            modeId: c.modeId || '',
-            createdAt: c.createdAt || c.updatedAt || Date.now(),
-          }));
-          migratedChatRaw = JSON.stringify(parsed.state ? parsed : { state });
-        }
-      } catch (e) {
-        logger.warn('Failed to parse legacy chat for modeId migration; proceeding with raw value.', e);
-      }
-
-      await encryptedChatStorage.setItem(chatStorageKey, migratedChatRaw);
-      result.migratedChat = true;
-
-      await maybeCleanupLegacyKey(chatStorageKey, legacyChatRaw, migratedChatRaw, legacyStorage, logger);
+      await maybeCleanupLegacyKey(chatStorageKey, legacyChatRaw, legacyChatRaw, legacyStorage, logger);
     }
 
     if (result.errors.length > 0) {
@@ -728,5 +720,17 @@ export const executeStorageHardeningBootstrap = async (
     result.errors.push(message);
     logger.error(message, error);
     return result;
+  }
+};
+
+export const clearMigrationMarker = async (
+  markerKey: string = DEFAULT_MIGRATION_MARKER_KEY,
+  settingsStorage?: MigrationStorage
+): Promise<void> => {
+  const storage = settingsStorage ?? createDefaultEncryptedStorage(STORAGE_KEYS.SETTINGS_STORAGE, STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS);
+  try {
+    await storage.removeItem?.(markerKey);
+  } catch {
+    // Best-effort; marker will expire naturally on next successful bootstrap.
   }
 };

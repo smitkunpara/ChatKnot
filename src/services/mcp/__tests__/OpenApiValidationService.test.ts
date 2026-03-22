@@ -196,8 +196,6 @@ describe('OpenApiValidationService', () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer secret-token',
-          'x-api-key': 'secret-token',
-          'api-key': 'secret-token',
         }),
       })
     );

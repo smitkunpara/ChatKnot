@@ -22,14 +22,14 @@ import { Attachment } from '../../types';
 import { ContextIndicator } from './ContextIndicator';
 
 // Slimmer, strictly calculated UI properties (The Formula)
-const BUTTON_SIZE = 30;
-const BUTTON_MARGIN = 3;
-const CONTAINER_PADDING = 3;
-const BUTTON_BR = 5; // Boxy rounded corner for buttons
-const CONTAINER_BR = BUTTON_BR + BUTTON_MARGIN + CONTAINER_PADDING; // 11
+export const BUTTON_SIZE = 30;
+export const BUTTON_MARGIN = 3;
+export const CONTAINER_PADDING = 3;
+export const BUTTON_BR = 5; // Boxy rounded corner for buttons
+export const CONTAINER_BR = BUTTON_BR + BUTTON_MARGIN + CONTAINER_PADDING; // 11
 
-const LINE_HEIGHT = 20;
-const MAX_INPUT_HEIGHT = 106;      // Roughly 5 lines, then scrolls
+export const LINE_HEIGHT = 20;
+export const MAX_INPUT_HEIGHT = 106;      // Roughly 5 lines, then scrolls
 
 interface InputProps {
   onSend: (text: string) => void;
@@ -91,7 +91,8 @@ const { colors } = useAppTheme();
     if (initialValue !== undefined) {
       setText(initialValue);
       if (initialValue) {
-        setTimeout(() => inputRef.current?.focus(), 90);
+        const timerId = setTimeout(() => inputRef.current?.focus(), 90);
+        return () => clearTimeout(timerId);
       }
     }
   }, [initialValue]);

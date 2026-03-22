@@ -13,6 +13,8 @@
     "android-sdk-local/**",
     "android/**",
     "ios/**",
-    "coverage/**"
+    "coverage/**",
+    "dist/**",
+    "scripts/**"
   ]
 }

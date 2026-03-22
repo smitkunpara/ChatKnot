@@ -21,30 +21,30 @@ export const useChatDraftStore = create<ChatDraftState>()(
       draftsByConversationId: {},
 
       setDraft: (conversationId, draft) => set((state) => {
-const current = state.draftsByConversationId[conversationId] ?? '';
+        const current = state.draftsByConversationId[conversationId] ?? '';
         if (current === draft) {
           return state;
         }
 
-        return {
-          draftsByConversationId: {
-            ...state.draftsByConversationId,
-            [conversationId]: draft,
-          },
-        };
+        const nextDrafts = { ...state.draftsByConversationId };
+        if (draft === '') {
+          delete nextDrafts[conversationId];
+        } else {
+          nextDrafts[conversationId] = draft;
+        }
+
+        return { draftsByConversationId: nextDrafts };
       }),
 
       clearDraft: (conversationId) => set((state) => {
-if (!(conversationId in state.draftsByConversationId)) {
+        if (!(conversationId in state.draftsByConversationId)) {
           return state;
         }
 
         const nextDrafts = { ...state.draftsByConversationId };
         delete nextDrafts[conversationId];
 
-        return {
-          draftsByConversationId: nextDrafts,
-        };
+        return { draftsByConversationId: nextDrafts };
       }),
 
       clearAllDrafts: () => set({ draftsByConversationId: {} }),
@@ -56,18 +56,20 @@ if (!(conversationId in state.draftsByConversationId)) {
         draftsByConversationId: state.draftsByConversationId,
       }),
       version: 1,
-      migrate: (persistedState: any) => {
+      migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return {
             draftsByConversationId: {},
           };
         }
 
+        const state = persistedState as Record<string, unknown>;
+
         return {
           draftsByConversationId:
-            persistedState.draftsByConversationId &&
-            typeof persistedState.draftsByConversationId === 'object'
-              ? persistedState.draftsByConversationId
+            state.draftsByConversationId &&
+            typeof state.draftsByConversationId === 'object'
+              ? (state.draftsByConversationId as Record<string, string>)
               : {},
         };
       },

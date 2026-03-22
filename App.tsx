@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -14,18 +14,20 @@ import { useAppTheme } from './src/theme/useAppTheme';
 import { executeStorageHardeningBootstrap } from './src/services/storage/migrations';
 import { LoadingScreen } from './src/components/Common/LoadingScreen';
 import { ChatBackgroundTask } from './src/services/chat/ChatBackgroundTask';
+import { closeRealm } from './src/services/chat/ChatRealmRepository';
 import {
   runStartupHealthCheck,
   applyHealthCheckReport,
 } from './src/services/startup/StartupHealthCheck';
 import { mergeServersWithOverrides } from './src/utils/mcpMerge';
+import { getActiveMode } from './src/utils/getActiveMode';
 
 export default function App() {
   const modes = useSettingsStore(state => state.modes);
   const lastUsedModeId = useSettingsStore(state => state.lastUsedModeId);
   const globalMcpServers = useSettingsStore(state => state.mcpServers);
   const activeMode = useMemo(
-    () => modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null,
+    () => getActiveMode(modes, lastUsedModeId),
     [modes, lastUsedModeId]
   );
   const activeMcpServers = useMemo(
@@ -38,23 +40,22 @@ export default function App() {
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [startupWarnings, setStartupWarnings] = useState<string[]>([]);
-  const [healthCheckDone, setHealthCheckDone] = useState(false);
   const backgroundTaskIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     const bootApp = async () => {
-// Step 1: Storage bootstrap
+      // Step 1: Storage bootstrap
       setLoadingStatus('Loading data...');
       setLoadingProgress(5);
       try {
         const result = await executeStorageHardeningBootstrap({});
-if (result.errors.length > 0) {
-          console.warn('Storage hardening bootstrap completed with recoverable warnings.', result.errors);
+        if (result.errors.length > 0) {
+          if (__DEV__) console.warn('Storage hardening bootstrap completed with recoverable warnings.', result.errors);
         }
       } catch (error) {
-console.warn('Storage hardening bootstrap failed. Continuing with compatibility path.', error);
+        if (__DEV__) console.warn('Storage hardening bootstrap failed. Continuing with compatibility path.', error);
       }
 
       try {
@@ -64,8 +65,8 @@ console.warn('Storage hardening bootstrap failed. Continuing with compatibility 
           useChatDraftStore.persist.rehydrate(),
           useContextUsageStore.persist.rehydrate(),
         ]);
-} catch (error) {
-console.warn('Store rehydration after bootstrap failed. Continuing app startup.', error);
+      } catch (error) {
+        if (__DEV__) console.warn('Store rehydration after bootstrap failed. Continuing app startup.', error);
       }
 
       if (!isMounted) return;
@@ -73,21 +74,26 @@ console.warn('Store rehydration after bootstrap failed. Continuing app startup.'
       setLoadingProgress(15);
 
       // Step 2: Run startup health checks
-      const { providers, mcpServers: bootGlobalServers, modes: bootModes, lastUsedModeId: bootModeId, updateMcpServer, updateProvider } =
-        useSettingsStore.getState();
-      const bootMode = bootModes.find(m => m.id === bootModeId) ?? bootModes[0] ?? null;
+      const {
+        providers,
+        mcpServers: bootGlobalServers,
+        modes: bootModes,
+        lastUsedModeId: bootModeId,
+        updateMcpServer,
+        updateProvider,
+      } = useSettingsStore.getState();
+      const bootMode = getActiveMode(bootModes, bootModeId);
       const servers = mergeServersWithOverrides(bootGlobalServers, bootMode?.mcpServerOverrides ?? {});
 
       try {
         const report = await runStartupHealthCheck(servers, providers, (_phase, msg, pct) => {
-if (isMounted) {
+          if (isMounted) {
             setLoadingStatus(msg);
             if (pct != null) setLoadingProgress(pct);
           }
         });
-if (isMounted) {
-          // Step 3: Reconcile — only update settings that changed
-          // Apply MCP results back to global servers
+
+        if (isMounted) {
           applyHealthCheckReport(
             report,
             bootGlobalServers,
@@ -101,7 +107,7 @@ if (isMounted) {
           }
         }
       } catch (error) {
-console.warn('Startup health check failed; continuing without reconciliation.', error);
+        if (__DEV__) console.warn('Startup health check failed; continuing without reconciliation.', error);
       }
 
       if (!isMounted) return;
@@ -112,29 +118,28 @@ console.warn('Startup health check failed; continuing without reconciliation.', 
       await new Promise(resolve => setTimeout(resolve, 300));
 
       if (isMounted) {
-setHealthCheckDone(true);
         setReady(true);
       }
     };
 
     bootApp().catch(error => {
-console.error('Unexpected boot failure. Continuing app startup.', error);
+      if (__DEV__) console.error('Unexpected boot failure. Continuing app startup.', error);
       if (isMounted) {
-        setHealthCheckDone(true);
         setReady(true);
       }
     });
 
     return () => {
       isMounted = false;
+      closeRealm();
     };
   }, []);
 
   // Re-initialize MCP manager when active mode's servers change (after boot)
   useEffect(() => {
-    if (!healthCheckDone) return;
-McpManager.reinitialize(activeMcpServers).catch(console.error);
-  }, [activeMcpServers, healthCheckDone]);
+    if (!isReady) return;
+    McpManager.initialize(activeMcpServers).catch(console.error);
+  }, [activeMcpServers, isReady]);
 
   useEffect(() => {
     const releaseBackgroundTask = () => {
@@ -146,11 +151,13 @@ McpManager.reinitialize(activeMcpServers).catch(console.error);
       backgroundTaskIdRef.current = null;
     };
 
-    const handleAppStateChange = async (nextState: AppStateStatus) => {
-if (nextState === 'background' && isChatStreaming) {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'background' && isChatStreaming) {
         if (backgroundTaskIdRef.current == null) {
-          backgroundTaskIdRef.current = await ChatBackgroundTask.begin();
-}
+          ChatBackgroundTask.begin()
+            .then(id => { backgroundTaskIdRef.current = id; })
+            .catch(() => {});
+        }
         return;
       }
 
@@ -159,9 +166,7 @@ if (nextState === 'background' && isChatStreaming) {
       }
     };
 
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      void handleAppStateChange(nextState);
-    });
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
 
     if (!isChatStreaming) {
       releaseBackgroundTask();
@@ -174,7 +179,7 @@ if (nextState === 'background' && isChatStreaming) {
   }, [isChatStreaming]);
 
   if (!isReady) {
-return (
+    return (
       <SafeAreaProvider>
         <StatusBar
           style={isDark ? 'light' : 'dark'}

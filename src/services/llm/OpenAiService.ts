@@ -8,12 +8,79 @@ export interface ModelsWithCapabilities {
   capabilities: Record<string, ModelCapabilities>;
 }
 
+type ToolFunction = {
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+};
+
+type ToolSchema = {
+  type: string;
+  function: ToolFunction;
+};
+
+interface StreamToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string | Record<string, unknown>;
+  };
+}
+
+interface StreamDelta {
+  content?: string;
+  reasoning_content?: string;
+  reasoning?: string;
+  tool_calls?: StreamToolCallDelta[];
+  function_call?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
+interface StreamMessage {
+  content?: string;
+  reasoning_content?: string;
+  reasoning?: string;
+  tool_calls?: StreamToolCallDelta[];
+  function_call?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
+interface StreamChoice {
+  delta?: StreamDelta;
+  message?: StreamMessage;
+}
+
+interface StreamChunk {
+  choices?: StreamChoice[];
+  message?: StreamMessage;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+interface MergedToolCall {
+  id: string;
+  type: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export class OpenAiService {
   private config: LlmProviderConfig;
 
   constructor(config: LlmProviderConfig) {
     this.config = config;
-}
+  }
 
   private getBaseUrl(): string {
     const configuredBaseUrl = (this.config.baseUrl || '').trim();
@@ -29,15 +96,15 @@ export class OpenAiService {
         );
       }
     } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
+      // Re-throw typed errors; re-throw unknown errors as well so we never
+      // silently return an unvalidated URL.
+      throw error instanceof Error ? error : new Error(String(error));
     }
 
     return finalBaseUrl;
   }
 
-  private getHeaders(): HeadersInit {
+  private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -88,16 +155,16 @@ export class OpenAiService {
     return Array.from(candidates);
   }
 
-  private async fetchModelsPayload(): Promise<any> {
+  private async fetchModelsPayload(): Promise<unknown> {
     const endpointCandidates = this.getModelEndpointCandidates();
-let lastError: Error | null = null;
+    let lastError: Error | null = null;
 
     for (let index = 0; index < endpointCandidates.length; index += 1) {
       const endpoint = endpointCandidates[index];
       const hasFallback = index < endpointCandidates.length - 1;
 
       try {
-const response = await fetch(endpoint, {
+        const response = await fetch(endpoint, {
           method: 'GET',
           headers: this.getHeaders(),
         });
@@ -110,10 +177,7 @@ const response = await fetch(endpoint, {
             continue;
           }
 
-          const responseText =
-            typeof (response as any).text === 'function'
-              ? await response.text().catch(() => '')
-              : '';
+          const responseText = await response.text().catch(() => '');
           const compactBody = responseText.replace(/\s+/g, ' ').trim();
           const bodyPreview = compactBody ? `: ${compactBody.slice(0, 180)}` : '';
           throw new Error(`Failed to fetch models from ${endpoint} (${statusLabel})${bodyPreview}`);
@@ -121,11 +185,7 @@ const response = await fetch(endpoint, {
 
         return await response.json();
       } catch (error) {
-if (error instanceof Error) {
-          lastError = error;
-        } else {
-          lastError = new Error(String(error));
-        }
+        lastError = error instanceof Error ? error : new Error(String(error));
 
         if (hasFallback) {
           continue;
@@ -140,23 +200,23 @@ if (error instanceof Error) {
     throw new Error('Failed to fetch models from all candidate endpoints.');
   }
 
-  private static getNestedValue(source: any, path: string[]): any {
-    return path.reduce((value, key) => {
+  private static getNestedValue(source: unknown, path: string[]): unknown {
+    return path.reduce<unknown>((value, key) => {
       if (value == null || typeof value !== 'object') {
         return undefined;
       }
-      return value[key];
+      return (value as Record<string, unknown>)[key];
     }, source);
   }
 
-  private static toStringArray(value: any): string[] {
+  private static toStringArray(value: unknown): string[] {
     if (!Array.isArray(value)) return [];
     return value
       .map((item) => (typeof item === 'string' ? item.trim().toLowerCase() : ''))
       .filter(Boolean);
   }
 
-  private static parseBoolean(value: any): boolean | undefined {
+  private static parseBoolean(value: unknown): boolean | undefined {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'number') {
       if (value === 1) return true;
@@ -171,7 +231,7 @@ if (error instanceof Error) {
     return undefined;
   }
 
-  private static getBooleanAtPaths(source: any, paths: string[][]): boolean | undefined {
+  private static getBooleanAtPaths(source: unknown, paths: string[][]): boolean | undefined {
     for (const path of paths) {
       const parsed = OpenAiService.parseBoolean(OpenAiService.getNestedValue(source, path));
       if (parsed !== undefined) {
@@ -181,7 +241,7 @@ if (error instanceof Error) {
     return undefined;
   }
 
-  private static collectTokens(source: any, paths: string[][]): Set<string> {
+  private static collectTokens(source: unknown, paths: string[][]): Set<string> {
     const tokens = new Set<string>();
     for (const path of paths) {
       const value = OpenAiService.getNestedValue(source, path);
@@ -192,17 +252,18 @@ if (error instanceof Error) {
     return tokens;
   }
 
-  private static extractModelList(data: any): any[] {
-    if (Array.isArray(data?.data)) return data.data;
-    if (Array.isArray(data?.models)) return data.models;
-    if (Array.isArray(data?.result?.data)) return data.result.data;
-    if (Array.isArray(data)) return data;
+  private static extractModelList(data: unknown): unknown[] {
+    const obj = data as Record<string, unknown> | null;
+    if (Array.isArray(obj?.data)) return obj.data as unknown[];
+    if (Array.isArray(obj?.models)) return obj.models as unknown[];
+    const result = (obj as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
+    if (Array.isArray(result?.data)) return result.data as unknown[];
+    if (Array.isArray(data)) return data as unknown[];
     return [];
   }
 
   private static hasAnyToken(tokens: Set<string>, matches: string[]): boolean {
-    const tokenArray = Array.from(tokens);
-    for (const token of tokenArray) {
+    for (const token of tokens) {
       for (const match of matches) {
         if (token === match || token.includes(match)) {
           return true;
@@ -212,7 +273,7 @@ if (error instanceof Error) {
     return false;
   }
 
-  private static extractCapabilities(model: any): ModelCapabilities | null {
+  private static extractCapabilities(model: unknown): ModelCapabilities | null {
     const modalityTokens = OpenAiService.collectTokens(model, [
       ['architecture', 'input_modalities'],
       ['architecture', 'output_modalities'],
@@ -254,9 +315,7 @@ if (error instanceof Error) {
       ['model_capabilities', 'features'],
     ]);
 
-    const toolTokens = new Set<string>();
-    Array.from(parameterTokens).forEach(t => toolTokens.add(t));
-    Array.from(featureTokens).forEach(t => toolTokens.add(t));
+    const toolTokens = new Set<string>([...parameterTokens, ...featureTokens]);
 
     const explicitVision = OpenAiService.getBooleanAtPaths(model, [
       ['supports_vision'],
@@ -340,20 +399,15 @@ if (error instanceof Error) {
     };
   }
 
-  async listModels(): Promise<string[]> {
-    const result = await this.listModelsWithCapabilities();
-    return result.models;
-  }
-
   async listModelsWithCapabilities(): Promise<ModelsWithCapabilities> {
     try {
-const data = await this.fetchModelsPayload();
+      const data = await this.fetchModelsPayload();
       const rawModels = OpenAiService.extractModelList(data);
       const supportedModels = filterModelsForTextOutput(rawModels);
 
       const capabilities: Record<string, ModelCapabilities> = {};
       for (const model of rawModels) {
-        const id = typeof model === 'string' ? model : model?.id || model?.name || '';
+        const id = typeof model === 'string' ? model : (model as Record<string, unknown>)?.id as string || (model as Record<string, unknown>)?.name as string || '';
         if (id && supportedModels.includes(id)) {
           const caps = OpenAiService.extractCapabilities(model);
           if (caps) {
@@ -364,7 +418,6 @@ const data = await this.fetchModelsPayload();
 
       return { models: supportedModels, capabilities };
     } catch (error) {
-console.error('Error fetching models:', error);
       if (error instanceof Error) {
         throw new Error(`Unable to fetch models: ${error.message}`);
       }
@@ -377,19 +430,24 @@ console.error('Error fetching models:', error);
     messages: Message[],
     userSystemPrompt: string,
     appSystemPrompt: string | undefined,
-    tools: any[],
-    onChunk: (content: string, toolCalls?: any[]) => void,
-    onComplete: (fullContent: string, fullToolCalls?: any[]) => void,
-    onError: (error: any) => void,
+    tools: ToolSchema[],
+    onChunk: (content: string, toolCalls?: MergedToolCall[]) => void,
+    onComplete: (fullContent: string, fullToolCalls?: MergedToolCall[]) => void,
+    onError: (error: unknown) => void,
     abortSignal?: AbortSignal,
     onReasoning?: (reasoningChunk: string) => void,
     onUsage?: (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => void
   ) {
     try {
-const systemMessages = [userSystemPrompt, appSystemPrompt]
+      const systemMessages = [userSystemPrompt, appSystemPrompt]
         .map((prompt) => (prompt || '').trim())
         .filter(Boolean)
-        .map((prompt) => ({ role: 'system', content: prompt }));
+        .map((prompt) => ({ role: 'system' as const, content: prompt }));
+
+      type ContentPart =
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+        | { type: 'file'; file: { filename: string; file_data: string } };
 
       const msgs = [
         ...systemMessages,
@@ -397,10 +455,9 @@ const systemMessages = [userSystemPrompt, appSystemPrompt]
           const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
           const hasAttachments = m.attachments && m.attachments.length > 0 && m.role === 'user';
 
-          // Build multimodal content array when attachments exist
-          let content: any;
+          let content: string | ContentPart[] | null;
           if (hasAttachments) {
-            const parts: any[] = [];
+            const parts: ContentPart[] = [];
             if (m.content?.trim()) {
               parts.push({ type: 'text', text: m.content });
             }
@@ -427,25 +484,25 @@ const systemMessages = [userSystemPrompt, appSystemPrompt]
               : (m.content || '');
           }
 
-          const msg: any = { role: m.role, content };
+          const msg: Record<string, unknown> = { role: m.role, content };
           if (hasToolCalls) {
             msg.tool_calls = m.toolCalls!.map(tc => ({
               id: tc.id,
               type: 'function',
               function: {
                 name: tc.name,
-                arguments: tc.arguments
-              }
+                arguments: tc.arguments,
+              },
             }));
           }
           if (m.role === 'tool') {
             msg.tool_call_id = m.toolCallId;
           }
           return msg;
-        })
+        }),
       ];
 
-      const body: any = {
+      const body: Record<string, unknown> = {
         model: this.config.model,
         messages: msgs,
         stream: true,
@@ -454,8 +511,6 @@ const systemMessages = [userSystemPrompt, appSystemPrompt]
       if (tools && tools.length > 0) {
         body.tools = tools;
         body.tool_choice = 'auto';
-        // Only include parallel_tool_calls if it's likely an OpenAI or compatible provider
-        // some older or smaller providers might not support this field.
         body.parallel_tool_calls = true;
 
         // Compatibility fallback for OpenAI-like providers that still expect the
@@ -463,27 +518,28 @@ const systemMessages = [userSystemPrompt, appSystemPrompt]
         // third-party/OpenRouter-backed models behave better with it.
         const isLikelyOpenAi = /api\.openai\.com/i.test(this.getBaseUrl());
         if (!isLikelyOpenAi) {
-          body.functions = tools.map((tool: any) => tool.function);
+          body.functions = tools.map((tool) => tool.function);
           body.function_call = 'auto';
         }
       }
 
-      const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
+      const fetchOptions: RequestInit & Record<string, unknown> = {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(body),
         signal: abortSignal,
-        // @ts-ignore
         reactNative: { textStreaming: true },
-      });
-if (!response.ok) {
+      };
+
+      const response = await fetch(`${this.getBaseUrl()}/chat/completions`, fetchOptions);
+      if (!response.ok) {
         const text = await response.text();
         throw new Error(`API Error: ${response.status} - ${text}`);
       }
 
-      const mergeToolCalls = (current: any[], newCalls: any[]) => {
+      const mergeToolCalls = (current: MergedToolCall[], newCalls: StreamToolCallDelta[]): MergedToolCall[] => {
         if (!newCalls) return current;
-        const result = [...current];
+        const result: MergedToolCall[] = [...current];
         const findIndexById = (id: string) => result.findIndex(entry => entry?.id && entry.id === id);
 
         newCalls.forEach((call, idx) => {
@@ -496,22 +552,34 @@ if (!response.ok) {
             index = result.length;
           }
 
+          // Fill sparse array holes so downstream iteration never hits undefined.
+          while (result.length <= index) {
+            result.push({
+              id: `pending_${result.length}`,
+              type: 'function',
+              function: { name: '', arguments: '' },
+            });
+          }
+
           const argsChunk =
             typeof call.function?.arguments === 'string'
               ? call.function.arguments
               : call.function?.arguments
                 ? JSON.stringify(call.function.arguments)
                 : '';
-          if (!result[index]) {
+
+          if (!result[index].function.name && !result[index].function.arguments) {
+            // First chunk for this slot — overwrite placeholders.
             result[index] = {
-              ...call,
+              id: call.id || result[index].id,
+              type: call.type || 'function',
               function: {
-                ...call.function,
+                name: call.function?.name || '',
                 arguments: argsChunk,
               },
             };
           } else {
-            if (!result[index].function) result[index].function = { arguments: '' };
+            // Accumulate streamed arguments.
             if (argsChunk) result[index].function.arguments += argsChunk;
             if (call.function?.name) result[index].function.name = call.function.name;
             if (call.id) result[index].id = call.id;
@@ -522,8 +590,9 @@ if (!response.ok) {
 
       let fullContent = '';
       let fullReasoning = '';
-      let toolCallsBuffer: any[] = [];
-      const reader = (response as any).body?.getReader();
+      let toolCallsBuffer: MergedToolCall[] = [];
+      const responseWithBody = response as Response & { body?: { getReader(): ReadableStreamDefaultReader<Uint8Array> } };
+      const reader = responseWithBody.body?.getReader();
 
       const emitContentChunk = (contentChunk: string) => {
         if (!contentChunk) return;
@@ -531,31 +600,33 @@ if (!response.ok) {
           throw new Error('Request cancelled by user');
         }
         fullContent += contentChunk;
-onChunk(contentChunk, undefined);
+        onChunk(contentChunk, undefined);
       };
 
-      const processDelta = (delta: any): boolean => {
+      const processDelta = (delta: StreamDelta | undefined): boolean => {
         if (!delta) return false;
         let emitted = false;
-        // Capture reasoning/thinking content streamed separately by providers
-        // (e.g. DeepSeek sends delta.reasoning_content, others may use delta.reasoning)
+
         const reasoningChunk = delta.reasoning_content || delta.reasoning || '';
         if (reasoningChunk && onReasoning) {
           fullReasoning += reasoningChunk;
-onReasoning(reasoningChunk);
+          onReasoning(reasoningChunk);
           emitted = true;
         }
+
         if (delta.content) {
           emitContentChunk(delta.content);
           emitted = true;
         }
+
         if (delta.tool_calls) {
-toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
           onChunk('', toolCallsBuffer);
           emitted = true;
         }
+
         if (delta.function_call) {
-toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
             {
               index: 0,
               id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
@@ -569,6 +640,48 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
           onChunk('', toolCallsBuffer);
           emitted = true;
         }
+
+        return emitted;
+      };
+
+      const processMessageFields = (message: StreamMessage | undefined): boolean => {
+        if (!message) return false;
+        let emitted = false;
+
+        const reasoningChunk = message.reasoning_content || message.reasoning || '';
+        if (reasoningChunk && onReasoning) {
+          fullReasoning += reasoningChunk;
+          onReasoning(reasoningChunk);
+          emitted = true;
+        }
+
+        if (message.content) {
+          emitContentChunk(message.content);
+          emitted = true;
+        }
+
+        if (message.tool_calls) {
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, message.tool_calls);
+          onChunk('', toolCallsBuffer);
+          emitted = true;
+        }
+
+        if (message.function_call) {
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
+            {
+              index: 0,
+              id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
+              type: 'function',
+              function: {
+                name: message.function_call.name,
+                arguments: message.function_call.arguments || '',
+              },
+            },
+          ]);
+          onChunk('', toolCallsBuffer);
+          emitted = true;
+        }
+
         return emitted;
       };
 
@@ -576,7 +689,7 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
         const cleanPayload = payload.trim();
         if (!cleanPayload || cleanPayload === '[DONE]') return false;
         try {
-          const json = JSON.parse(cleanPayload);
+          const json: StreamChunk = JSON.parse(cleanPayload);
 
           // Capture token usage from the API response
           if (json.usage && onUsage) {
@@ -596,39 +709,8 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
             return true;
           }
 
-          let emitted = false;
-          const reasoningChunk = message?.reasoning_content || message?.reasoning || '';
-          if (reasoningChunk && onReasoning) {
-            fullReasoning += reasoningChunk;
-            onReasoning(reasoningChunk);
-            emitted = true;
-          }
-          if (message?.content) {
-            emitContentChunk(message.content);
-            emitted = true;
-          }
-          if (message?.tool_calls) {
-            toolCallsBuffer = mergeToolCalls(toolCallsBuffer, message.tool_calls);
-            onChunk('', toolCallsBuffer);
-            emitted = true;
-          }
-          if (message?.function_call) {
-            toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
-              {
-                index: 0,
-                id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
-                type: 'function',
-                function: {
-                  name: message.function_call.name,
-                  arguments: message.function_call.arguments || '',
-                },
-              },
-            ]);
-            onChunk('', toolCallsBuffer);
-            emitted = true;
-          }
-          return emitted;
-        } catch (e) {
+          return processMessageFields(message);
+        } catch {
           // Ignore partial or non-JSON control events.
           return false;
         }
@@ -679,15 +761,15 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
           }
 
           let timeoutId: ReturnType<typeof setTimeout>;
-          const timeoutPromise = new Promise<any>((_, reject) => {
+          const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('Stream stalled (timeout)')), 60000);
           });
 
           let done: boolean;
-          let value: any;
+          let value: Uint8Array | undefined;
           try {
             ({ done, value } = await Promise.race([reader.read(), timeoutPromise]));
-          } catch (readError: any) {
+          } catch (readError: unknown) {
             // Explicitly cancel the reader to properly terminate the stream
             // before handling the abort error. This prevents unhandled promise
             // rejections that can crash the app when aborting mid-stream.
@@ -696,7 +778,8 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
             } catch {
               // Ignore cancel errors - the reader may already be cancelled
             }
-            if (readError?.name === 'AbortError' || abortSignal?.aborted) {
+            const errorName = readError instanceof Error ? readError.name : '';
+            if (errorName === 'AbortError' || abortSignal?.aborted) {
               throw new Error('Request cancelled by user');
             }
             throw readError;
@@ -706,7 +789,7 @@ toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
 
           if (done) break;
           pendingBuffer += decoder.decode(value, { stream: true });
-const { events, pending } = splitSseEvents(pendingBuffer);
+          const { events, pending } = splitSseEvents(pendingBuffer);
           pendingBuffer = pending;
 
           for (const event of events) {
@@ -760,7 +843,7 @@ const { events, pending } = splitSseEvents(pendingBuffer);
           await yieldToUI();
         } else {
           try {
-            const json = JSON.parse(text);
+            const json: StreamChunk = JSON.parse(text);
             const choice = json.choices?.[0];
             const message = choice?.message;
             if (message?.content) {
@@ -784,14 +867,15 @@ const { events, pending } = splitSseEvents(pendingBuffer);
               ]);
               onChunk('', toolCallsBuffer);
             }
-          } catch (e) {
+          } catch {
             throw new Error('Unable to parse model response');
           }
         }
         onComplete(fullContent, toolCallsBuffer.length > 0 ? toolCallsBuffer : undefined);
       }
     } catch (error) {
-if ((error as any)?.name === 'AbortError') {
+      const abortError = error as Error & { name?: string };
+      if (abortError?.name === 'AbortError') {
         onError(new Error('Request cancelled by user'));
         return;
       }

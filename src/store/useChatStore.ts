@@ -54,11 +54,16 @@ interface ChatState {
   updateModeInConversation: (conversationId: string, modeId: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'timestamp' | 'id'> & { id?: string }) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
-  updateMessageReasoning: (conversationId: string, messageId: string, reasoning: string) => void;
   finalizeMessage: (
     conversationId: string,
     messageId: string,
-    payload: { content?: string; reasoning?: string; updatedAt?: number; apiRequestDetails?: ApiRequestDetails }
+    payload: {
+      content?: string;
+      reasoning?: string;
+      updatedAt?: number;
+      apiRequestDetails?: ApiRequestDetails;
+      thoughtDurationMs?: number;
+    }
   ) => void;
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
   addToolCall: (conversationId: string, messageId: string, toolCall: ToolCall) => void;
@@ -91,17 +96,24 @@ export const useChatStore = create<ChatState>()(
   (set, get) => {
     let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const schedulePersist = () => {
+    const cancelPendingPersist = () => {
       if (persistTimer) {
         clearTimeout(persistTimer);
+        persistTimer = null;
       }
+    };
+
+    const schedulePersist = () => {
+      cancelPendingPersist();
 
       persistTimer = setTimeout(() => {
         persistTimer = null;
         const state = get();
-        void saveChatStateToRealm({
+        saveChatStateToRealm({
           conversations: state.conversations,
           activeConversationId: state.activeConversationId,
+        }).catch(() => {
+          // Error already logged inside saveChatStateToRealm
         });
       }, 120);
     };
@@ -119,6 +131,7 @@ export const useChatStore = create<ChatState>()(
       },
 
       clearAllChatData: async () => {
+        cancelPendingPersist();
         clearAllAncillaryState();
         set({
           conversations: [],
@@ -128,7 +141,7 @@ export const useChatStore = create<ChatState>()(
       },
 
       createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
-const now = Date.now();
+        const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
@@ -148,86 +161,74 @@ const now = Date.now();
       },
 
       setActiveConversation: (id) => {
-set({ activeConversationId: id });
+        set({ activeConversationId: id });
         schedulePersist();
       },
 
       deleteConversation: (id) => {
         clearConversationAncillaryState(id);
-        set((state) => {
-return {
+        set((state) => ({
           conversations: state.conversations.filter((c) => c.id !== id),
           activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
-        };
-        });
+        }));
         schedulePersist();
       },
 
       updateProviderInConversation: (conversationId, providerId) => {
-        set((state) => {
-return {
-          conversations: state.conversations.map((c) =>
-            c.id === conversationId ? { ...c, providerId } : c
-          ),
-        };
-        });
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            providerId,
+          })),
+        }));
         schedulePersist();
       },
 
       updateModelInConversation: (conversationId, providerId, model) => {
-        set((state) => {
-return {
-          conversations: state.conversations.map((c) => {
-            if (c.id === conversationId) {
-              return { ...c, providerId, modelOverride: model };
-            }
-            return c;
-          }),
-        };
-        });
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            providerId,
+            modelOverride: model,
+          })),
+        }));
         schedulePersist();
       },
 
       updateModeInConversation: (conversationId, modeId) => {
-        set((state) => {
-return {
-          conversations: state.conversations.map((c) =>
-            c.id === conversationId ? { ...c, modeId } : c
-          ),
-        };
-        });
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            modeId,
+          })),
+        }));
         schedulePersist();
       },
 
       addMessage: (conversationId, message) => {
-        set((state) => {
-return {
-          conversations: state.conversations.map((c) => {
-            if (c.id === conversationId) {
-              const newMessage = {
-                ...message,
-                id: message.id || (uuid.v4() as string),
-                timestamp: Date.now(),
-              };
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => {
+            const newMessage = {
+              ...message,
+              id: message.id || (uuid.v4() as string),
+              timestamp: Date.now(),
+            };
 
-              const shouldAutoTitle =
-                message.role === 'user' &&
-                !!message.content?.trim() &&
-                isPlaceholderTitle(c.title);
+            const shouldAutoTitle =
+              message.role === 'user' &&
+              !!message.content?.trim() &&
+              isPlaceholderTitle(conversation.title);
 
-              return {
-                ...c,
-                title: shouldAutoTitle
-                  ? generateConversationTitle(message.content)
-                  : c.title,
-                messages: [...c.messages, newMessage],
-                updatedAt: Date.now(),
-              };
-            }
-            return c;
+            return {
+              ...conversation,
+              title: shouldAutoTitle
+                ? generateConversationTitle(message.content)
+                : conversation.title,
+              messages: [...conversation.messages, newMessage],
+              updatedAt: Date.now(),
+            };
           }),
-        };
-        });
+        }));
         schedulePersist();
       },
 
@@ -244,19 +245,6 @@ return {
         schedulePersist();
       },
 
-      updateMessageReasoning: (conversationId, messageId, reasoning) => {
-        set((state) => ({
-          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-            ...conversation,
-            messages: mapMessages(conversation.messages, messageId, (message) => ({
-              ...message,
-              reasoning,
-            })),
-          })),
-        }));
-        schedulePersist();
-      },
-
       finalizeMessage: (conversationId, messageId, payload) => {
         set((state) => ({
           conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
@@ -266,6 +254,7 @@ return {
               content: payload.content ?? message.content,
               reasoning: payload.reasoning ?? message.reasoning,
               ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
+              ...(payload.thoughtDurationMs !== undefined ? { thoughtDurationMs: payload.thoughtDurationMs } : {}),
             })),
             updatedAt: payload.updatedAt ?? Date.now(),
           })),

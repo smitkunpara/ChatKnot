@@ -4,7 +4,14 @@ import {
   OpenApiValidationFailure,
   OpenApiValidationResult,
 } from '../../types';
-import { ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
+import {
+  ensureHttpUrl,
+  extractSecuritySchemeNames,
+  extractSecurityHeaders,
+  sanitizeToolName,
+  buildAuthHeaders,
+  resolveToolBaseUrl as sharedResolveToolBaseUrl,
+} from './openApiHelpers';
 
 type ValidateOpenApiEndpointInput = {
   url: string;
@@ -15,34 +22,6 @@ type ValidateOpenApiEndpointInput = {
 
 const CALLABLE_HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch'];
 
-const hasHeader = (headers: Record<string, string>, headerName: string): boolean => {
-  const target = headerName.toLowerCase();
-  return Object.keys(headers).some((name) => name.toLowerCase() === target);
-};
-
-const buildValidationHeaders = (
-  headers?: Record<string, string>,
-  token?: string
-): Record<string, string> => {
-  const mergedHeaders: Record<string, string> = { ...(headers || {}) };
-  const trimmedToken = String(token || '').trim();
-  if (!trimmedToken) {
-    return mergedHeaders;
-  }
-
-  if (!hasHeader(mergedHeaders, 'authorization')) {
-    mergedHeaders.Authorization = `Bearer ${trimmedToken}`;
-  }
-  if (!hasHeader(mergedHeaders, 'x-api-key')) {
-    mergedHeaders['x-api-key'] = trimmedToken;
-  }
-  if (!hasHeader(mergedHeaders, 'api-key')) {
-    mergedHeaders['api-key'] = trimmedToken;
-  }
-
-  return mergedHeaders;
-};
-
 const toFailure = (error: OpenApiValidationError): OpenApiValidationFailure => ({
   ok: false,
   error,
@@ -52,7 +31,14 @@ const looksLikeSpecUrl = (url: string): boolean => {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname.toLowerCase();
-    return path.endsWith('.json') || path.includes('openapi');
+    return (
+      path.endsWith('/openapi.json') ||
+      path.endsWith('/openapi.yaml') ||
+      path.endsWith('/openapi.yml') ||
+      path.endsWith('/swagger.json') ||
+      path === '/openapi' ||
+      path === '/swagger'
+    );
   } catch {
     return false;
   }
@@ -85,16 +71,6 @@ const resolveSchema = (schema: any, components: any): any => {
   return schema;
 };
 
-const sanitizeToolName = (name: string): string => {
-  // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
-  // We prefer underscores over hyphens for broader compatibility across all providers
-  const sanitized = name
-    .replace(/[^a-zA-Z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-  return sanitized || 'tool';
-};
-
 export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
   const tools: McpToolSchema[] = [];
   const schemas = spec?.components?.schemas || {};
@@ -119,16 +95,22 @@ export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
       let inputSchema: any = { type: 'object', properties: {}, required: [] };
 
       if (operation.requestBody?.content?.['application/json']?.schema) {
-        const bodySchema = resolveSchema(operation.requestBody.content['application/json'].schema, schemas);
+        const bodySchema = resolveSchema(
+          operation.requestBody.content['application/json'].schema,
+          schemas
+        );
         if (bodySchema && typeof bodySchema === 'object') {
-          // If the schema is already an object type, merge its properties
           if (bodySchema.type === 'object' || bodySchema.properties) {
-            inputSchema.properties = { ...inputSchema.properties, ...(bodySchema.properties || {}) };
+            inputSchema.properties = {
+              ...inputSchema.properties,
+              ...(bodySchema.properties || {}),
+            };
             if (Array.isArray(bodySchema.required)) {
-              inputSchema.required = Array.from(new Set([...inputSchema.required, ...bodySchema.required]));
+              inputSchema.required = Array.from(
+                new Set([...inputSchema.required, ...bodySchema.required])
+              );
             }
           } else {
-            // Fallback: put the entire schema under a 'body' property if it's not a top-level object
             inputSchema.properties.body = bodySchema;
           }
         }
@@ -145,22 +127,19 @@ export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
         });
       }
 
-      // Ensure properties and required are valid for OpenAI
-      if (Object.keys(inputSchema.properties).length === 0) {
-        // Many providers reject tools with empty properties unless it's null or omitted,
-        // but OpenAI standard usually expects an object. We'll leave it as empty object for now.
-      }
       if (inputSchema.required.length === 0) {
         delete inputSchema.required;
       }
 
       const operationSecurity = extractSecuritySchemeNames(operation?.security);
-      const appliedSecurity = operationSecurity.length > 0 ? operationSecurity : globalSecurity;
+      const appliedSecurity =
+        operationSecurity.length > 0 ? operationSecurity : globalSecurity;
       const securityHeaders = extractSecurityHeaders(spec, appliedSecurity);
 
       tools.push({
         name,
-        description: operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
+        description:
+          operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
         inputSchema,
         _meta: { path, method, baseUrl: spec?.servers?.[0]?.url, securityHeaders },
       });
@@ -195,7 +174,11 @@ const validateSpecShape = (spec: any): OpenApiValidationFailure | null => {
     }
   }
 
-  if (!spec.paths || typeof spec.paths !== 'object' || Object.keys(spec.paths).length === 0) {
+  if (
+    !spec.paths ||
+    typeof spec.paths !== 'object' ||
+    Object.keys(spec.paths).length === 0
+  ) {
     missingFields.push('paths');
   }
 
@@ -213,7 +196,11 @@ const validateSpecShape = (spec: any): OpenApiValidationFailure | null => {
   return null;
 };
 
-const resolveToolBaseUrl = (normalizedInputUrl: string, resolvedSpecUrl: string, spec: any): string => {
+const resolveSpecToolBaseUrl = (
+  normalizedInputUrl: string,
+  resolvedSpecUrl: string,
+  spec: any
+): string => {
   const serverUrl = String(spec?.servers?.[0]?.url || '').trim();
 
   if (serverUrl) {
@@ -232,7 +219,8 @@ const resolveToolBaseUrl = (normalizedInputUrl: string, resolvedSpecUrl: string,
   const parsedSpecUrl = new URL(resolvedSpecUrl);
   const lowerPath = parsedSpecUrl.pathname.toLowerCase();
   if (lowerPath.endsWith('/openapi.json')) {
-    parsedSpecUrl.pathname = parsedSpecUrl.pathname.slice(0, -'/openapi.json'.length) || '/';
+    parsedSpecUrl.pathname =
+      parsedSpecUrl.pathname.slice(0, -'/openapi.json'.length) || '/';
     parsedSpecUrl.search = '';
     parsedSpecUrl.hash = '';
     return parsedSpecUrl.toString().replace(/\/$/, '');
@@ -263,7 +251,7 @@ export const validateOpenApiEndpoint = async (
     });
   }
 
-  const headers = buildValidationHeaders(input.headers, input.token);
+  const headers = buildAuthHeaders(input.headers, input.token);
   const fetchImpl = input.fetchImpl || fetch;
   const probeUrls = buildProbeUrls(normalizedInputUrl);
   const attemptedUrls: string[] = [];
@@ -280,7 +268,8 @@ export const validateOpenApiEndpoint = async (
       lastFailure = toFailure({
         code: 'FETCH_FAILED',
         field: 'network',
-        message: 'Unable to reach the server. Check URL, network connectivity, and SSL setup.',
+        message:
+          'Unable to reach the server. Check URL, network connectivity, and SSL setup.',
       });
       continue;
     }
@@ -323,7 +312,8 @@ export const validateOpenApiEndpoint = async (
       lastFailure = toFailure({
         code: 'NO_OPERATIONS',
         field: 'spec',
-        message: 'OpenAPI spec has no callable operations (GET/POST/PUT/PATCH/DELETE).',
+        message:
+          'OpenAPI spec has no callable operations (GET/POST/PUT/PATCH/DELETE).',
       });
       continue;
     }
@@ -332,7 +322,7 @@ export const validateOpenApiEndpoint = async (
       ok: true,
       normalizedInputUrl,
       resolvedSpecUrl: probeUrl,
-      resolvedBaseUrl: resolveToolBaseUrl(normalizedInputUrl, probeUrl, spec),
+      resolvedBaseUrl: resolveSpecToolBaseUrl(normalizedInputUrl, probeUrl, spec),
       spec,
       tools,
     };

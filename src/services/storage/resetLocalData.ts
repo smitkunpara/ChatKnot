@@ -4,7 +4,9 @@ import { useContextUsageStore } from '../../store/useContextUsageStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useChatRuntimeStore } from '../../store/useChatRuntimeStore';
 import { defaultSecretVault } from './SecretVault';
+import { clearMigrationMarker } from './migrations';
 import { STORAGE_KEYS } from '../../constants/storage';
+import { deleteRealmFile } from '../chat/ChatRealmRepository';
 
 const CHAT_REALM_KEY_ALIAS = STORAGE_KEYS.CHAT_REALM_KEY_ALIAS;
 const SETTINGS_STORAGE_KEY_ALIAS = STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS;
@@ -89,6 +91,7 @@ export const resetAllLocalData = async (): Promise<void> => {
   useChatDraftStore.getState().clearAllDrafts();
   useContextUsageStore.getState().clearAllUsage();
   await useChatStore.getState().clearAllChatData();
+  await deleteRealmFile();
 
   useSettingsStore.getState().replaceAllSettings({
     providers: [],
@@ -101,7 +104,8 @@ export const resetAllLocalData = async (): Promise<void> => {
 
   await clearPersistedStoreStorage();
 
-  await Promise.allSettled(
-    secretKeys.map((key) => defaultSecretVault.deleteSecret(key))
-  );
+  await Promise.allSettled([
+    ...secretKeys.map((key) => defaultSecretVault.deleteSecret(key)),
+    clearMigrationMarker(),
+  ]);
 };

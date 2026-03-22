@@ -41,7 +41,6 @@ import {
   updateProviderDraft,
   updateServerDraft,
   beginModeDraft,
-  updateModeDraft,
   discardModeDraft,
   saveModeDraft,
   ModeDraftMap,
@@ -53,9 +52,37 @@ import {
 import {
   hasServerDraftChanges,
 } from './settingsServerPolicy';
-import { applyHealthCheckReport, runStartupHealthCheck } from '../services/startup/StartupHealthCheck';
+import { applyHealthCheckReport, runStartupHealthCheck, reconcileMcpTools } from '../services/startup/StartupHealthCheck';
 import { validateImportPayload } from '../utils/settingsValidation';
 import { resetAllLocalData } from '../services/storage/resetLocalData';
+import { ModeEditor } from '../components/settings/ModeEditor';
+import { ProviderEditor } from '../components/settings/ProviderEditor';
+import { McpServerEditor } from '../components/settings/McpServerEditor';
+import { ModelPicker } from '../components/settings/ModelPicker';
+
+const refreshServerTools = async (
+  server: McpServerConfig,
+  updateMcpServerFn: (server: McpServerConfig) => void,
+  validateEndpointFn: typeof validateOpenApiEndpoint
+): Promise<void> => {
+  try {
+    const validation = await validateEndpointFn({
+      url: server.url,
+      headers: server.headers || {},
+    });
+    if (!validation.ok) return;
+
+    const freshToolNames = validation.tools.map((t) => t.name);
+    const oldToolNames = (server.tools || []).map(t => t.name);
+    const removedTools = oldToolNames.filter(n => !freshToolNames.includes(n));
+
+    updateMcpServerFn(
+      reconcileMcpTools(server, validation.tools, removedTools, freshToolNames)
+    );
+  } catch {
+    // silent — works fine with cached tool data
+  }
+};
 
 const THEME_OPTIONS: Array<{ label: string; value: 'system' | 'light' | 'dark' }> = [
   { label: 'System', value: 'system' },
@@ -146,7 +173,6 @@ export const SettingsScreen = () => {
   const [editingProviders, setEditingProviders] = useState<Record<string, boolean>>({});
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
-  const [draftModelCapabilities, setDraftModelCapabilities] = useState<Record<string, Record<string, ModelCapabilities>>>({});
   const [activeView, setActiveView] = useState<SettingsView>('index');
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importPayloadText, setImportPayloadText] = useState('');
@@ -178,7 +204,6 @@ export const SettingsScreen = () => {
     setProviderDrafts({});
     setServerDrafts({});
 
-    setDraftModelCapabilities({});
     setModelPickerVisible(false);
     setActiveProviderIdForPicker(null);
     setModelSearch('');
@@ -351,12 +376,6 @@ export const SettingsScreen = () => {
       ...prev,
       [providerId]: false,
     }));
-
-    setDraftModelCapabilities(prev => {
-      const next = { ...prev };
-      delete next[providerId];
-      return next;
-    });
 
     if (activeProviderIdForPicker === providerId) {
       setModelPickerVisible(false);
@@ -632,46 +651,8 @@ export const SettingsScreen = () => {
     setEditingServerId(server.id);
     setActiveView('mcpServerEditor');
 
-    // Silently refresh tool list for this server in the background
     if (server.url && server.enabled) {
-      void (async () => {
-        try {
-          const validation = await validateOpenApiEndpoint({
-            url: server.url,
-            headers: server.headers || {},
-          });
-          if (!validation.ok) return;
-
-          const freshTools = validation.tools;
-          const freshToolNames: string[] = freshTools.map((t: any) => t.name);
-          const oldToolNames = new Set((server.tools || []).map(t => t.name));
-          const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
-          const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
-
-          const cleanedAllowed = (server.allowedTools || []).filter(
-            t => !removedSet.has(t) && freshToolNames.includes(t)
-          );
-          const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
-            t => !removedSet.has(t) && freshToolNames.includes(t)
-          );
-
-          // New tools disabled by default when the server had prior tools
-          let nextAllowed = [...cleanedAllowed];
-          const hadPreviousTools = (server.tools || []).length > 0;
-          if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
-            nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
-          }
-
-          updateMcpServer({
-            ...server,
-            tools: freshTools,
-            allowedTools: nextAllowed,
-            autoApprovedTools: cleanedAutoApproved,
-          });
-        } catch {
-          // silent — editor works fine with cached data
-        }
-      })();
+      void refreshServerTools(server, updateMcpServer, validateOpenApiEndpoint);
     }
   };
 
@@ -1135,264 +1116,24 @@ export const SettingsScreen = () => {
         ) : null}
 
         {activeView === 'modeEditor' && editingMode && editingModeDraft ? (
-          <>
-            <View style={styles.sectionCard}>
-              <View style={styles.row}>
-                <Text style={styles.sectionTitle}>Mode Settings</Text>
-                {editingMode.isDefault ? (
-                  <View style={styles.defaultBadge}>
-                    <Text style={styles.defaultBadgeText}>Default Mode</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.setDefaultBtn}
-                    onPress={() => setDefaultMode(editingMode.id)}
-                  >
-                    <Check size={14} color={colors.primary} />
-                    <Text style={styles.setDefaultText}>Set as Default</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Mode Name</Text>
-              <TextInput
-                style={styles.input}
-                value={editingModeDraft.name ?? ''}
-                onChangeText={name =>
-                  setModeDrafts(prev => updateModeDraft(prev, editingMode.id, { name: name.slice(0, MAX_MODE_NAME_LENGTH) }))
-                }
-                placeholder="Mode name"
-                placeholderTextColor={colors.placeholder}
-                maxLength={MAX_MODE_NAME_LENGTH}
-              />
-            </View>
-
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>System Prompt</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                multiline
-                value={editingModeDraft.systemPrompt ?? ''}
-                onChangeText={systemPrompt =>
-                  setModeDrafts(prev => updateModeDraft(prev, editingMode.id, { systemPrompt }))
-                }
-                placeholder="Set a system instruction for this mode..."
-                placeholderTextColor={colors.placeholder}
-              />
-            </View>
-
-            <Text style={styles.sectionHeader}>MCP Servers</Text>
-            {mcpServers.length > 0 ? (
-              mcpServers.map(server => {
-                const overrides = editingModeDraft.mcpServerOverrides ?? {};
-                const override = overrides[server.id];
-                // Default to disabled in mode context — user must explicitly enable per-mode
-                const isEnabled = override ? override.enabled : false;
-                const allowedTools = override?.allowedTools ?? server.allowedTools ?? [];
-                const autoApprovedTools = override?.autoApprovedTools ?? server.autoApprovedTools ?? [];
-                const isExpanded = expandedMcpInMode[server.id] ?? false;
-
-                const runtime = mcpRuntimeById[server.id];
-                const runtimeToolNames = Array.from(
-                  new Set([
-                    ...(runtime?.toolNames || []),
-                    ...((server.tools || []).map((t: any) => t.name)),
-                  ])
-                );
-
-                const totalTools = runtimeToolNames.length;
-                let enabledCount = 0;
-                if (totalTools > 0) {
-                  if (!isEnabled) {
-                    enabledCount = 0;
-                  } else {
-                    if ((allowedTools || []).length === 0) {
-                      enabledCount = totalTools;
-                    } else {
-                      const allowedSet = new Set(allowedTools);
-                      enabledCount = runtimeToolNames.filter(n => allowedSet.has(n)).length;
-                    }
-                  }
-                }
-
-                const updateOverride = (patch: Partial<import('../types').ModeServerOverride>) => {
-                  if (!editingMode.id) return;
-                  setModeDrafts(prev => updateModeDraft(prev, editingMode.id, {
-                    mcpServerOverrides: {
-                      ...overrides,
-                      [server.id]: {
-                        enabled: isEnabled,
-                        allowedTools,
-                        autoApprovedTools,
-                        ...patch,
-                      },
-                    },
-                  }));
-                };
-
-                const handleToggleMcpEnabled = (enabled: boolean) => {
-                  updateOverride({ enabled });
-                  if (enabled) {
-                    // Auto-expand and fetch fresh tools when user enables this MCP
-                    setExpandedMcpInMode(prev => ({ ...prev, [server.id]: true }));
-                    if (server.url) {
-                      void (async () => {
-                        try {
-                          const validation = await validateOpenApiEndpoint({
-                            url: server.url,
-                            headers: server.headers || {},
-                          });
-                          if (!validation.ok) return;
-                          const freshTools = validation.tools;
-                          const freshToolNames: string[] = freshTools.map((t: any) => t.name);
-                          const oldToolNames = new Set((server.tools || []).map(t => t.name));
-                          const removedSet = new Set([...oldToolNames].filter(n => !freshToolNames.includes(n)));
-                          const newTools = freshToolNames.filter((n: string) => !oldToolNames.has(n));
-                          const cleanedAllowed = (server.allowedTools || []).filter(
-                            t => !removedSet.has(t) && freshToolNames.includes(t)
-                          );
-                          const cleanedAutoApproved = (server.autoApprovedTools || []).filter(
-                            t => !removedSet.has(t) && freshToolNames.includes(t)
-                          );
-                          let nextAllowed = [...cleanedAllowed];
-                          const hadPreviousTools = (server.tools || []).length > 0;
-                          if (newTools.length > 0 && hadPreviousTools && nextAllowed.length === 0) {
-                            nextAllowed = freshToolNames.filter((t: string) => !newTools.includes(t));
-                          }
-                          updateMcpServer({
-                            ...server,
-                            tools: freshTools,
-                            allowedTools: nextAllowed,
-                            autoApprovedTools: cleanedAutoApproved,
-                          });
-                        } catch {
-                          // silent — works fine with cached tool data
-                        }
-                      })();
-                    }
-                  } else {
-                    // Collapse when disabled
-                    setExpandedMcpInMode(prev => ({ ...prev, [server.id]: false }));
-                  }
-                };
-
-                return (
-                  <View key={server.id} style={[styles.categoryCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
-                    {/* Top row: name left, chevron+toggle right */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <TouchableOpacity
-                      style={{ flex: 1 }}
-                      onPress={() => {
-                        if (isEnabled) {
-                          setExpandedMcpInMode(prev => ({ ...prev, [server.id]: !isExpanded }));
-                        }
-                      }}
-                      activeOpacity={isEnabled ? 0.7 : 1}
-                    >
-                      <Text style={styles.categoryTitle} numberOfLines={1}>{server.name}</Text>
-                      {runtimeToolNames.length > 0 ? (
-                        <Text style={styles.categoryDescription} numberOfLines={1}>
-                          {`${enabledCount}/${totalTools} tools enabled`}
-                        </Text>
-                      ) : (
-                        <Text style={styles.categoryDescription} numberOfLines={1}>{server.url}</Text>
-                      )}
-                    </TouchableOpacity>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {/* Always reserve space for chevron to prevent layout shifts */}
-                      <TouchableOpacity
-                        style={{ padding: 4, marginRight: 4, opacity: isEnabled ? 1 : 0 }}
-                        disabled={!isEnabled}
-                        onPress={() => setExpandedMcpInMode(prev => ({ ...prev, [server.id]: !isExpanded }))}
-                      >
-                        {isExpanded ? (
-                          <ChevronRight size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '270deg' }] }} />
-                        ) : (
-                          <ChevronRight size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '90deg' }] }} />
-                        )}
-                      </TouchableOpacity>
-                      <Switch
-                        value={isEnabled}
-                        onValueChange={handleToggleMcpEnabled}
-                        trackColor={{ false: colors.border, true: colors.primarySoft }}
-                        thumbColor={isEnabled ? colors.primary : colors.textTertiary}
-                      />
-                    </View>
-                    </View>
-
-                    {/* Tool controls — only shown when enabled AND expanded */}
-                    {isEnabled && isExpanded && runtimeToolNames.length > 0 ? (
-                      <View style={styles.toolPermissionWrap}>
-                        <Text style={styles.permissionTitle}>Tool Controls</Text>
-                        <Text style={styles.permissionHint}>Enable and auto-approve tools individually per mode.</Text>
-                        {runtimeToolNames.map(toolName => {
-                          const isToolEnabled = allowedTools.length === 0 || allowedTools.includes(toolName);
-                          const isToolAutoApproved = autoApprovedTools.includes(toolName);
-                          return (
-                            <View key={`mode-${server.id}-tool-${toolName}`} style={styles.toolPermissionRow}>
-                              <Text style={styles.toolPermissionName} numberOfLines={1}>{toolName}</Text>
-                              <View style={styles.toolPermissionActions}>
-                                <TouchableOpacity
-                                  style={[styles.checkboxPill, isToolEnabled ? styles.checkboxPillActive : undefined]}
-                                  onPress={() => {
-                                    const current = allowedTools.length === 0 ? [...runtimeToolNames] : [...allowedTools];
-                                    const next = isToolEnabled
-                                      ? current.filter(t => t !== toolName)
-                                      : [...current, toolName];
-                                    const allEnabled = runtimeToolNames.every(t => next.includes(t));
-                                    updateOverride({ allowedTools: allEnabled ? [] : next });
-                                  }}
-                                >
-                                  <Check size={12} color={isToolEnabled ? colors.onPrimary : colors.textTertiary} />
-                                  <Text style={[styles.checkboxPillText, isToolEnabled ? styles.checkboxPillTextActive : undefined]}>Enabled</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  style={[styles.checkboxPill, isToolAutoApproved ? styles.checkboxPillActive : undefined]}
-                                  onPress={() => {
-                                    const next = isToolAutoApproved
-                                      ? autoApprovedTools.filter(t => t !== toolName)
-                                      : [...autoApprovedTools, toolName];
-                                    updateOverride({ autoApprovedTools: next });
-                                  }}
-                                >
-                                  <Check size={12} color={isToolAutoApproved ? colors.onPrimary : colors.textTertiary} />
-                                  <Text style={[styles.checkboxPillText, isToolAutoApproved ? styles.checkboxPillTextActive : undefined]}>Auto</Text>
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })
-            ) : (
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionHint}>No MCP servers configured. Add servers in the MCP Servers category.</Text>
-              </View>
-            )}
-
-            <View style={styles.modeEditorActions}>
-              <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={saveModeEditor}>
-                <Plus size={16} color={colors.onPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
-                <Text style={styles.primaryButtonText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={cancelModeEditor}>
-                <X size={16} color={colors.textSecondary} />
-                <Text style={styles.secondaryButtonText}>Discard</Text>
-              </TouchableOpacity>
-            </View>
-
-            {!editingMode.isDefault ? (
-              <TouchableOpacity style={styles.dangerButton} onPress={() => handleRemoveMode(editingMode)}>
-                <Trash2 size={16} color={colors.danger} />
-                <Text style={styles.dangerButtonText}>Delete Mode</Text>
-              </TouchableOpacity>
-            ) : null}
-          </>
+          <ModeEditor
+            editingMode={editingMode}
+            editingModeDraft={editingModeDraft}
+            mcpServers={mcpServers}
+            mcpRuntimeById={mcpRuntimeById}
+            expandedMcpInMode={expandedMcpInMode}
+            colors={colors}
+            styles={styles}
+            setModeDrafts={setModeDrafts}
+            setExpandedMcpInMode={setExpandedMcpInMode}
+            setDefaultMode={setDefaultMode}
+            updateMcpServer={updateMcpServer}
+            onSave={saveModeEditor}
+            onCancel={promptModeUnsavedChanges}
+            onDelete={() => handleRemoveMode(editingMode)}
+            refreshServerTools={refreshServerTools}
+            MAX_MODE_NAME_LENGTH={MAX_MODE_NAME_LENGTH}
+          />
         ) : null}
 
         {activeView === 'mcpServers' ? (
@@ -1875,9 +1616,8 @@ export const SettingsScreen = () => {
                 keyExtractor={item => item}
                 renderItem={({ item: model }) => {
                   const isHidden = (activeProviderDraftForPicker?.hiddenModels || []).includes(model);
-                  const draftCaps = draftModelCapabilities[activeProviderForPicker?.id || '']?.[model];
                   const storedCaps = activeProviderForPicker?.modelCapabilities?.[model];
-                  const tags = getCapabilityTags(draftCaps || storedCaps);
+                  const tags = getCapabilityTags(storedCaps);
 
                   const updateProviderDraftLocal = (patch: Partial<LlmProviderConfig>) => {
                     if (!activeProviderForPicker) return;
@@ -2141,12 +1881,6 @@ const createStyles = (colors: AppPalette) =>
       color: colors.text,
       fontWeight: '700',
     },
-    subTitle: {
-      color: colors.text,
-      fontSize: 14,
-      fontWeight: '700',
-      marginBottom: 10,
-    },
     input: {
       backgroundColor: colors.inputBackground,
       color: colors.text,
@@ -2157,9 +1891,6 @@ const createStyles = (colors: AppPalette) =>
       fontSize: 14,
       borderWidth: 1,
       borderColor: colors.inputBorder,
-    },
-    inputDisabled: {
-      opacity: 0.72,
     },
     textArea: {
       minHeight: 96,
@@ -2245,28 +1976,6 @@ const createStyles = (colors: AppPalette) =>
       alignItems: 'center',
       marginBottom: 8,
     },
-    rowRight: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    iconButton: {
-      width: 34,
-      height: 34,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 9,
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    providerName: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: '700',
-      flex: 1,
-      marginRight: 8,
-    },
     modelPickerBtn: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -2278,9 +1987,6 @@ const createStyles = (colors: AppPalette) =>
       paddingVertical: 10,
       borderRadius: 10,
       marginTop: 2,
-    },
-    modelPickerBtnDisabled: {
-      opacity: 0.72,
     },
     modelLabel: {
       color: colors.textTertiary,
@@ -2351,33 +2057,6 @@ const createStyles = (colors: AppPalette) =>
     statusTextPending: {
       color: colors.textSecondary,
     },
-    statusSub: {
-      color: colors.textTertiary,
-      fontSize: 12,
-      marginTop: 4,
-    },
-    itemTitle: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: '700',
-    },
-    serverNameInput: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: '700',
-      paddingVertical: 0,
-    },
-    serverSub: {
-      color: colors.textTertiary,
-      fontSize: 12,
-      marginTop: 3,
-    },
-    serverEditWrap: {
-      marginTop: 6,
-      paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
     inlineInputs: {
       flexDirection: 'row',
       gap: 8,
@@ -2420,31 +2099,11 @@ const createStyles = (colors: AppPalette) =>
       fontSize: 12,
       fontWeight: '700',
     },
-    inlineInput: {
-      flex: 1,
-    },
     serverHint: {
       color: colors.textSecondary,
       fontSize: 12,
       marginBottom: 8,
       marginTop: -2,
-    },
-    overrideLabel: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      flex: 1,
-    },
-    permissionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 10,
-      marginBottom: 10,
-      padding: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 10,
-      backgroundColor: colors.surfaceAlt,
     },
     permissionTitle: {
       color: colors.text,
@@ -2507,57 +2166,6 @@ const createStyles = (colors: AppPalette) =>
     checkboxPillTextActive: {
       color: colors.onPrimary,
     },
-    toolTagWrap: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 6,
-      marginBottom: 10,
-    },
-    toolTag: {
-      borderWidth: 1,
-      borderColor: colors.subtleBorder,
-      backgroundColor: colors.surfaceAlt,
-      borderRadius: 999,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      maxWidth: '100%',
-    },
-    toolTagText: {
-      color: colors.textSecondary,
-      fontSize: 11,
-      fontWeight: '600',
-    },
-    instructionWrap: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 10,
-      backgroundColor: colors.surfaceAlt,
-      padding: 10,
-      marginBottom: 8,
-    },
-    instructionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 6,
-    },
-    instructionTitle: {
-      color: colors.text,
-      fontSize: 12,
-      fontWeight: '700',
-      textTransform: 'uppercase',
-    },
-    instructionToggle: {
-      color: colors.primary,
-      fontSize: 12,
-      fontWeight: '700',
-    },
-    instructionText: {
-      color: colors.textSecondary,
-      fontSize: 12,
-      lineHeight: 18,
-      fontFamily: 'monospace',
-    },
     modalOverlay: {
       flex: 1,
       backgroundColor: colors.overlay,
@@ -2569,10 +2177,6 @@ const createStyles = (colors: AppPalette) =>
       justifyContent: 'flex-start',
       alignItems: 'center',
       paddingTop: 74,
-    },
-    modalKeyboardAvoiding: {
-      width: '100%',
-      justifyContent: 'flex-end',
     },
     modelPickerKeyboardAvoiding: {
       width: '100%',
@@ -2621,39 +2225,6 @@ const createStyles = (colors: AppPalette) =>
       color: colors.primary,
       fontSize: 14,
       fontWeight: '600',
-    },
-    modelRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 13,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    modelRowActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-    },
-    modelEyeButton: {
-      width: 30,
-      height: 30,
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    modelRowTextWrap: {
-      flex: 1,
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      marginRight: 10,
-    },
-    modelRowText: {
-      color: colors.text,
-      fontSize: 14,
     },
     modelRowCaps: {
       color: colors.primary,

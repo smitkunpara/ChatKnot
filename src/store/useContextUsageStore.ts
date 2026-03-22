@@ -3,7 +3,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import { STORAGE_KEYS } from '../constants/storage';
 
-
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
@@ -26,7 +25,6 @@ interface ContextUsageState {
   clearUsage: (conversationId: string) => void;
   clearAllUsage: () => void;
   getUsage: (conversationId: string) => ContextUsageData | null;
-  getUsageForModel: (conversationId: string, providerId: string, model: string) => ContextUsageData | null;
 }
 
 const contextPersistStorage = createEncryptedStateStorage({
@@ -62,13 +60,6 @@ export const useContextUsageStore = create<ContextUsageState>()(
 
       getUsage: (conversationId) => {
         return get().usageByConversation[conversationId] ?? null;
-      },
-
-      getUsageForModel: (conversationId, providerId, model) => {
-        const usage = get().usageByConversation[conversationId];
-        if (!usage) return null;
-        if (usage.providerId !== providerId || usage.model !== model) return null;
-        return usage;
       },
     }),
     {

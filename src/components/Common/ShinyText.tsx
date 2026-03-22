@@ -14,7 +14,6 @@ interface ShinyTextProps {
   text: string;
   disabled?: boolean;
   speed?: number;
-  className?: string; // Kept for compatibility with user snippet, but unused in native
   style?: TextStyle;
   color?: string;
   shineColor?: string;

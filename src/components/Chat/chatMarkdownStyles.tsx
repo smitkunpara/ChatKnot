@@ -1,11 +1,52 @@
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, View, TextStyle, ViewStyle } from 'react-native';
 import { AppPalette } from '../../theme/useAppTheme';
+
+export type MarkdownStyles = {
+  body: TextStyle;
+  heading1: TextStyle;
+  heading2: TextStyle;
+  heading3: TextStyle;
+  heading4: TextStyle;
+  heading5: TextStyle;
+  heading6: TextStyle;
+  paragraph: TextStyle;
+  text: TextStyle;
+  strong: TextStyle;
+  em: TextStyle;
+  s: TextStyle;
+  hr: ViewStyle;
+  code_inline: TextStyle;
+  code_block: TextStyle;
+  fence: TextStyle;
+  pre: ViewStyle;
+  link: TextStyle;
+  blockquote: ViewStyle;
+  bullet_list_icon: TextStyle;
+  ordered_list_icon: TextStyle;
+  list_item: TextStyle;
+  bullet_list: TextStyle;
+  ordered_list: TextStyle;
+  list_item_content: TextStyle;
+  table: ViewStyle;
+  thead: ViewStyle;
+  tbody: ViewStyle;
+  tr: ViewStyle;
+  th: ViewStyle;
+  td: ViewStyle;
+};
+
+export type TableRenderRules = {
+  table: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
+  th: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
+  td: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
+  tr: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
+};
 
 export const getTableColumnWidth = (viewportWidth: number) =>
   Math.max(140, Math.min(Math.floor((viewportWidth - 96) / 2), 220));
 
-export const createMarkdownStyles = (colors: AppPalette) => ({
+export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
   body: {
     color: colors.text,
     fontSize: 15,
@@ -181,7 +222,7 @@ export const createMarkdownStyles = (colors: AppPalette) => ({
   },
 });
 
-export const createTableRenderRules = (colors: AppPalette, columnWidth: number) => ({
+export const createTableRenderRules = (colors: AppPalette, columnWidth: number): TableRenderRules => ({
   table: (node: any, children: any) => (
     <ScrollView
       key={node.key}

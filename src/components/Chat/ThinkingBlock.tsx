@@ -28,7 +28,7 @@ interface ThinkingBlockProps {
 }
 
 /** Format elapsed milliseconds into a clean string like "0.4s" or "32.1s" */
-const formatDuration = (totalMs: number): string => {
+export const formatDuration = (totalMs: number): string => {
     if (totalMs === 0) return '';
     if (totalMs < 1000) return `${totalMs}ms`;
     const totalSeconds = totalMs / 1000;
