@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-22
+
 ### Added
 - **Encrypted Realm Chat Persistence** — Migrated chat persistence to encrypted Realm storage with normalized entities for conversations, messages, tool calls, and attachments while preserving existing chat behavior.
 - **Delete All Local Data Action** — Added a Settings data-management action to wipe local chats, drafts, context usage, settings state, and local secret references on-device.
@@ -16,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup Chat Hydration Path** — Startup now hydrates chat state from the new Realm-backed chat repository while keeping settings and secret vault flow unchanged.
 - **Startup Version Source** — Loading screen version display now resolves from runtime app config first (with package fallback) for reliable frontend version visibility.
 - **Android Reinstall Data Policy** — Disabled Android backup restore (`android:allowBackup="false"`) so uninstall/reinstall starts from a fresh local app state.
+
+### Optimized
+- **Android Binary Size Reduction** — Reduced APK size from ~142MB to ~45MB (68% reduction) for modern devices by enabling R8 minification, resource shrinking, and ABI splitting.
+- **Smart APK Naming** — Automated APK output renaming to follow the `ChatKnot-v<version>-<abi>-release.apk` format for easier version tracking.
 
 ### Fixed
 - **Share Icon Initial Background** — Fixed chat header share button background appearing transparent on first open; button now renders with its normal background immediately.

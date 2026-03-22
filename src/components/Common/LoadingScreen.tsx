@@ -45,7 +45,7 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
   });
 
   const runtimeVersion = Constants.expoConfig?.version;
-  const version = runtimeVersion || pkg.version || '0.3.1';
+  const version = runtimeVersion || pkg.version || '0.4.0';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

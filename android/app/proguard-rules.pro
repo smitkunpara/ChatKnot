@@ -11,4 +11,9 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
+# Realm (ensure JSI is preserved)
+-keep class io.realm.** { *; }
+-keep class io.realm.react.** { *; }
+-keep class com.mongodb.reactnative.worklets.** { *; }
+
 # Add any project specific keep options here:
