@@ -28,6 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>com.anonymous.mcpconnectorapp</string>
+          <string>chatknot</string>
         </array>
       </dict>
     </array>

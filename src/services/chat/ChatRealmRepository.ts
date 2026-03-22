@@ -4,7 +4,7 @@ import { Attachment, Conversation, Message, ToolCall } from '../../types';
 import { defaultSecretVault } from '../storage/SecretVault';
 
 const CHAT_REALM_PATH = 'chat.realm';
-const CHAT_REALM_KEY_ALIAS = 'chat-realm:encryption-key';
+const CHAT_REALM_KEY_ALIAS = 'chat-realm.encryption-key';
 const CHAT_STATE_ID = 'chat-state-v2';
 
 export interface ChatPersistedState {

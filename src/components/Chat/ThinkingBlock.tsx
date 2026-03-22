@@ -16,7 +16,7 @@ import {
     createMarkdownStyles,
     createTableRenderRules,
     getTableColumnWidth,
-} from './MessageBubble';
+} from './chatMarkdownStyles';
 
 interface ThinkingBlockProps {
     /** The raw thinking text (content between <think> tags). */

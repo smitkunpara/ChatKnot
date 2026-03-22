@@ -27,7 +27,7 @@ export class SecretVault {
   private readonly secureStore?: SecureStoreLike;
 
   constructor(options: SecretVaultOptions = {}) {
-    this.namespace = options.namespace ?? 'mcp-connector:vault';
+    this.namespace = options.namespace ?? 'mcp-connector.vault';
     this.secureStore = options.secureStore ?? resolveSecureStore();
   }
 
