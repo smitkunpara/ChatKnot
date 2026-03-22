@@ -809,6 +809,7 @@ let hasFinalAnswer = false;
     let currentStreamedReasoning = '';
     let currentStreamController: ReturnType<typeof createStreamingController> | null = null;
     let currentApiRequestDetails: import('../types').ApiRequestDetails | null = null;
+    let lastKnownRequestContext: { model: string; modeName?: string; providerUrl: string } | null = null;
     let thoughtStartedAt: number | null = null;
     let finalThoughtDurationMs: number | undefined;
 
@@ -848,6 +849,8 @@ if (!currentAssistantMsgId) {
 
     try {
       while (!hasFinalAnswer && !isStopRequested(conversationId)) {
+        thoughtStartedAt = null;
+        finalThoughtDurationMs = undefined;
         absoluteIterationCount++;
         if (absoluteIterationCount > MAX_ABSOLUTE_ITERATIONS) {
           setChatError(`Stopped: Reached maximum safety limit of ${MAX_ABSOLUTE_ITERATIONS} tool iterations.`);
@@ -904,6 +907,11 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
         const effectiveConfig = {
           ...providerConfig,
           model: selectedModel,
+        };
+        lastKnownRequestContext = {
+          model: selectedModel,
+          modeName: loopMode?.name,
+          providerUrl: effectiveConfig.baseUrl,
         };
         const selectedModelCapabilities = resolveModelCapabilities(providerConfig, selectedModel);
         const mcpTools = selectedModelCapabilities.tools
@@ -1061,6 +1069,18 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
 if (activeRequestControllersRef.current.get(conversationId) === requestController) {
           activeRequestControllersRef.current.delete(conversationId);
         }
+
+        // Freeze thinking time as soon as API request phase finishes.
+        // Tool execution that follows must not be counted as thinking.
+        if (thoughtStartedAt && finalThoughtDurationMs === undefined) {
+          finalThoughtDurationMs = Date.now() - thoughtStartedAt;
+          updateStreamingMessage(conversationId, assistantMsgId, {
+            content: streamedContent,
+            reasoning: streamedReasoning,
+            thoughtDurationMs: finalThoughtDurationMs,
+          });
+        }
+
         const apiElapsed = Date.now() - apiStartTime;
         console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
         currentStreamController?.flush();
@@ -1233,10 +1253,19 @@ if (currentAssistantMsgId) {
       const message = getErrorMessage(error);
       if (!isStopRequested(conversationId)) {
         if (conversationId) {
+          const fallbackRequestDetails = lastKnownRequestContext
+            ? {
+              ...lastKnownRequestContext,
+              requestedAt: Date.now(),
+            }
+            : undefined;
           addMessage(conversationId, {
             role: 'assistant',
             content: message,
             isError: true,
+            ...(currentApiRequestDetails ?? fallbackRequestDetails
+              ? { apiRequestDetails: currentApiRequestDetails ?? fallbackRequestDetails }
+              : {}),
           });
         } else if (mounted) {
           setChatError(message);
@@ -1528,7 +1557,7 @@ if (currentAssistantMsgId) {
           />
         </View>
         <TouchableOpacity
-          style={[styles.exportButton, !chatHasMessages && styles.exportButtonDisabled]}
+          style={styles.exportButton}
           onPress={() => {
             setExportFormat('pdf');
             setIncludeToolInput(false);
@@ -1900,9 +1929,6 @@ const createStyles = (colors: AppPalette, insetsTop: number) =>
       borderWidth: 1,
       borderColor: colors.subtleBorder,
       marginLeft: 8,
-    },
-    exportButtonDisabled: {
-      opacity: 0.35,
     },
     exportOverlay: {
       flex: 1,

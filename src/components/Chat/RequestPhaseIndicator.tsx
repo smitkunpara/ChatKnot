@@ -1,17 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Animated,
-    Easing,
+    ActivityIndicator,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
-import { ChevronDown, ChevronUp, Loader, Zap, Check } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Check } from 'lucide-react-native';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { RequestPhase } from '../../store/useChatRuntimeStore';
 import { ApiRequestDetails } from '../../types';
-import { ShinyText } from '../Common/ShinyText';
 
 interface RequestPhaseIndicatorProps {
     phase?: RequestPhase | null;
@@ -25,32 +23,8 @@ const formatElapsed = (ms: number): string => {
     return `${(ms / 1000).toFixed(1)}s`;
 };
 
-const SpinnerIcon = ({ color, size = 14 }: { color: string; size?: number }) => {
-    const rotation = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        const loop = Animated.loop(
-            Animated.timing(rotation, {
-                toValue: 1,
-                duration: 900,
-                easing: Easing.linear,
-                useNativeDriver: true,
-            })
-        );
-        loop.start();
-        return () => loop.stop();
-    }, [rotation]);
-
-    const spin = rotation.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0deg', '360deg'],
-    });
-
-    return (
-        <Animated.View style={{ transform: [{ rotate: spin }] }}>
-            <Loader size={size} color={color} />
-        </Animated.View>
-    );
+const SpinnerIcon = ({ color }: { color: string }) => {
+    return <ActivityIndicator size="small" color={color} />;
 };
 
 /**
@@ -105,7 +79,7 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
             <View style={styles.container}>
                 <View style={styles.row}>
                     <View style={styles.rowInner}>
-                        <SpinnerIcon color={colors.primary} size={14} />
+                        <SpinnerIcon color={colors.primary} />
                         <Text style={styles.labelText}>Generating query…</Text>
                     </View>
                 </View>
@@ -137,7 +111,7 @@ export const RequestPhaseIndicator: React.FC<RequestPhaseIndicatorProps> = ({
             >
                 <View style={styles.rowInner}>
                     {isActive ? (
-                        <SpinnerIcon color={colors.primary} size={14} />
+                        <SpinnerIcon color={colors.primary} />
                     ) : (
                         <Check size={14} color={colors.success} />
                     )}

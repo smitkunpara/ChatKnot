@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Encrypted Realm Chat Persistence** — Migrated chat persistence to encrypted Realm storage with normalized entities for conversations, messages, tool calls, and attachments while preserving existing chat behavior.
+- **Delete All Local Data Action** — Added a Settings data-management action to wipe local chats, drafts, context usage, settings state, and local secret references on-device.
+- **Long-Chat Paging Controls** — Added a message window strategy with a `Load Older Messages` control in chat to improve long conversation handling.
+
+### Changed
+- **Startup Chat Hydration Path** — Startup now hydrates chat state from the new Realm-backed chat repository while keeping settings and secret vault flow unchanged.
+- **Startup Version Source** — Loading screen version display now resolves from runtime app config first (with package fallback) for reliable frontend version visibility.
+- **Android Reinstall Data Policy** — Disabled Android backup restore (`android:allowBackup="false"`) so uninstall/reinstall starts from a fresh local app state.
+
+### Fixed
+- **Share Icon Initial Background** — Fixed chat header share button background appearing transparent on first open; button now renders with its normal background immediately.
+- **API Request Loader Shape** — Replaced the line-style request indicator icon with a standard round spinner during active API request phase.
+- **Stable Round Request Spinner** — Simplified API request loading indicator to a plain circular spinner so it no longer appears to stretch or change length.
+- **Per-Answer Model Metadata on Error Replies** — Ensured assistant error replies also persist API request metadata (model/mode/provider) so each answer retains source-model traceability.
+
 ## [0.3.1] - 2026-03-21
 
 ### Added
