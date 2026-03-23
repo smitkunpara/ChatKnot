@@ -80,6 +80,17 @@ describe('settingsDraftState', () => {
     expect(nextDrafts[provider.id]).toBeUndefined();
   });
 
+  it('allows clearing hiddenModels via updateProviderDraft with empty array', () => {
+    const provider = createProvider();
+    provider.hiddenModels = ['gpt-4.1-mini'];
+    let drafts = beginProviderDraft({}, provider);
+
+    expect(drafts[provider.id]?.hiddenModels).toEqual(['gpt-4.1-mini']);
+
+    drafts = updateProviderDraft(drafts, provider.id, { hiddenModels: [] });
+    expect(drafts[provider.id]?.hiddenModels).toEqual([]);
+  });
+
   it('does not mutate server persistence source while editing draft and discards on cancel', () => {
     const server = createServer();
     let drafts = beginServerDraft({}, server);

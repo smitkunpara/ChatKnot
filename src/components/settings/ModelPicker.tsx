@@ -1,25 +1,19 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Check, Eye, EyeOff, X } from 'lucide-react-native';
+import React from 'react';
+import { ActivityIndicator, FlatList, Text, TextInput, TextStyle, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { Check, Eye, EyeOff } from 'lucide-react-native';
 import { AppPalette } from '../../theme/useAppTheme';
 import { LlmProviderConfig, ModelCapabilities } from '../../types';
+import { ProviderDraftMap } from '../../screens/settingsDraftState';
 
 interface ModelPickerProps {
   visible: boolean;
   activeProviderForPicker: LlmProviderConfig | null;
-  activeProviderDraftForPicker: {
-    name: string;
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    hiddenModels: string[];
-    enabled: boolean;
-  } | null;
+  activeProviderDraftForPicker: ProviderDraftMap[string] | null;
   filteredModelsForPicker: string[];
   loadingModels: boolean;
   fetchError: string | null;
   colors: AppPalette;
-  styles: any;
+  styles: Record<string, ViewStyle | TextStyle>;
   modelSearch: string;
   setModelSearch: (value: string) => void;
   onClose: () => void;
@@ -27,8 +21,8 @@ interface ModelPickerProps {
   onSelectModel: (model: string) => void;
   onHideAll: () => void;
   onUnhideAll: () => void;
-  updateProviderDraft: (drafts: any, providerId: string, patch: Partial<LlmProviderConfig>) => any;
-  setProviderDrafts: React.Dispatch<React.SetStateAction<any>>;
+  updateProviderDraft: (drafts: ProviderDraftMap, providerId: string, patch: Partial<ProviderDraftMap[string]>) => ProviderDraftMap;
+  setProviderDrafts: React.Dispatch<React.SetStateAction<ProviderDraftMap>>;
   getCapabilityTags: (caps?: ModelCapabilities) => string[];
 }
 
@@ -106,7 +100,7 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
 
               const updateProviderDraftLocal = (patch: Partial<LlmProviderConfig>) => {
                 if (!activeProviderForPicker) return;
-                setProviderDrafts((prev: any) => updateProviderDraft(prev, activeProviderForPicker.id, patch));
+                setProviderDrafts((prev) => updateProviderDraft(prev, activeProviderForPicker.id, patch));
               };
 
               const toggleModelVisibilityLocal = (modelId: string) => {

@@ -2,6 +2,7 @@ import {
   LlmProviderConfig,
   McpServerConfig,
   Mode,
+  ModeServerOverride,
   OpenApiValidationError,
   OpenApiValidationResult,
 } from '../types';
@@ -10,6 +11,7 @@ import {
   formatOpenApiValidationError,
   validateOpenApiEndpoint,
 } from '../services/mcp/OpenApiValidationService';
+import { draftHeadersToMap } from './settingsServerPolicy';
 
 export interface ProviderDraft {
   name: string;
@@ -88,7 +90,7 @@ export const updateProviderDraft = (
     [providerId]: {
       ...currentDraft,
       ...patch,
-      hiddenModels: patch.hiddenModels ? [...patch.hiddenModels] : currentDraft.hiddenModels,
+      hiddenModels: patch.hiddenModels !== undefined ? [...patch.hiddenModels] : currentDraft.hiddenModels,
     },
   };
 };
@@ -172,20 +174,6 @@ export const discardServerDraft = (drafts: McpServerDraftMap, serverId: string):
   return nextDrafts;
 };
 
-const draftToHeaders = (draft: McpServerDraft): Record<string, string> => {
-  const headers: Record<string, string> = {};
-  for (const header of draft.headers || []) {
-    const key = (header.key || '').trim();
-    if (!key) {
-      continue;
-    }
-
-    headers[key] = header.value || '';
-  }
-
-  return headers;
-};
-
 
 export interface SaveServerDraftWithValidationInput {
   drafts: McpServerDraftMap;
@@ -224,7 +212,7 @@ export const saveServerDraftWithValidation = async (
     enabled: draft.enabled,
     allowedTools: Array.from(new Set((draft.allowedTools || []).filter(Boolean))),
     autoApprovedTools: Array.from(new Set((draft.autoApprovedTools || []).filter(Boolean))),
-    headers: draftToHeaders(draft),
+    headers: draftHeadersToMap(draft),
     token: draft.token,
   };
 
@@ -268,7 +256,7 @@ export const saveServerDraftWithValidation = async (
 export interface ModeDraft {
   name: string;
   systemPrompt: string;
-  mcpServerOverrides: Record<string, import('../types').ModeServerOverride>;
+  mcpServerOverrides: Record<string, ModeServerOverride>;
 }
 
 export type ModeDraftMap = Record<string, ModeDraft>;

@@ -1,7 +1,7 @@
 import { McpServerConfig } from '../types';
 import { McpServerDraft } from './settingsDraftState';
 
-const draftHeadersToMap = (draft: McpServerDraft): Record<string, string> => {
+export const draftHeadersToMap = (draft: McpServerDraft): Record<string, string> => {
   return (draft.headers || []).reduce<Record<string, string>>((acc, header) => {
     const key = (header.key || '').trim();
     if (!key) {

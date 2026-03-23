@@ -1,5 +1,5 @@
 import React from 'react';
-import { Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Switch, Text, TextInput, TextStyle, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { Check, ChevronRight, Plus, Trash2, X } from 'lucide-react-native';
 import { AppPalette } from '../../theme/useAppTheme';
 import { McpToolSchema, Mode, McpServerConfig, ModeServerOverride } from '../../types';
@@ -14,7 +14,7 @@ interface ModeEditorProps {
   mcpRuntimeById: Record<string, McpServerRuntimeState>;
   expandedMcpInMode: Record<string, boolean>;
   colors: AppPalette;
-  styles: Record<string, any>;
+  styles: Record<string, ViewStyle | TextStyle>;
   setModeDrafts: React.Dispatch<React.SetStateAction<ModeDraftMap>>;
   setExpandedMcpInMode: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setDefaultMode: (id: string) => void;

@@ -1,23 +1,17 @@
 import React from 'react';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, TextStyle, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { Check, ChevronRight, Plus, Trash2, X } from 'lucide-react-native';
 import { AppPalette } from '../../theme/useAppTheme';
 import { LlmProviderConfig } from '../../types';
+import { ProviderDraftMap } from '../../screens/settingsDraftState';
 
 interface ProviderEditorProps {
   editingProvider: LlmProviderConfig;
-  providerDrafts: Record<string, {
-    name: string;
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    hiddenModels: string[];
-    enabled: boolean;
-  }>;
+  providerDrafts: ProviderDraftMap;
   colors: AppPalette;
-  styles: any;
-  setProviderDrafts: React.Dispatch<React.SetStateAction<any>>;
-  updateProviderDraft: (drafts: any, providerId: string, patch: Partial<LlmProviderConfig>) => any;
+  styles: Record<string, ViewStyle | TextStyle>;
+  setProviderDrafts: React.Dispatch<React.SetStateAction<ProviderDraftMap>>;
+  updateProviderDraft: (drafts: ProviderDraftMap, providerId: string, patch: Partial<ProviderDraftMap[string]>) => ProviderDraftMap;
   onSave: () => void;
   onCancel: () => void;
   onDelete: () => void;
@@ -58,7 +52,7 @@ export const ProviderEditor: React.FC<ProviderEditorProps> = ({
     : editingProvider;
 
   const updateProviderDraftLocal = (patch: Partial<LlmProviderConfig>) => {
-    setProviderDrafts((prev: any) => updateProviderDraft(prev, editingProvider.id, patch));
+    setProviderDrafts((prev) => updateProviderDraft(prev, editingProvider.id, patch));
   };
 
   return (

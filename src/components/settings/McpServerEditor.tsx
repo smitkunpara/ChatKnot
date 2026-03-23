@@ -1,9 +1,9 @@
 import React from 'react';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, TextStyle, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { Plus, Trash2, X } from 'lucide-react-native';
 import { AppPalette } from '../../theme/useAppTheme';
 import { McpServerConfig } from '../../types';
-import { McpServerDraftMap } from '../../screens/settingsDraftState';
+import { McpServerDraft, McpServerDraftMap } from '../../screens/settingsDraftState';
 import { McpServerRuntimeState } from '../../services/mcp/McpManager';
 
 interface McpServerEditorProps {
@@ -13,9 +13,9 @@ interface McpServerEditorProps {
   serverError: string | null;
   validatingServerId: string | null;
   colors: AppPalette;
-  styles: any;
+  styles: Record<string, ViewStyle | TextStyle>;
   setServerDrafts: React.Dispatch<React.SetStateAction<McpServerDraftMap>>;
-  updateServerDraft: (drafts: McpServerDraftMap, serverId: string, patch: any) => McpServerDraftMap;
+  updateServerDraft: (drafts: McpServerDraftMap, serverId: string, patch: Partial<McpServerDraft>) => McpServerDraftMap;
   updateServerDraftHeader: (serverId: string, headerId: string, patch: { key?: string; value?: string }) => void;
   addServerDraftHeader: (serverId: string) => void;
   removeServerDraftHeader: (serverId: string, headerId: string) => void;
@@ -53,7 +53,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
           ? 'Disabled'
           : 'Connecting...';
 
-  const updateServerDraftLocal = (patch: any) => {
+  const updateServerDraftLocal = (patch: Partial<McpServerDraft>) => {
     setServerDrafts(prev => updateServerDraft(prev, editingServer.id, patch));
   };
 
