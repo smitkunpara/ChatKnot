@@ -1,7 +1,15 @@
-const NON_TEXT_ID_PATTERN =
-  /^(embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator)/i;
+interface ModelMetadata {
+  id?: string;
+  name?: string;
+  output_modalities?: unknown[];
+  supported_output_modalities?: unknown[];
+  modalities?: unknown[] | { output?: unknown[] };
+}
 
-const toStringArray = (value: any): string[] => {
+const NON_TEXT_ID_PATTERN =
+  /^(text-embedding|embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator)/i;
+
+const toStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => (typeof item === 'string' ? item : ''))
@@ -9,19 +17,28 @@ const toStringArray = (value: any): string[] => {
     .map((item) => item.toLowerCase());
 };
 
-const getModelId = (model: any): string => {
+const getModelId = (model: ModelMetadata | string | unknown): string => {
   if (typeof model === 'string') return model.trim();
-  if (typeof model?.id === 'string') return model.id.trim();
-  if (typeof model?.name === 'string') return model.name.trim();
+  if (model && typeof model === 'object') {
+    const obj = model as ModelMetadata;
+    if (typeof obj.id === 'string') return obj.id.trim();
+    if (typeof obj.name === 'string') return obj.name.trim();
+  }
   return '';
 };
 
-const getTextModalitySignal = (model: any): boolean | null => {
+const getTextModalitySignal = (model: ModelMetadata | unknown): boolean | null => {
+  const obj = model && typeof model === 'object' ? (model as ModelMetadata) : {};
+  const modalityOutputs = obj.modalities;
+  const nestedOutputs = modalityOutputs && typeof modalityOutputs === 'object' && !Array.isArray(modalityOutputs)
+    ? (modalityOutputs as { output?: unknown[] }).output
+    : undefined;
+
   const outputs = [
-    ...toStringArray(model?.output_modalities),
-    ...toStringArray(model?.supported_output_modalities),
-    ...toStringArray(model?.modalities?.output),
-    ...toStringArray(model?.modalities),
+    ...toStringArray(obj.output_modalities),
+    ...toStringArray(obj.supported_output_modalities),
+    ...toStringArray(nestedOutputs),
+    ...toStringArray(modalityOutputs),
   ];
 
   if (outputs.length === 0) return null;
@@ -40,7 +57,7 @@ const isLikelyTextModelById = (modelId: string): boolean => {
   return !NON_TEXT_ID_PATTERN.test(modelId);
 };
 
-export const isModelLikelyTextOutput = (model: any): boolean => {
+export const isModelLikelyTextOutput = (model: ModelMetadata | string | unknown): boolean => {
   const modelId = getModelId(model);
   if (!modelId) return false;
 
@@ -48,7 +65,7 @@ export const isModelLikelyTextOutput = (model: any): boolean => {
   return textSignal ?? isLikelyTextModelById(modelId);
 };
 
-export const filterModelsForTextOutput = (models: any[]): string[] => {
+export const filterModelsForTextOutput = (models: unknown[]): string[] => {
   if (!Array.isArray(models)) return [];
 
   const result: string[] = [];

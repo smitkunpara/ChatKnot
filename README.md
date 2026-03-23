@@ -63,9 +63,15 @@ To generate a production APK for Android:
 npm run android:apk:release
 ```
 
+### 📱 Android Build Output
+
+Release builds generate a single APK optimized for modern Android devices:
+
+- **`arm64-v8a`**: Recommended and supported output target.
+
 ## 📱 Platform Compatibility
 > [!IMPORTANT]
-> **Android Primary**: ChatKnot is currently only tested and fully operational on **Android**. Support for iOS and Web is in the experimental phase.
+> **Android Only**: ChatKnot currently targets **Android** only.
 
 ## 📄 License & Legal
 - **License**: MIT License - see the [LICENSE](LICENSE) file for details.

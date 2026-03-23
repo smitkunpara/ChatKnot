@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
-
+import { STORAGE_KEYS } from '../constants/storage';
 
 export interface TokenUsage {
   promptTokens: number;
@@ -23,13 +23,44 @@ interface ContextUsageState {
 
   updateUsage: (data: ContextUsageData) => void;
   clearUsage: (conversationId: string) => void;
+  clearAllUsage: () => void;
   getUsage: (conversationId: string) => ContextUsageData | null;
-  getUsageForModel: (conversationId: string, providerId: string, model: string) => ContextUsageData | null;
 }
+
+const sanitizeUsageNumber = (value: number): number => {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return value;
+};
+
+const sanitizeUsageData = (data: ContextUsageData): ContextUsageData | null => {
+  const conversationId = data.conversationId.trim();
+  if (!conversationId) {
+    return null;
+  }
+
+  const promptTokens = sanitizeUsageNumber(data.lastUsage.promptTokens);
+  const completionTokens = sanitizeUsageNumber(data.lastUsage.completionTokens);
+  const totalTokens = sanitizeUsageNumber(data.lastUsage.totalTokens);
+
+  return {
+    ...data,
+    conversationId,
+    contextLimit: sanitizeUsageNumber(data.contextLimit),
+    timestamp: Number.isFinite(data.timestamp) ? data.timestamp : Date.now(),
+    lastUsage: {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+    },
+  };
+};
 
 const contextPersistStorage = createEncryptedStateStorage({
   id: 'context-usage-storage',
-  keyAlias: 'context-usage-storage:encryption-key',
+  keyAlias: STORAGE_KEYS.CONTEXT_USAGE_STORAGE_KEY_ALIAS,
 });
 
 export const useContextUsageStore = create<ContextUsageState>()(
@@ -38,10 +69,15 @@ export const useContextUsageStore = create<ContextUsageState>()(
       usageByConversation: {},
 
       updateUsage: (data) => {
+        const sanitized = sanitizeUsageData(data);
+        if (!sanitized) {
+          return;
+        }
+
         set((state) => ({
           usageByConversation: {
             ...state.usageByConversation,
-            [data.conversationId]: data,
+            [sanitized.conversationId]: sanitized,
           },
         }));
       },
@@ -54,15 +90,12 @@ export const useContextUsageStore = create<ContextUsageState>()(
         });
       },
 
-      getUsage: (conversationId) => {
-        return get().usageByConversation[conversationId] ?? null;
+      clearAllUsage: () => {
+        set({ usageByConversation: {} });
       },
 
-      getUsageForModel: (conversationId, providerId, model) => {
-        const usage = get().usageByConversation[conversationId];
-        if (!usage) return null;
-        if (usage.providerId !== providerId || usage.model !== model) return null;
-        return usage;
+      getUsage: (conversationId) => {
+        return get().usageByConversation[conversationId] ?? null;
       },
     }),
     {

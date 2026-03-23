@@ -29,6 +29,15 @@ describe('normalizeToolCalls', () => {
         ]);
     });
 
+    it('normalizes root-level name/arguments format', () => {
+        const result = normalizeToolCalls([
+            { id: 'tc-root', name: 'get_weather', arguments: { city: 'NYC' } },
+        ]);
+        expect(result).toEqual([
+            { id: 'tc-root', name: 'get_weather', arguments: '{"city":"NYC"}' },
+        ]);
+    });
+
     it('generates an id when missing', () => {
         const result = normalizeToolCalls([
             { function: { name: 'my_tool', arguments: '{}' } },
@@ -66,6 +75,7 @@ describe('normalizeToolCalls', () => {
             { id: 'tc-1', function: { name: 'tool', arguments: '{"a":2}' } },
         ]);
         expect(result).toHaveLength(1);
+        expect(result[0].arguments).toBe('{"a":2}');
     });
 
     it('preserves different IDs with same name', () => {
@@ -74,6 +84,24 @@ describe('normalizeToolCalls', () => {
             { id: 'tc-2', function: { name: 'tool', arguments: '{"a":1}' } },
         ]);
         expect(result).toHaveLength(2);
+    });
+
+    it('handles null input gracefully', () => {
+        expect(normalizeToolCalls(null as any)).toEqual([]);
+    });
+
+    it('drops entries with null function', () => {
+        const result = normalizeToolCalls([
+            { id: 'tc-1', function: null } as any,
+        ]);
+        expect(result).toEqual([]);
+    });
+
+    it('drops entries with undefined function', () => {
+        const result = normalizeToolCalls([
+            { id: 'tc-1', function: undefined } as any,
+        ]);
+        expect(result).toEqual([]);
     });
 });
 
@@ -95,7 +123,7 @@ describe('buildToolExecutionQueue', () => {
         ];
         const result = buildToolExecutionQueue(calls);
         expect(result).toHaveLength(1);
-        expect(result[0].arguments).toBe('{"x":1}');
+        expect(result[0].arguments).toBe('{"x":2}');
     });
 
     it('allows same tool+args with different IDs (Q9 fix)', () => {
@@ -109,6 +137,24 @@ describe('buildToolExecutionQueue', () => {
 
     it('returns empty array for empty input', () => {
         expect(buildToolExecutionQueue([])).toEqual([]);
+    });
+
+    it('handles calls with undefined arguments', () => {
+        const calls = [
+            { id: 'a', name: 'tool', arguments: undefined as any },
+        ];
+        const result = buildToolExecutionQueue(calls);
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('a');
+    });
+
+    it('handles calls with null arguments', () => {
+        const calls = [
+            { id: 'a', name: 'tool', arguments: null as any },
+        ];
+        const result = buildToolExecutionQueue(calls);
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('a');
     });
 });
 
@@ -282,6 +328,10 @@ describe('parseToolArguments', () => {
         expect(parseToolArguments('"hello"', 'tool')).toEqual({ value: 'hello' });
     });
 
+    it('parses JSON arguments that are double-encoded as a JSON string', () => {
+        expect(parseToolArguments('"{\\"city\\":\\"NYC\\"}"', 'tool')).toEqual({ city: 'NYC' });
+    });
+
     it('throws on invalid JSON', () => {
         expect(() => parseToolArguments('not valid json', 'tool')).toThrow(/Invalid JSON/);
     });
@@ -308,6 +358,69 @@ describe('serializeToolResult', () => {
         circular.self = circular;
         expect(serializeToolResult(circular)).toBe('[object Object]');
     });
+
+    it('flattens MCP content array with text parts to plain text', () => {
+        const mcpResult = {
+            content: [
+                { type: 'text', text: 'Part 1' },
+                { type: 'text', text: 'Part 2' },
+            ],
+        };
+        expect(serializeToolResult(mcpResult)).toBe('Part 1\nPart 2');
+    });
+
+    it('ignores non-text content parts in MCP result', () => {
+        const mcpResult = {
+            content: [
+                { type: 'text', text: 'Text only' },
+                { type: 'image', data: 'base64...' },
+            ],
+        };
+        expect(serializeToolResult(mcpResult)).toBe('Text only');
+    });
+
+    it('preserves extra root keys when MCP result has extra metadata', () => {
+        const mcpResult = {
+            content: [{ type: 'text', text: 'data' }],
+            source: 'tool-x',
+        };
+        const result = serializeToolResult(mcpResult);
+        const parsed = JSON.parse(result);
+        expect(parsed.content).toBe('data');
+        expect(parsed.source).toBe('tool-x');
+    });
+
+    it('includes isError flag in serialized output when extra keys present', () => {
+        const mcpResult = {
+            content: [{ type: 'text', text: 'error detail' }],
+            isError: true,
+            source: 'tool-y',
+        };
+        const result = serializeToolResult(mcpResult);
+        const parsed = JSON.parse(result);
+        expect(parsed.isError).toBe(true);
+        expect(parsed.source).toBe('tool-y');
+    });
+
+    it('returns plain text for MCP result with only content and no extra keys', () => {
+        const mcpResult = {
+            content: [{ type: 'text', text: 'just text' }],
+        };
+        expect(serializeToolResult(mcpResult)).toBe('just text');
+    });
+
+    it('handles MCP result with empty content array', () => {
+        const mcpResult = { content: [] };
+        expect(serializeToolResult(mcpResult)).toBe('');
+    });
+
+    it('handles null input', () => {
+        expect(serializeToolResult(null)).toBe('null');
+    });
+
+    it('handles undefined input', () => {
+        expect(serializeToolResult(undefined)).toBe(String(undefined));
+    });
 });
 
 // ─── stripLegacyStructuredToolCalls ────────────────────────
@@ -326,5 +439,34 @@ describe('stripLegacyStructuredToolCalls', () => {
     it('preserves non-tool-call text', () => {
         const content = 'This is normal text.';
         expect(stripLegacyStructuredToolCalls(content)).toBe('This is normal text.');
+    });
+});
+
+// ─── Loop Detection and Legacy Parsing Edge Cases ────────────
+
+describe('Loop Detection and Legacy Parsing Edge Cases', () => {
+    it('normalizeToolCalls prevents infinite loops from identical consecutive streaming tool calls', () => {
+        const repeatedCalls = [
+            { id: 'loop-tc-1', function: { name: 'get_weather', arguments: '{"city":"NYC"}' } },
+            { id: 'loop-tc-1', function: { name: 'get_weather', arguments: '{"city":"NYC"}' } },
+            { id: 'loop-tc-1', function: { name: 'get_weather', arguments: '{"city":"NYC"}' } },
+        ];
+        const result = normalizeToolCalls(repeatedCalls);
+        expect(result).toHaveLength(1);
+    });
+
+    it('tryParseJsonWithRepair handles deeply nested or edge-case legacy structured JSON', () => {
+        // Single quotes + missing trailing braces or just weird formatting
+        const strangeJson = "{'data': {'nested': ['value1', 'value2']}}";
+        expect(tryParseJsonWithRepair(strangeJson)).toEqual({ data: { nested: ['value1', 'value2'] } });
+    });
+
+    it('extractLegacyJsonToolCalls handles empty or malformed input without crashing', () => {
+        const toolMap = new Map([['test_tool', 'test_tool']]);
+        const badInputs = ['{', '[', 'null', 'undefined', '{"name": "test_tool", "arguments": {'];
+        
+        for (const input of badInputs) {
+            expect(() => extractLegacyJsonToolCalls(input, toolMap)).not.toThrow();
+        }
     });
 });

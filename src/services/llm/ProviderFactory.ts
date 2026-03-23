@@ -5,14 +5,39 @@ export class ProviderFactory {
   private static instanceCache = new Map<string, OpenAiService>();
   private static readonly MAX_CACHE_SIZE = 20;
 
+  private static hashKeyMaterial(input: string): string {
+    // Lightweight stable hash to avoid embedding raw secrets in cache keys.
+    let hash = 2166136261;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  private static buildCacheKey(config: LlmProviderConfig): string {
+    const baseUrl = (config.baseUrl || '').trim().toLowerCase();
+    const trimmedApiKey = (config.apiKey || '').trim();
+    const trimmedApiKeyRef = (config.apiKeyRef || '').trim();
+    const keyMaterial = trimmedApiKey || trimmedApiKeyRef;
+    const keyFingerprint = keyMaterial
+      ? this.hashKeyMaterial(keyMaterial)
+      : '';
+    return `${config.type}:${baseUrl}:${keyFingerprint}:${config.model}`;
+  }
+
   static create(config: LlmProviderConfig): OpenAiService {
-    // Generate a cache key based on the provider configuration
-    const cacheKey = `${config.type}:${config.baseUrl}:${config.apiKey}:${config.model}`;
-if (this.instanceCache.has(cacheKey)) {
-      return this.instanceCache.get(cacheKey)!;
+    const cacheKey = this.buildCacheKey(config);
+
+    if (this.instanceCache.has(cacheKey)) {
+      // Move to end for LRU semantics.
+      const cached = this.instanceCache.get(cacheKey)!;
+      this.instanceCache.delete(cacheKey);
+      this.instanceCache.set(cacheKey, cached);
+      return cached;
     }
 
-    // Evict oldest entries if cache grows too large
+    // Evict oldest entry if cache grows too large.
     if (this.instanceCache.size >= this.MAX_CACHE_SIZE) {
       const firstKey = this.instanceCache.keys().next().value;
       if (firstKey) this.instanceCache.delete(firstKey);

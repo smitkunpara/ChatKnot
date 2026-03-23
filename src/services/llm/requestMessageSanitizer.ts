@@ -10,7 +10,7 @@ export const resolveModelCapabilities = (
   provider: LlmProviderConfig | undefined,
   model: string
 ): ResolvedModelCapabilities => {
-if (!provider) {
+  if (!provider) {
     return {
       vision: true,
       fileInput: true,
@@ -53,7 +53,7 @@ export const sanitizeMessagesForRequest = (
   messages: Message[],
   capabilities: ResolvedModelCapabilities
 ): Message[] => {
-const baseMessages = capabilities.tools
+  const baseMessages = capabilities.tools
     ? messages
     : messages.filter(message => message.role !== 'tool');
 

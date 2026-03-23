@@ -1,4 +1,5 @@
 import { validateImportPayload } from '../../utils/settingsValidation';
+import { MAX_MODE_NAME_LENGTH } from '../../constants/storage';
 
 describe('validateImportPayload', () => {
     it('returns null for a valid payload with providers and mcpServers', () => {
@@ -162,7 +163,7 @@ describe('validateImportPayload', () => {
 
         it('returns error for mode with name exceeding max length', () => {
             const payload = {
-                modes: [{ id: 'm1', name: 'A'.repeat(25), systemPrompt: 'Hi', mcpServers: [] }],
+                modes: [{ id: 'm1', name: 'A'.repeat(MAX_MODE_NAME_LENGTH + 1), systemPrompt: 'Hi', mcpServers: [] }],
             };
             expect(validateImportPayload(payload)).toMatch(/exceeds the maximum length/);
         });
@@ -219,6 +220,66 @@ describe('validateImportPayload', () => {
                 }],
             };
             expect(validateImportPayload(payload)).toMatch(/invalid "mcpServerOverrides"/);
+        });
+
+        it('returns error for mode override entry that is not an object', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1',
+                    name: 'Test',
+                    systemPrompt: 'Hi',
+                    mcpServerOverrides: {
+                        s1: 'invalid',
+                    },
+                }],
+            };
+
+            expect(validateImportPayload(payload)).toMatch(/invalid override for server "s1"/);
+        });
+
+        it('returns error for mode override with non-boolean enabled value', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1',
+                    name: 'Test',
+                    systemPrompt: 'Hi',
+                    mcpServerOverrides: {
+                        s1: { enabled: 'yes' },
+                    },
+                }],
+            };
+
+            expect(validateImportPayload(payload)).toMatch(/invalid "enabled"/);
+        });
+
+        it('returns error for mode override with non-array allowedTools', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1',
+                    name: 'Test',
+                    systemPrompt: 'Hi',
+                    mcpServerOverrides: {
+                        s1: { enabled: true, allowedTools: 'search' },
+                    },
+                }],
+            };
+
+            expect(validateImportPayload(payload)).toMatch(/invalid "allowedTools"/);
+        });
+
+        it('returns error for mode override with non-array autoApprovedTools', () => {
+            const payload = {
+                modes: [{
+                    id: 'm1',
+                    name: 'Test',
+                    systemPrompt: 'Hi',
+                    mcpServerOverrides: {
+                        s1: { enabled: true, autoApprovedTools: 'search' },
+                    },
+                }],
+            };
+
+            expect(validateImportPayload(payload)).toMatch(/invalid "autoApprovedTools"/);
         });
     });
 });

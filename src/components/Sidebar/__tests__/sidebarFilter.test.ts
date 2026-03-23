@@ -16,4 +16,43 @@ describe('sortAndFilterConversations', () => {
     const result = sortAndFilterConversations(items, 'bEtA');
     expect(result.map((item) => item.id)).toEqual(['2']);
   });
+
+  it('returns empty array when input is empty', () => {
+    const result = sortAndFilterConversations([], '');
+    expect(result).toEqual([]);
+  });
+
+  it('handles empty search query with unsorted updatedAt', () => {
+    const unsorted = [
+      { id: 'a', title: 'First', updatedAt: 5 },
+      { id: 'b', title: 'Second', updatedAt: 15 },
+    ];
+    const result = sortAndFilterConversations(unsorted, '');
+    expect(result.map((item) => item.id)).toEqual(['b', 'a']);
+  });
+
+  it('returns empty array when no conversations match filter', () => {
+    const result = sortAndFilterConversations(items, 'xyz');
+    expect(result).toEqual([]);
+  });
+
+  it('handles conversations with missing updatedAt', () => {
+    const withMissing = [
+      { id: '1', title: 'Has Date', updatedAt: 10 },
+      { id: '2', title: 'No Date' },
+    ];
+    const result = sortAndFilterConversations(withMissing, '');
+    expect(result.map((item) => item.id)).toEqual(['1', '2']);
+  });
+
+  it('uses createdAt and id as deterministic tiebreakers when updatedAt is equal', () => {
+    const withEqualUpdated = [
+      { id: 'c', title: 'Third', updatedAt: 10, createdAt: 5 },
+      { id: 'a', title: 'First', updatedAt: 10, createdAt: 8 },
+      { id: 'b', title: 'Second', updatedAt: 10, createdAt: 8 },
+    ];
+
+    const result = sortAndFilterConversations(withEqualUpdated, '');
+    expect(result.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+  });
 });

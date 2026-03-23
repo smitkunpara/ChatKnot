@@ -119,4 +119,105 @@ describe('useChatRuntimeStore', () => {
     expect(session.requestPhase).toBe('thinking');
     expect(session.apiRequestDetails).toEqual(details);
   });
+
+  it('updates existing session when setRequestPhase is called with generating_query and session exists', () => {
+    const store = useChatRuntimeStore.getState();
+    const details = {
+      model: 'gpt-4o',
+      providerUrl: 'https://api.example.com',
+      requestedAt: Date.now(),
+    };
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.setRequestPhase('conversation-1', 'generating_query', details);
+
+    const session = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    expect(session.requestPhase).toBe('generating_query');
+    expect(session.messageId).toBe('message-1');
+    expect(session.apiRequestDetails).toEqual(details);
+  });
+
+  it('ignores setRequestPhase when phase is not generating_query and no session exists', () => {
+    const store = useChatRuntimeStore.getState();
+
+    store.setRequestPhase('conversation-1', 'thinking');
+
+    const state = useChatRuntimeStore.getState();
+    expect(state.streamingSessions['conversation-1']).toBeUndefined();
+  });
+
+  it('finishRequest with null clears all conversations', () => {
+    const store = useChatRuntimeStore.getState();
+
+    store.beginRequest('conversation-1');
+    store.beginRequest('conversation-2');
+    store.finishRequest();
+
+    const state = useChatRuntimeStore.getState();
+    expect(state.isLoading).toBe(false);
+    expect(state.activeRequestConversationId).toBeNull();
+    expect(state.loadingConversationIds).toEqual({});
+  });
+
+  it('preserves thoughtDurationMs across updateStreamingMessage calls', () => {
+    const store = useChatRuntimeStore.getState();
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.updateStreamingMessage('conversation-1', 'message-1', {
+      content: 'partial',
+      thoughtDurationMs: 3200,
+    });
+
+    const session = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    expect(session.thoughtDurationMs).toBe(3200);
+    expect(session.content).toBe('partial');
+
+    store.updateStreamingMessage('conversation-1', 'message-1', {
+      content: 'more content',
+    });
+
+    const updated = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    expect(updated.thoughtDurationMs).toBe(3200);
+    expect(updated.content).toBe('more content');
+  });
+
+  it('skips updateStreamingMessage when payload does not change session values', () => {
+    const store = useChatRuntimeStore.getState();
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.updateStreamingMessage('conversation-1', 'message-1', {
+      content: 'same-content',
+      reasoning: 'same-reasoning',
+      thoughtDurationMs: 1500,
+    });
+
+    const beforeNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    store.updateStreamingMessage('conversation-1', 'message-1', {
+      content: 'same-content',
+      reasoning: 'same-reasoning',
+      thoughtDurationMs: 1500,
+    });
+    const afterNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+
+    expect(afterNoop).toBe(beforeNoop);
+  });
+
+  it('skips setRequestPhase when phase and metadata are unchanged', () => {
+    const store = useChatRuntimeStore.getState();
+    const details = {
+      model: 'gpt-4.1-mini',
+      modeName: 'Default',
+      providerUrl: 'https://provider.example.com',
+      requestedAt: Date.now(),
+    };
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.setRequestPhase('conversation-1', 'api_request', details);
+
+    const beforeNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    store.setRequestPhase('conversation-1', 'api_request', details);
+    const afterNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+
+    expect(afterNoop).toBe(beforeNoop);
+  });
 });

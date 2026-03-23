@@ -13,9 +13,9 @@ import {
   Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
+import { AppDrawerNavigation } from '../navigation/AppNavigator';
+import { AlertTriangle, Menu, Share2, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
@@ -27,6 +27,8 @@ import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
+import { WarningModal } from '../components/Chat/WarningModal';
+import { ExportModal } from '../components/Chat/ExportModal';
 import { ToolCall, Attachment, Message } from '../types';
 import { useContextUsageStore } from '../store/useContextUsageStore';
 import { getContextLimitForModel } from '../utils/modelContextLimits';
@@ -44,7 +46,6 @@ import {
   extractLegacyXmlToolCalls,
   extractLegacyJsonToolCalls,
   stripLegacyStructuredToolCalls,
-  tryParseJsonWithRepair,
   parseToolArguments,
   serializeToolResult,
   buildToolExecutionQueue,
@@ -60,16 +61,21 @@ import {
 } from '../utils/chatHelpers';
 import { formatLocalDateTime } from '../utils/dateFormat';
 import { mergeServersWithOverrides } from '../utils/mcpMerge';
+import { getActiveMode } from '../utils/getActiveMode';
 import * as FileSystem from 'expo-file-system';
-import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
 import {
   formatToolFailureMessage,
   serializeToolFailurePayload,
   ToolFailureCode,
 } from './chatToolFailureHelpers';
 
+const INITIAL_VISIBLE_MESSAGE_COUNT = 220;
+const LOAD_MORE_MESSAGE_STEP = 180;
+const STREAM_FLUSH_INTERVAL_MS = 48;
+const MAX_ATTACHMENT_BASE64_CACHE_SIZE = 48;
+
 export const ChatScreen = () => {
-const navigation = useNavigation<DrawerNavigationProp<any>>();
+const navigation = useNavigation<AppDrawerNavigation>();
   const isScreenFocused = useIsFocused();
   const flatListRef = useRef<FlatList>(null);
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
@@ -198,17 +204,30 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
       },
     ];
   }, [activeConversationMessages, streamingSession]);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(INITIAL_VISIBLE_MESSAGE_COUNT);
+
+  const pagedMessages = useMemo(() => {
+    if (displayedMessages.length <= visibleMessageCount) {
+      return displayedMessages;
+    }
+
+    return displayedMessages.slice(-visibleMessageCount);
+  }, [displayedMessages, visibleMessageCount]);
+
+  const hasOlderMessages = displayedMessages.length > pagedMessages.length;
+
+  const loadOlderMessages = useCallback(() => {
+    setVisibleMessageCount((previous) => Math.min(
+      displayedMessages.length,
+      previous + LOAD_MORE_MESSAGE_STEP
+    ));
+  }, [displayedMessages.length]);
   const [newChatDraft, setNewChatDraft] = useState('');
 
-  const activeMode = useMemo(() => {
-    if (activeConversationId) {
-      const currentConv = useChatStore.getState().conversations.find(c => c.id === activeConversationId);
-      const modeId = currentConv?.modeId || lastUsedModeId || modes[0]?.id;
-      const mode = modes.find(m => m.id === modeId) || modes[0];
-      if (mode) return mode;
-    }
-    return modes.find(m => m.id === lastUsedModeId) ?? modes[0] ?? null;
-  }, [modes, lastUsedModeId, activeConversation?.modeId]);
+  const activeMode = useMemo(
+    () => getActiveMode(modes, lastUsedModeId, activeConversation?.modeId),
+    [modes, lastUsedModeId, activeConversation?.modeId],
+  );
 
   // Sync lastUsedModeId when active conversation changes
   useEffect(() => {
@@ -221,6 +240,15 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     () => mergeServersWithOverrides(globalMcpServers, activeMode?.mcpServerOverrides ?? {}),
     [globalMcpServers, activeMode?.mcpServerOverrides]
   );
+
+  // Reinitialize MCP manager when mode switch changes the effective server set
+  const previousModeIdRef = useRef<string | null | undefined>(activeMode?.id);
+  useEffect(() => {
+    if (previousModeIdRef.current !== activeMode?.id) {
+      previousModeIdRef.current = activeMode?.id;
+      McpManager.initialize(activeMcpServers).catch(console.error);
+    }
+  }, [activeMode?.id, activeMcpServers]);
   const [modeSelectorVisible, setModeSelectorVisible] = useState(false);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -234,11 +262,6 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
   const toolApprovalConversationIdsRef = useRef<Map<string, string>>(new Map());
   const [exportModalVisible, setExportModalVisible] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
-  const [includeToolInput, setIncludeToolInput] = useState(false);
-  const [includeToolOutput, setIncludeToolOutput] = useState(false);
-  const [includeThinking, setIncludeThinking] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
   const userScrolledAwayRef = useRef(false);
   const pendingInstantScrollConversationIdRef = useRef<string | null>(activeConversationId);
@@ -337,8 +360,8 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   // (e.g. because generation was interrupted before any content was received), 
   // we move the retry button to the PREVIOUS assistant message and hide the empty one.
   const lastAssistantMessageId = useMemo(() => {
-    if (!displayedMessages.length) return null;
-    const messages = displayedMessages;
+    if (!pagedMessages.length) return null;
+    const messages = pagedMessages;
 
     // Find the absolute last assistant message
     let lastIdx = -1;
@@ -372,9 +395,9 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     }
 
     return lastMessage.id;
-  }, [displayedMessages, isActiveConversationLoading]);
+  }, [pagedMessages, isActiveConversationLoading]);
 
-  const messageCount = displayedMessages.length;
+  const messageCount = pagedMessages.length;
   const scrollToBottom = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToEnd({ animated });
@@ -400,6 +423,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   useEffect(() => {
     setEditingMessageId(null);
     setEditingContent(undefined);
+    setVisibleMessageCount(INITIAL_VISIBLE_MESSAGE_COUNT);
     // Reset scroll lock whenever the conversation changes.
     userScrolledAwayRef.current = false;
     pendingInstantScrollConversationIdRef.current = activeConversationId;
@@ -470,11 +494,7 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     return unsubscribe;
   }, []);
 
-  // Re-initialize MCP tools
-  useEffect(() => {
-    // Reinitialization is handled globally in App.tsx
-    // McpManager.reinitialize(servers, modes, lastUsedModeId);
-  }, [activeMcpServers]);
+
 
   const handleEdit = useCallback((messageId: string, content: string) => {
     if (!activeConversationId) return;
@@ -577,11 +597,13 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
     hasEnabledMcpServer &&
     (enabledMcpToolsCount > 0 || configuredEnabledMcpToolsCount > 0);
 
-  // Check if conversation has any image attachments in its history
+  // Check if conversation has any image attachments in its history or pending
   const conversationHasImages = useMemo(() => {
     if (!activeConversation) return false;
-    return activeConversation.messages.some(m => m.attachments?.some(a => a.type === 'image'));
-  }, [activeConversation]);
+    const hasHistoryImages = activeConversation.messages.some(m => m.attachments?.some(a => a.type === 'image'));
+    const hasPendingImages = attachments.some(a => a.type === 'image');
+    return hasHistoryImages || hasPendingImages;
+  }, [activeConversation, attachments]);
 
   const previousModelSelectionRef = useRef<string | undefined>(
     modelResolution.selection
@@ -620,21 +642,50 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   ]);
 
   const attachmentBase64Cache = useRef<Map<string, string>>(new Map());
+  const attachmentBase64PendingReads = useRef<Map<string, Promise<string>>>(new Map());
+
+  useEffect(() => {
+    attachmentBase64Cache.current.clear();
+    attachmentBase64PendingReads.current.clear();
+  }, [activeConversationId]);
 
   const readFileAsBase64 = async (uri: string): Promise<string> => {
-if (attachmentBase64Cache.current.has(uri)) {
-      return attachmentBase64Cache.current.get(uri)!;
+    const cached = attachmentBase64Cache.current.get(uri);
+    if (cached !== undefined) {
+      return cached;
     }
-    const base64 = await FileSystem.readAsStringAsync(uri, {
+
+    const pendingRead = attachmentBase64PendingReads.current.get(uri);
+    if (pendingRead) {
+      return pendingRead;
+    }
+
+    const readPromise = FileSystem.readAsStringAsync(uri, {
       encoding: 'base64',
-    });
-    attachmentBase64Cache.current.set(uri, base64);
-    return base64;
+    })
+      .then((base64) => {
+        if (!attachmentBase64Cache.current.has(uri)
+          && attachmentBase64Cache.current.size >= MAX_ATTACHMENT_BASE64_CACHE_SIZE) {
+          const oldestUri = attachmentBase64Cache.current.keys().next().value;
+          if (oldestUri) {
+            attachmentBase64Cache.current.delete(oldestUri);
+          }
+        }
+        attachmentBase64Cache.current.set(uri, base64);
+        return base64;
+      })
+      .finally(() => {
+        attachmentBase64PendingReads.current.delete(uri);
+      });
+
+    attachmentBase64PendingReads.current.set(uri, readPromise);
+    return readPromise;
   };
 
   const createStreamingController = useCallback((conversationId: string, messageId: string) => {
-let latestContent = '';
+    let latestContent = '';
     let latestReasoning = '';
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
     const pushSnapshotToRuntime = () => {
       updateStreamingMessage(conversationId, messageId, {
@@ -644,12 +695,23 @@ let latestContent = '';
     };
 
     const flush = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
       pushSnapshotToRuntime();
     };
 
     const scheduleFlush = () => {
-      // Keep latest chunk state per conversation. Rendering stays screen-aware.
-      pushSnapshotToRuntime();
+      if (flushTimer) {
+        return;
+      }
+
+      // Coalesce high-frequency chunks into a small update window.
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        pushSnapshotToRuntime();
+      }, STREAM_FLUSH_INTERVAL_MS);
     };
 
     return {
@@ -663,7 +725,10 @@ let latestContent = '';
       },
       flush,
       dispose: () => {
-        // No buffered frame/timer cleanup needed in immediate mode.
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
       },
     };
   }, [updateStreamingMessage]);
@@ -713,10 +778,13 @@ Keyboard.dismiss();
         return;
       }
 
+      const settingsState = useSettingsStore.getState();
+      const modeForConversation = getActiveMode(settingsState.modes, settingsState.lastUsedModeId, null);
+
       createConversation(
         modelResolution.selection.providerId,
-        activeMode?.id || '',
-        activeMode?.systemPrompt || 'You are a helpful AI assistant.',
+        modeForConversation?.id || '',
+        modeForConversation?.systemPrompt || 'You are a helpful AI assistant.',
         modelResolution.selection.model
       );
 
@@ -751,6 +819,20 @@ setChatError(null);
       }
       return true;
     });
+
+    // Notify user when attachments were dropped due to model capabilities
+    const droppedImageCount = attachments.filter(a => a.type === 'image' && !currentModelCapabilities.vision).length;
+    const droppedFileCount = attachments.filter(a => a.type === 'file' && !currentModelCapabilities.fileInput).length;
+    if (droppedImageCount > 0 || droppedFileCount > 0) {
+      const parts: string[] = [];
+      if (droppedImageCount > 0) parts.push(`${droppedImageCount} image(s)`);
+      if (droppedFileCount > 0) parts.push(`${droppedFileCount} file(s)`);
+      Alert.alert(
+        'Attachments Not Sent',
+        `The following attachments were not sent because the current model doesn't support them: ${parts.join(', ')}. Only text content will be included.`,
+        [{ text: 'OK' }]
+      );
+    }
 
     // Prepare attachments — strip base64 to keep Zustand/MMKV ultra-light.
     // base64 will be read lazily from the uri only when sending to the LLM.
@@ -787,6 +869,7 @@ let hasFinalAnswer = false;
     let currentStreamedReasoning = '';
     let currentStreamController: ReturnType<typeof createStreamingController> | null = null;
     let currentApiRequestDetails: import('../types').ApiRequestDetails | null = null;
+    let lastKnownRequestContext: { model: string; modeName?: string; providerUrl: string } | null = null;
     let thoughtStartedAt: number | null = null;
     let finalThoughtDurationMs: number | undefined;
 
@@ -826,6 +909,8 @@ if (!currentAssistantMsgId) {
 
     try {
       while (!hasFinalAnswer && !isStopRequested(conversationId)) {
+        thoughtStartedAt = null;
+        finalThoughtDurationMs = undefined;
         absoluteIterationCount++;
         if (absoluteIterationCount > MAX_ABSOLUTE_ITERATIONS) {
           setChatError(`Stopped: Reached maximum safety limit of ${MAX_ABSOLUTE_ITERATIONS} tool iterations.`);
@@ -833,7 +918,7 @@ if (!currentAssistantMsgId) {
         }
 
         if (__DEV__) {
-          console.log('[ChatScreen] Prompting with context from mode:', activeMode.name);
+          console.log('[ChatScreen] Prompting with context from mode:', activeMode?.name ?? 'none');
           console.log(`[ChatKnot Debug] ⏳ Preparing payload — collecting context from storage (iteration ${absoluteIterationCount})...`);
         }
         const payloadStartTime = Date.now();
@@ -842,8 +927,12 @@ if (!currentAssistantMsgId) {
           .getState()
           .conversations.find(c => c.id === conversationId);
         if (!currentConv) break;
-const settingsState = useSettingsStore.getState();
-        const loopMode = settingsState.modes.find(m => m.id === settingsState.lastUsedModeId) ?? settingsState.modes[0] ?? null;
+        const settingsState = useSettingsStore.getState();
+        const loopMode = getActiveMode(
+          settingsState.modes,
+          settingsState.lastUsedModeId,
+          currentConv.modeId,
+        );
         const modelSelection = resolveModelSelection({
           providers: settingsState.providers,
           selectedProviderId: currentConv.providerId,
@@ -883,6 +972,11 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
           ...providerConfig,
           model: selectedModel,
         };
+        lastKnownRequestContext = {
+          model: selectedModel,
+          modeName: loopMode?.name,
+          providerUrl: effectiveConfig.baseUrl,
+        };
         const selectedModelCapabilities = resolveModelCapabilities(providerConfig, selectedModel);
         const mcpTools = selectedModelCapabilities.tools
           ? McpManager.getTools()
@@ -902,7 +996,8 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
                 try {
                   const b64 = await readFileAsBase64(att.uri);
                   return { ...att, base64: b64 };
-                } catch {
+                } catch (error) {
+                  console.warn(`[ChatScreen] Failed to read attachment file: ${att.name} (${att.uri})`, error);
                   return att;
                 }
               })
@@ -971,7 +1066,7 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
         const requestController = new AbortController();
         activeRequestControllersRef.current.set(conversationId, requestController);
 
-        const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
+        const result = await new Promise<{ fullContent: string; toolCalls?: unknown[] }>((resolve, reject) => {
           let receivedFirstChunk = false;
           service
             .sendChatCompletion(
@@ -1039,8 +1134,22 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
 if (activeRequestControllersRef.current.get(conversationId) === requestController) {
           activeRequestControllersRef.current.delete(conversationId);
         }
+
+        // Freeze thinking time as soon as API request phase finishes.
+        // Tool execution that follows must not be counted as thinking.
+        if (thoughtStartedAt && finalThoughtDurationMs === undefined) {
+          finalThoughtDurationMs = Date.now() - thoughtStartedAt;
+          updateStreamingMessage(conversationId, assistantMsgId, {
+            content: streamedContent,
+            reasoning: streamedReasoning,
+            thoughtDurationMs: finalThoughtDurationMs,
+          });
+        }
+
         const apiElapsed = Date.now() - apiStartTime;
-        console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
+        if (__DEV__) {
+          console.log(`[ChatKnot Debug] \u2705 API response completed in ${apiElapsed}ms (total round-trip: ${payloadElapsed + apiElapsed}ms)`);
+        }
         currentStreamController?.flush();
 
         if (isStopRequested(conversationId)) {
@@ -1061,7 +1170,7 @@ if (activeRequestControllersRef.current.get(conversationId) === requestControlle
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
         let toolCalls = toolsEnabledForRequest
-          ? normalizeToolCalls(result.toolCalls)
+          ? normalizeToolCalls(result.toolCalls as Parameters<typeof normalizeToolCalls>[0])
           : [];
 
         // Fallback for providers/models that emit XML-based pseudo tool calls instead of native tool_calls.
@@ -1110,11 +1219,15 @@ finalizedAssistantText = 'I received an empty response from the model.';
         }
         if (loopDetected) {
           setChatError('Process stopped: AI got stuck in a repetitive loop.');
-          updateMessage(
-            conversationId,
-            assistantMsgId,
-            'I stopped processing because I got stuck repeating the exact same tool call.'
-          );
+          const conversation = useChatStore.getState().conversations.find(c => c.id === conversationId);
+          const messageExists = conversation?.messages.some(m => m.id === assistantMsgId);
+          if (messageExists) {
+            updateMessage(
+              conversationId,
+              assistantMsgId,
+              'I stopped processing because I got stuck repeating the exact same tool call.'
+            );
+          }
           break;
         }
         // --- END LOOP DETECTION ---
@@ -1180,7 +1293,7 @@ const parsedArgs = parseToolArguments(call.arguments, call.name);
               content: resultStr,
               toolCallId: call.id,
             });
-          } catch (error: any) {
+          } catch (error: unknown) {
 const errorStr = serializeToolExecutionError(error);
 
             updateToolCallStatus(conversationId, assistantMsgId, call.id, 'failed', {
@@ -1195,33 +1308,31 @@ const errorStr = serializeToolExecutionError(error);
         }
 
       }
-    } catch (error: any) {
-if (currentAssistantMsgId) {
-        if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
-          settleCurrentStream({
-            content: currentStreamedContent.trim(),
-            reasoning: currentStreamedReasoning,
-          });
-        } else {
-          settleCurrentStream({ clearOnly: true });
-        }
-      }
-
+    } catch (error: unknown) {
       const mounted = isMountedRef.current;
       const message = getErrorMessage(error);
       if (!isStopRequested(conversationId)) {
         if (conversationId) {
+          const fallbackRequestDetails = lastKnownRequestContext
+            ? {
+              ...lastKnownRequestContext,
+              requestedAt: Date.now(),
+            }
+            : undefined;
           addMessage(conversationId, {
             role: 'assistant',
             content: message,
             isError: true,
+            ...(currentApiRequestDetails ?? fallbackRequestDetails
+              ? { apiRequestDetails: currentApiRequestDetails ?? fallbackRequestDetails }
+              : {}),
           });
         } else if (mounted) {
           setChatError(message);
         }
       }
     } finally {
-if (currentAssistantMsgId) {
+      if (currentAssistantMsgId) {
         if (currentStreamedContent.trim() || currentStreamedReasoning.trim()) {
           settleCurrentStream({
             content: currentStreamedContent.trim(),
@@ -1284,30 +1395,11 @@ if (currentAssistantMsgId) {
 
   const hasAnyProvider = useMemo(() => {
     return providers.some(
-      (p) => p.enabled && (p.apiKey || p.apiKeyRef) && p.baseUrl
+      (p) => p.enabled && ((p.apiKey || '').trim().length > 0 || (p.apiKeyRef || '').trim().length > 0) && (p.baseUrl || '').trim().length > 0
     );
   }, [providers]);
 
   const chatHasMessages = !!activeConversation?.messages.some(m => m.role === 'user' || m.role === 'assistant');
-
-  const handleExport = async () => {
-    if (!activeConversation) return;
-    setIsExporting(true);
-    try {
-      const opts: ExportOptions = {
-        format: exportFormat,
-        includeToolInput,
-        includeToolOutput,
-        includeThinking,
-      };
-      await exportChat(activeConversation, opts);
-    } catch (e: any) {
-      Alert.alert('Export Failed', e?.message || 'Unable to export chat.');
-    } finally {
-      setIsExporting(false);
-      setExportModalVisible(false);
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -1329,8 +1421,8 @@ if (currentAssistantMsgId) {
       )}
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+        behavior="height"
+        keyboardVerticalOffset={0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
       >
         <View style={StyleSheet.absoluteFill}>
@@ -1352,16 +1444,16 @@ if (currentAssistantMsgId) {
 
               <FlatList
                 ref={flatListRef}
-                data={displayedMessages}
+                data={pagedMessages}
                 keyExtractor={item => item.id}
-                extraData={{ lastAssistantMessageId, isLoading: isActiveConversationLoading }}
+                extraData={{ lastAssistantMessageId, isLoading: isActiveConversationLoading, hasOlderMessages }}
                 maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                 initialNumToRender={10}
                 maxToRenderPerBatch={8}
                 updateCellsBatchingPeriod={50}
                 windowSize={7}
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                keyboardDismissMode="on-drag"
                 scrollEventThrottle={16}
                 onScroll={(event) => {
                   const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -1382,6 +1474,16 @@ if (currentAssistantMsgId) {
                   }
                 }}
                 renderItem={renderMessage}
+                ListHeaderComponent={hasOlderMessages ? (
+                  <View style={styles.paginationHeader}>
+                    <TouchableOpacity style={styles.loadMoreButton} onPress={loadOlderMessages}>
+                      <Text style={styles.loadMoreButtonText}>Load Older Messages</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.paginationHint}>
+                      Showing last {pagedMessages.length} of {displayedMessages.length}
+                    </Text>
+                  </View>
+                ) : null}
                 ListFooterComponent={<View style={{ height: 250 }} />}
                 contentContainerStyle={styles.listContent}
                 onContentSizeChange={() => {
@@ -1496,14 +1598,8 @@ if (currentAssistantMsgId) {
           />
         </View>
         <TouchableOpacity
-          style={[styles.exportButton, !chatHasMessages && styles.exportButtonDisabled]}
-          onPress={() => {
-            setExportFormat('pdf');
-            setIncludeToolInput(false);
-            setIncludeToolOutput(false);
-            setIncludeThinking(false);
-            setExportModalVisible(true);
-          }}
+          style={styles.exportButton}
+          onPress={() => setExportModalVisible(true)}
           disabled={!chatHasMessages}
           accessibilityLabel="Export chat"
           accessibilityRole="button"
@@ -1512,161 +1608,44 @@ if (currentAssistantMsgId) {
         </TouchableOpacity>
       </View>
 
-      <Modal
+      <ExportModal
         visible={exportModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setExportModalVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setExportModalVisible(false)}>
-          <View style={styles.exportOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.exportContent}>
-                <View style={styles.exportHeader}>
-                  <Text style={styles.exportTitle}>Export Chat</Text>
-                  <TouchableOpacity onPress={() => setExportModalVisible(false)} style={styles.exportCloseBtn}>
-                    <X size={18} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                </View>
+        conversation={activeConversation}
+        onClose={() => setExportModalVisible(false)}
+      />
 
-                <Text style={styles.exportSectionLabel}>Export Format</Text>
-                <View style={styles.exportFormatRow}>
-                  {(['pdf', 'markdown', 'json'] as ExportFormat[]).map(fmt => (
-                    <TouchableOpacity
-                      key={fmt}
-                      style={[styles.exportFormatBtn, exportFormat === fmt && styles.exportFormatBtnActive]}
-                      onPress={() => setExportFormat(fmt)}
-                    >
-                      <Text style={[styles.exportFormatText, exportFormat === fmt && styles.exportFormatTextActive]}>
-                        {fmt === 'pdf' ? 'PDF' : fmt === 'markdown' ? 'Markdown' : 'JSON'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {exportFormat !== 'json' && (
-                  <>
-                    <Text style={styles.exportSectionLabel}>Export Options</Text>
-                    <TouchableOpacity
-                      style={styles.exportCheckRow}
-                      onPress={() => setIncludeThinking(v => !v)}
-                    >
-                      <View style={[styles.exportCheckBox, includeThinking && styles.exportCheckBoxActive]}>
-                        {includeThinking && <Check size={14} color={colors.onPrimary} />}
-                      </View>
-                      <Text style={styles.exportCheckLabel}>Include model thinking</Text>
-                    </TouchableOpacity>
-
-                    <Text style={styles.exportSectionLabel}>Tool Details</Text>
-                    <TouchableOpacity
-                      style={styles.exportCheckRow}
-                      onPress={() => setIncludeToolInput(v => !v)}
-                    >
-                      <View style={[styles.exportCheckBox, includeToolInput && styles.exportCheckBoxActive]}>
-                        {includeToolInput && <Check size={14} color={colors.onPrimary} />}
-                      </View>
-                      <Text style={styles.exportCheckLabel}>Include tool input</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.exportCheckRow}
-                      onPress={() => setIncludeToolOutput(v => !v)}
-                    >
-                      <View style={[styles.exportCheckBox, includeToolOutput && styles.exportCheckBoxActive]}>
-                        {includeToolOutput && <Check size={14} color={colors.onPrimary} />}
-                      </View>
-                      <Text style={styles.exportCheckLabel}>Include tool output</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                <View style={styles.exportActions}>
-                  <TouchableOpacity style={styles.exportCancelBtn} onPress={() => setExportModalVisible(false)}>
-                    <Text style={styles.exportCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.exportConfirmBtn, isExporting && styles.exportConfirmBtnDisabled]}
-                    onPress={handleExport}
-                    disabled={isExporting}
-                  >
-                    <Text style={styles.exportConfirmText}>{isExporting ? 'Exporting...' : 'Export'}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      <Modal
+      <WarningModal
         visible={visionWarningVisible}
-        transparent
-        animationType="fade"
+        title="Vision Not Supported"
+        message="This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included."
+        primaryActionLabel="Switch Model"
+        secondaryActionLabel="Continue with Text Only"
+        onPrimaryAction={() => {
+          setVisionWarningVisible(false);
+          setTimeout(() => modelSelectorRef.current?.open(), 300);
+        }}
+        onSecondaryAction={() => {
+          setVisionWarningVisible(false);
+          if (hasEnabledMcpTools && !currentModelToolsSupported) {
+            setToolsWarningVisible(true);
+          }
+        }}
         onRequestClose={() => setVisionWarningVisible(false)}
-      >
-        <View style={styles.visionOverlay}>
-          <View style={styles.visionContent}>
-            <Text style={styles.visionTitle}>Vision Not Supported</Text>
-            <Text style={styles.visionMessage}>
-              This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included.
-            </Text>
-            <View style={styles.visionActions}>
-              <TouchableOpacity
-                style={styles.visionSwitchBtn}
-                onPress={() => {
-                  setVisionWarningVisible(false);
-                  setTimeout(() => modelSelectorRef.current?.open(), 300);
-                }}
-              >
-                <Text style={styles.visionSwitchText}>Switch Model</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.visionContinueBtn}
-                onPress={() => {
-                  setVisionWarningVisible(false);
-                  if (hasEnabledMcpTools && !currentModelToolsSupported) {
-                    setToolsWarningVisible(true);
-                  }
-                }}
-              >
-                <Text style={styles.visionContinueText}>Continue with Text Only</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      />
 
-      <Modal
+      <WarningModal
         visible={toolsWarningVisible}
-        transparent
-        animationType="fade"
+        title="MCP Tools Not Supported"
+        message="This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI."
+        primaryActionLabel="Switch Model"
+        secondaryActionLabel="Continue Without MCP"
+        onPrimaryAction={() => {
+          setToolsWarningVisible(false);
+          setTimeout(() => modelSelectorRef.current?.open(), 300);
+        }}
+        onSecondaryAction={() => setToolsWarningVisible(false)}
         onRequestClose={() => setToolsWarningVisible(false)}
-      >
-        <View style={styles.visionOverlay}>
-          <View style={styles.visionContent}>
-            <Text style={styles.visionTitle}>MCP Tools Not Supported</Text>
-            <Text style={styles.visionMessage}>
-              This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI.
-            </Text>
-            <View style={styles.visionActions}>
-              <TouchableOpacity
-                style={styles.visionSwitchBtn}
-                onPress={() => {
-                  setToolsWarningVisible(false);
-                  setTimeout(() => modelSelectorRef.current?.open(), 300);
-                }}
-              >
-                <Text style={styles.visionSwitchText}>Switch Model</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.visionContinueBtn}
-                onPress={() => setToolsWarningVisible(false)}
-              >
-                <Text style={styles.visionContinueText}>Continue Without MCP</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      />
 
       {/* Mode Selector Modal */}
       <Modal
@@ -1676,7 +1655,7 @@ if (currentAssistantMsgId) {
         onRequestClose={() => setModeSelectorVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setModeSelectorVisible(false)}>
-          <View style={styles.exportOverlay}>
+          <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.modeModalContent}>
                 <Text style={styles.modeModalTitle}>Switch Mode</Text>
@@ -1799,6 +1778,29 @@ const createStyles = (colors: AppPalette, insetsTop: number) =>
       paddingTop: insetsTop + 56 + 10,
       // Note: paddingBottom removed - using ListFooterComponent for buffer instead
     },
+    paginationHeader: {
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingBottom: 8,
+    },
+    loadMoreButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.subtleBorder,
+      backgroundColor: colors.surfaceAlt,
+    },
+    loadMoreButtonText: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    paginationHint: {
+      marginTop: 6,
+      color: colors.textTertiary,
+      fontSize: 12,
+    },
     emptyState: {
       flex: 1,
       justifyContent: 'center',
@@ -1846,171 +1848,32 @@ const createStyles = (colors: AppPalette, insetsTop: number) =>
       borderColor: colors.subtleBorder,
       marginLeft: 8,
     },
-    exportButtonDisabled: {
-      opacity: 0.35,
-    },
-    exportOverlay: {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       alignItems: 'center',
-    },
-    exportContent: {
-      width: '85%',
-      maxWidth: 360,
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 20,
-    },
-    exportHeader: {
-      flexDirection: 'row' as const,
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 16,
-    },
-    exportTitle: {
-      fontSize: 18,
-      fontWeight: '600' as const,
-      color: colors.text,
-    },
-    exportCloseBtn: {
-      padding: 4,
-    },
-    exportSectionLabel: {
-      fontSize: 13,
-      fontWeight: '500' as const,
-      color: colors.textSecondary,
-      marginBottom: 8,
-      marginTop: 4,
-    },
-    exportFormatRow: {
-      flexDirection: 'row' as const,
-      gap: 8,
-      marginBottom: 16,
-    },
-    exportFormatBtn: {
-      flex: 1,
-      paddingVertical: 10,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center' as const,
-    },
-    exportFormatBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primarySoft,
-    },
-    exportFormatText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    exportFormatTextActive: {
-      color: colors.primary,
-      fontWeight: '600' as const,
-    },
-    exportCheckRow: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      paddingVertical: 8,
-      gap: 10,
-    },
-    exportCheckBox: {
-      width: 22,
-      height: 22,
-      borderRadius: 5,
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      justifyContent: 'center' as const,
-      alignItems: 'center' as const,
-    },
-    exportCheckBoxActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    exportCheckLabel: {
-      fontSize: 14,
-      color: colors.text,
-    },
-    exportActions: {
-      flexDirection: 'row' as const,
-      justifyContent: 'flex-end',
-      gap: 10,
-      marginTop: 20,
-    },
-    exportCancelBtn: {
-      paddingVertical: 10,
-      paddingHorizontal: 18,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    exportCancelText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    exportConfirmBtn: {
-      paddingVertical: 10,
-      paddingHorizontal: 22,
-      borderRadius: 10,
-      backgroundColor: colors.primary,
-    },
-    exportConfirmBtnDisabled: {
-      opacity: 0.5,
-    },
-    exportConfirmText: {
-      fontSize: 14,
-      fontWeight: '600' as const,
-      color: colors.onPrimary,
-    },
-    visionOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    visionContent: {
-      width: '85%',
-      maxWidth: 360,
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 20,
-    },
-    visionTitle: {
-      fontSize: 17,
-      fontWeight: '600' as const,
-      color: colors.text,
-      marginBottom: 10,
-    },
-    visionMessage: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: colors.textSecondary,
-      marginBottom: 20,
-    },
-    visionActions: {
-      gap: 10,
-    },
-    visionSwitchBtn: {
-      paddingVertical: 12,
-      borderRadius: 10,
-      backgroundColor: colors.primary,
-      alignItems: 'center' as const,
-    },
-    visionSwitchText: {
-      fontSize: 15,
-      fontWeight: '600' as const,
-      color: colors.onPrimary,
-    },
-    visionContinueBtn: {
-      paddingVertical: 12,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center' as const,
-    },
-    visionContinueText: {
-      fontSize: 15,
-      color: colors.textSecondary,
     },
     modeModalContent: {
       width: '80%',

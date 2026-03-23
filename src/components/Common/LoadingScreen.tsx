@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -6,9 +6,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import pkg from '../../../package.json';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { resolveStartupVersion, StartupVersionSource } from './loadingVersion';
+
+const FALLBACK_VERSION = '0.4.0';
 
 interface Props {
   statusMessage: string;
@@ -20,30 +23,36 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
+  const version = useMemo(
+    () => resolveStartupVersion(Constants as unknown as StartupVersionSource, FALLBACK_VERSION),
+    []
+  );
+
   useEffect(() => {
-    Animated.timing(fadeAnim, {
+    const anim = Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 400,
       useNativeDriver: true,
-    }).start();
+    });
+    anim.start();
+    return () => anim.stop();
   }, []);
 
   useEffect(() => {
-    if (progress != null) {
-      Animated.timing(progressAnim, {
-        toValue: progress,
-        duration: 300,
-        useNativeDriver: false,
-      }).start();
-    }
+    if (progress == null) return;
+    const anim = Animated.timing(progressAnim, {
+      toValue: progress,
+      duration: 300,
+      useNativeDriver: false,
+    });
+    anim.start();
+    return () => anim.stop();
   }, [progress]);
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
   });
-
-  const version = pkg.version || '0.2.2';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

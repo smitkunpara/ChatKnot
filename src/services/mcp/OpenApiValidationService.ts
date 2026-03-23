@@ -4,7 +4,13 @@ import {
   OpenApiValidationFailure,
   OpenApiValidationResult,
 } from '../../types';
-import { OpenApiToolMeta, ensureHttpUrl, extractSecuritySchemeNames, extractSecurityHeaders } from './openApiHelpers';
+import {
+  ensureHttpUrl,
+  extractSecuritySchemeNames,
+  extractSecurityHeaders,
+  sanitizeToolName,
+  buildAuthHeaders,
+} from './openApiHelpers';
 
 type ValidateOpenApiEndpointInput = {
   url: string;
@@ -15,34 +21,6 @@ type ValidateOpenApiEndpointInput = {
 
 const CALLABLE_HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch'];
 
-const hasHeader = (headers: Record<string, string>, headerName: string): boolean => {
-  const target = headerName.toLowerCase();
-  return Object.keys(headers).some((name) => name.toLowerCase() === target);
-};
-
-const buildValidationHeaders = (
-  headers?: Record<string, string>,
-  token?: string
-): Record<string, string> => {
-  const mergedHeaders: Record<string, string> = { ...(headers || {}) };
-  const trimmedToken = String(token || '').trim();
-  if (!trimmedToken) {
-    return mergedHeaders;
-  }
-
-  if (!hasHeader(mergedHeaders, 'authorization')) {
-    mergedHeaders.Authorization = `Bearer ${trimmedToken}`;
-  }
-  if (!hasHeader(mergedHeaders, 'x-api-key')) {
-    mergedHeaders['x-api-key'] = trimmedToken;
-  }
-  if (!hasHeader(mergedHeaders, 'api-key')) {
-    mergedHeaders['api-key'] = trimmedToken;
-  }
-
-  return mergedHeaders;
-};
-
 const toFailure = (error: OpenApiValidationError): OpenApiValidationFailure => ({
   ok: false,
   error,
@@ -52,7 +30,14 @@ const looksLikeSpecUrl = (url: string): boolean => {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname.toLowerCase();
-    return path.endsWith('.json') || path.includes('openapi');
+    return (
+      path.endsWith('/openapi.json') ||
+      path.endsWith('/openapi.yaml') ||
+      path.endsWith('/openapi.yml') ||
+      path.endsWith('/swagger.json') ||
+      path === '/openapi' ||
+      path === '/swagger'
+    );
   } catch {
     return false;
   }
@@ -76,36 +61,73 @@ const buildProbeUrls = (normalizedInputUrl: string): string[] => {
   return [baseProbeUrl, normalizedInputUrl];
 };
 
-const resolveSchema = (schema: any, components: any): any => {
-  if (schema?.$ref) {
-    const refName = schema.$ref.split('/').pop();
-    const resolved = components?.[refName];
-    if (resolved) return resolved;
+interface OpenApiSchema {
+  type?: string;
+  properties?: Record<string, OpenApiSchema>;
+  required?: string[];
+  $ref?: string;
+  [key: string]: unknown;
+}
+
+interface OpenApiParameter {
+  name?: string;
+  required?: boolean;
+  schema?: OpenApiSchema;
+  in?: string;
+  [key: string]: unknown;
+}
+
+interface OpenApiOperation {
+  operationId?: string;
+  summary?: string;
+  description?: string;
+  parameters?: OpenApiParameter[];
+  requestBody?: {
+    content?: {
+      'application/json'?: {
+        schema?: OpenApiSchema;
+      };
+    };
+  };
+  security?: unknown;
+  [key: string]: unknown;
+}
+
+interface OpenApiSpec {
+  openapi?: string;
+  swagger?: string;
+  info?: { title?: string; version?: string };
+  paths?: Record<string, Record<string, OpenApiOperation>>;
+  servers?: Array<{ url?: string }>;
+  components?: { schemas?: Record<string, OpenApiSchema>; securitySchemes?: Record<string, unknown> };
+  security?: unknown;
+  [key: string]: unknown;
+}
+
+const resolveSchema = (schema: unknown, components: Record<string, OpenApiSchema>): OpenApiSchema => {
+  const s = schema as OpenApiSchema | undefined;
+  if (s?.$ref) {
+    const refName = s.$ref.split('/').pop();
+    if (refName) {
+      const resolved = components?.[refName];
+      if (resolved) return resolved;
+    }
   }
-  return schema;
+  return (schema || {}) as OpenApiSchema;
 };
 
-const sanitizeToolName = (name: string): string => {
-  // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
-  // We prefer underscores over hyphens for broader compatibility across all providers
-  const sanitized = name
-    .replace(/[^a-zA-Z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-  return sanitized || 'tool';
-};
-
-export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
+export const extractOpenApiTools = (spec: unknown): McpToolSchema[] => {
   const tools: McpToolSchema[] = [];
-  const schemas = spec?.components?.schemas || {};
-  const globalSecurity = extractSecuritySchemeNames(spec?.security);
+  const specObj = spec as OpenApiSpec;
+  const schemas = specObj?.components?.schemas || {};
+  const globalSecurity = extractSecuritySchemeNames(specObj?.security);
 
-  Object.entries(spec?.paths || {}).forEach(([path, methods]: [string, any]) => {
+  Object.entries(specObj?.paths || {}).forEach(([path, methods]) => {
     if (!methods || typeof methods !== 'object') {
       return;
     }
 
-    Object.entries(methods).forEach(([method, operation]: [string, any]) => {
+    Object.entries(methods).forEach(([method, operation]) => {
       if (!CALLABLE_HTTP_METHODS.includes(method.toLowerCase())) {
         return;
       }
@@ -116,53 +138,58 @@ export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
       const rawName = operation.operationId || `${method}_${path.replace(/\//g, '_')}`;
       const name = sanitizeToolName(rawName);
 
-      let inputSchema: any = { type: 'object', properties: {}, required: [] };
+      const inputSchema: OpenApiSchema = { type: 'object', properties: {}, required: [] };
 
       if (operation.requestBody?.content?.['application/json']?.schema) {
-        const bodySchema = resolveSchema(operation.requestBody.content['application/json'].schema, schemas);
+        const bodySchema = resolveSchema(
+          operation.requestBody.content['application/json'].schema,
+          schemas
+        );
         if (bodySchema && typeof bodySchema === 'object') {
-          // If the schema is already an object type, merge its properties
           if (bodySchema.type === 'object' || bodySchema.properties) {
-            inputSchema.properties = { ...inputSchema.properties, ...(bodySchema.properties || {}) };
+            inputSchema.properties = {
+              ...inputSchema.properties,
+              ...(bodySchema.properties || {}),
+            };
             if (Array.isArray(bodySchema.required)) {
-              inputSchema.required = Array.from(new Set([...inputSchema.required, ...bodySchema.required]));
+              inputSchema.required = Array.from(
+                new Set([...(inputSchema.required || []), ...bodySchema.required])
+              );
             }
           } else {
-            // Fallback: put the entire schema under a 'body' property if it's not a top-level object
+            if (!inputSchema.properties) inputSchema.properties = {};
             inputSchema.properties.body = bodySchema;
           }
         }
       }
 
       if (Array.isArray(operation.parameters)) {
-        operation.parameters.forEach((param: any) => {
+        operation.parameters.forEach((param) => {
           if (!param?.name) return;
           const paramSchema = resolveSchema(param.schema, schemas) || { type: 'string' };
+          if (!inputSchema.properties) inputSchema.properties = {};
           inputSchema.properties[param.name] = paramSchema;
-          if (param.required && !inputSchema.required.includes(param.name)) {
+          if (param.required && inputSchema.required && !inputSchema.required.includes(param.name)) {
             inputSchema.required.push(param.name);
           }
         });
       }
 
-      // Ensure properties and required are valid for OpenAI
-      if (Object.keys(inputSchema.properties).length === 0) {
-        // Many providers reject tools with empty properties unless it's null or omitted,
-        // but OpenAI standard usually expects an object. We'll leave it as empty object for now.
-      }
-      if (inputSchema.required.length === 0) {
+      if (inputSchema.required && inputSchema.required.length === 0) {
         delete inputSchema.required;
       }
 
       const operationSecurity = extractSecuritySchemeNames(operation?.security);
-      const appliedSecurity = operationSecurity.length > 0 ? operationSecurity : globalSecurity;
+      const hasOperationSecurity = Array.isArray(operation?.security);
+      const appliedSecurity = hasOperationSecurity ? operationSecurity : globalSecurity;
       const securityHeaders = extractSecurityHeaders(spec, appliedSecurity);
 
       tools.push({
         name,
-        description: operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
-        inputSchema,
-        _meta: { path, method, baseUrl: spec?.servers?.[0]?.url, securityHeaders },
+        description:
+          operation.summary || operation.description || `Call ${method.toUpperCase()} ${path}`,
+        inputSchema: inputSchema as Record<string, unknown>,
+        _meta: { path, method, baseUrl: specObj?.servers?.[0]?.url, securityHeaders },
       });
     });
   });
@@ -170,7 +197,7 @@ export const extractOpenApiTools = (spec: any): McpToolSchema[] => {
   return tools;
 };
 
-const validateSpecShape = (spec: any): OpenApiValidationFailure | null => {
+const validateSpecShape = (spec: unknown): OpenApiValidationFailure | null => {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
     return toFailure({
       code: 'INVALID_SPEC',
@@ -179,23 +206,28 @@ const validateSpecShape = (spec: any): OpenApiValidationFailure | null => {
     });
   }
 
+  const specObj = spec as OpenApiSpec;
   const missingFields: string[] = [];
-  const hasVersion = typeof spec.openapi === 'string' || typeof spec.swagger === 'string';
+  const hasVersion = typeof specObj.openapi === 'string' || typeof specObj.swagger === 'string';
   if (!hasVersion) missingFields.push('openapi/swagger version');
 
-  if (!spec.info || typeof spec.info !== 'object') {
+  if (!specObj.info || typeof specObj.info !== 'object') {
     missingFields.push('info.title');
     missingFields.push('info.version');
   } else {
-    if (!String(spec.info.title || '').trim()) {
+    if (!String(specObj.info.title || '').trim()) {
       missingFields.push('info.title');
     }
-    if (!String(spec.info.version || '').trim()) {
+    if (!String(specObj.info.version || '').trim()) {
       missingFields.push('info.version');
     }
   }
 
-  if (!spec.paths || typeof spec.paths !== 'object' || Object.keys(spec.paths).length === 0) {
+  if (
+    !specObj.paths ||
+    typeof specObj.paths !== 'object' ||
+    Object.keys(specObj.paths).length === 0
+  ) {
     missingFields.push('paths');
   }
 
@@ -213,8 +245,13 @@ const validateSpecShape = (spec: any): OpenApiValidationFailure | null => {
   return null;
 };
 
-const resolveToolBaseUrl = (normalizedInputUrl: string, resolvedSpecUrl: string, spec: any): string => {
-  const serverUrl = String(spec?.servers?.[0]?.url || '').trim();
+const resolveSpecToolBaseUrl = (
+  normalizedInputUrl: string,
+  resolvedSpecUrl: string,
+  spec: unknown
+): string => {
+  const specObj = spec as OpenApiSpec;
+  const serverUrl = String(specObj?.servers?.[0]?.url || '').trim();
 
   if (serverUrl) {
     if (/^https?:\/\//i.test(serverUrl)) {
@@ -232,7 +269,8 @@ const resolveToolBaseUrl = (normalizedInputUrl: string, resolvedSpecUrl: string,
   const parsedSpecUrl = new URL(resolvedSpecUrl);
   const lowerPath = parsedSpecUrl.pathname.toLowerCase();
   if (lowerPath.endsWith('/openapi.json')) {
-    parsedSpecUrl.pathname = parsedSpecUrl.pathname.slice(0, -'/openapi.json'.length) || '/';
+    parsedSpecUrl.pathname =
+      parsedSpecUrl.pathname.slice(0, -'/openapi.json'.length) || '/';
     parsedSpecUrl.search = '';
     parsedSpecUrl.hash = '';
     return parsedSpecUrl.toString().replace(/\/$/, '');
@@ -263,7 +301,7 @@ export const validateOpenApiEndpoint = async (
     });
   }
 
-  const headers = buildValidationHeaders(input.headers, input.token);
+  const headers = buildAuthHeaders(input.headers, input.token);
   const fetchImpl = input.fetchImpl || fetch;
   const probeUrls = buildProbeUrls(normalizedInputUrl);
   const attemptedUrls: string[] = [];
@@ -273,14 +311,15 @@ export const validateOpenApiEndpoint = async (
     const probeUrl = probeUrls[i];
     attemptedUrls.push(probeUrl);
 
-    let response: any;
+    let response: Response | undefined;
     try {
       response = await fetchImpl(probeUrl, { headers });
     } catch {
       lastFailure = toFailure({
         code: 'FETCH_FAILED',
         field: 'network',
-        message: 'Unable to reach the server. Check URL, network connectivity, and SSL setup.',
+        message:
+          'Unable to reach the server. Check URL, network connectivity, and SSL setup.',
       });
       continue;
     }
@@ -300,9 +339,9 @@ export const validateOpenApiEndpoint = async (
       continue;
     }
 
-    let spec: any;
+    let spec: unknown;
     try {
-      spec = await response.json();
+      spec = await (response as Response).json();
     } catch {
       lastFailure = toFailure({
         code: 'INVALID_JSON',
@@ -323,7 +362,8 @@ export const validateOpenApiEndpoint = async (
       lastFailure = toFailure({
         code: 'NO_OPERATIONS',
         field: 'spec',
-        message: 'OpenAPI spec has no callable operations (GET/POST/PUT/PATCH/DELETE).',
+        message:
+          'OpenAPI spec has no callable operations (GET/POST/PUT/PATCH/DELETE).',
       });
       continue;
     }
@@ -332,8 +372,8 @@ export const validateOpenApiEndpoint = async (
       ok: true,
       normalizedInputUrl,
       resolvedSpecUrl: probeUrl,
-      resolvedBaseUrl: resolveToolBaseUrl(normalizedInputUrl, probeUrl, spec),
-      spec,
+      resolvedBaseUrl: resolveSpecToolBaseUrl(normalizedInputUrl, probeUrl, spec),
+      spec: spec as Record<string, unknown>,
       tools,
     };
   }

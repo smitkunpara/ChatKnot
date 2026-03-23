@@ -12,6 +12,12 @@ web-build/
 expo-env.d.ts
 .expo-shared/
 
+# Test
+coverage/
+
+# Personal dev notes
+todo.md
+
 # Native
 *.orig.*
 *.jks
@@ -23,27 +29,22 @@ expo-env.d.ts
 *.ipa
 *.apk
 *.aab
+*.realm
+*.realm.lock
+*.realm.management/
+*.realm.note
+*.realm.wal
+*.mmkv
+*.mmkv.crc
 
 # Android
 android/build/
 android/.gradle/
 android/app/build/
+android/app/.cxx/
 android/local.properties
 android/key.properties
 android-sdk-local/
-
-# iOS
-ios/build/
-ios/Pods/
-ios/.xccheckout/
-ios/*.xcworkspace/
-!ios/*.xcworkspace/contents.xcworkspacedata
-ios/xcuserdata/
-ios/*.moved-aside
-ios/*.hmap
-ios/*.ipa
-ios/*.xcuserstate
-ios/Podfile.lock
 
 # Metro
 .metro-health-check*
@@ -76,8 +77,7 @@ logs
 *.tsbuildinfo
 
 # generated native folders (uncomment if you want to ignore them)
-# /ios
 # /android
 
-needed_change.md
+# kilocode coverage/analysis tool artifacts
 .kilocode

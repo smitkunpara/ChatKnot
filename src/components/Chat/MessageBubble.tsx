@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import {
   Image,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,62 +17,28 @@ import { ToolCall as ToolCallComponent } from './ToolCall';
 import { ThinkingBlock } from './ThinkingBlock';
 import { RequestPhaseIndicator } from './RequestPhaseIndicator';
 import { RequestPhase } from '../../store/useChatRuntimeStore';
+import {
+  createMarkdownStyles,
+  createTableRenderRules,
+  getTableColumnWidth,
+} from './chatMarkdownStyles';
+import { ContentBlock } from '../../utils/parseThinkingBlocks';
+import {
+  buildAssistantContentBlocks,
+  getAttachmentImageSource,
+  hasUsableReasoning,
+} from './messageBubbleHelpers';
 
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
-  onEdit?: (id: string, content: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
   pendingToolApprovalIds?: Record<string, true>;
   onToolApprovalDecision?: (toolCallId: string, approved: boolean) => void;
   onRetryAssistant?: (messageId: string) => void;
-  /** Current request phase — drives the status indicator above streamed content. */
-  requestPhase?: RequestPhase;
-  /** Live API request details for the 'api_request' phase indicator. */
+  requestPhase?: RequestPhase | null;
   apiRequestDetails?: ApiRequestDetails | null;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers: parse <think>…</think> blocks out of assistant content
-// ---------------------------------------------------------------------------
-
-interface ContentBlock {
-  type: 'text' | 'think';
-  content: string;
-}
-
-/**
- * Split raw assistant content into an ordered list of text and think blocks.
- * Handles both complete `<think>…</think>` pairs and an un-closed trailing
- * `<think>…` (which happens while the model is still streaming its thinking).
- */
-const parseThinkingBlocks = (raw: string): ContentBlock[] => {
-  const blocks: ContentBlock[] = [];
-  // Regex matches <think>…</think> (greedy-lazy) as well as a trailing <think>… with no close
-  const regex = /<think>([\s\S]*?)(<\/think>|$)/gi;
-
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(raw)) !== null) {
-    // Any text before this <think> block
-    if (match.index > lastIndex) {
-      blocks.push({ type: 'text', content: raw.slice(lastIndex, match.index) });
-    }
-    blocks.push({ type: 'think', content: match[1] });
-    lastIndex = regex.lastIndex;
-  }
-
-  // Remaining text after the last match
-  if (lastIndex < raw.length) {
-    blocks.push({ type: 'text', content: raw.slice(lastIndex) });
-  }
-
-  return blocks;
-};
-
-// ---------------------------------------------------------------------------
-// MessageBubble
-// ---------------------------------------------------------------------------
 
 const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   message,
@@ -85,10 +50,10 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   requestPhase,
   apiRequestDetails,
 }) => {
-const { colors } = useAppTheme();
+  const { colors } = useAppTheme();
   const { width: viewportWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const markdownStyles = createMarkdownStyles(colors) as any;
+  const markdownStyles = useMemo(() => createMarkdownStyles(colors), [colors]);
   const tableRenderRules = useMemo(
     () => createTableRenderRules(colors, getTableColumnWidth(viewportWidth)),
     [colors, viewportWidth]
@@ -102,9 +67,7 @@ const { colors } = useAppTheme();
   const hasReasoning = !!message.reasoning?.trim();
   const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
 
-  // Show assistant message if it has content OR if retry is available (for empty messages that were stopped)
   const shouldShowAssistant = !isUser && onRetryAssistant;
-  // Condition to hide the bubble - used below to conditionally render content
   const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
 
   const copyToClipboard = async () => {
@@ -112,53 +75,25 @@ const { colors } = useAppTheme();
     await Clipboard.setStringAsync(message.content || '');
   };
 
-  // ---------------------------------------------------------------------------
-  // Resolve thinking content from TWO sources:
-  // 1. message.reasoning — streamed separately via delta.reasoning_content (OpenAI-compat)
-  // 2. Inline <think>…</think> tags in message.content (DeepSeek-style)
-  // If message.reasoning exists, prefer it and strip any <think> tags from content.
-  // ---------------------------------------------------------------------------
-  const hasStreamedReasoning = !!message.reasoning;
+  const hasStreamedReasoning = hasUsableReasoning(message.reasoning);
 
   const contentBlocks: ContentBlock[] = useMemo(() => {
     if (isUser) return [{ type: 'text' as const, content: message.content || '' }];
 
-    // When reasoning arrived via delta.reasoning_content, build blocks from it
-    if (hasStreamedReasoning) {
-      const rawContent = message.content || '';
-      const strippedContent = rawContent.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
-      const blocks: ContentBlock[] = [{ type: 'think', content: message.reasoning! }];
-      if (strippedContent) {
-        blocks.push({ type: 'text', content: strippedContent });
-      }
-      return blocks;
-    }
+    return buildAssistantContentBlocks(message.content, message.reasoning);
+  }, [message.content, message.reasoning, isUser]);
 
-    // Parse inline <think> tags from the content itself
-    if (message.content) {
-      return parseThinkingBlocks(message.content);
-    }
-
-    return [{ type: 'text' as const, content: '' }];
-  }, [message.content, message.reasoning, isUser, hasStreamedReasoning]);
-
-  // Check if the model is currently streaming thinking
-  // - For streamed reasoning: streaming + reasoning exists but no visible text content yet
-  // - For <think> tags: last block is think type & still streaming
   const isStreamingThinking = !!isStreaming && (
     (hasStreamedReasoning && !contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0)) ||
     (contentBlocks.length > 0 && contentBlocks[contentBlocks.length - 1].type === 'think')
   );
 
-  // Derive whether there's any visible text content (non-think) to display
   const showCopyAction = !isStreaming && hasText;
   const showRetryAction = !isUser && !isStreaming && !!onRetryAssistant;
   const showEditAction = isUser && !!onEdit;
   const hasAnyActions = showCopyAction || showRetryAction || showEditAction;
   const isToolOnlyAssistant = !isUser && hasToolCalls && !hasText && !hasReasoning && !message.isError;
 
-  // Always return a consistent component structure to avoid React hook count issues
-  // when FlatList recycles component instances. Render empty view when hidden.
   if (shouldHideBubble) {
     return <View style={{ height: 0 }} />;
   }
@@ -179,9 +114,9 @@ const { colors } = useAppTheme();
                 <View style={styles.attachmentsContainer}>
                   {message.attachments?.map((att) => (
                     <View key={att.id} style={styles.attachmentItem}>
-                      {att.type === 'image' && att.base64 ? (
+                      {att.type === 'image' ? (
                         <Image
-                          source={{ uri: `data:${att.mimeType};base64,${att.base64}` }}
+                          source={getAttachmentImageSource(att)}
                           style={styles.attachedImage}
                         />
                       ) : (
@@ -217,7 +152,6 @@ const { colors } = useAppTheme();
                 </View>
               ) : (
                 <>
-                  {/* Phase indicator: stays permanently if we have apiRequestDetails, or actively streaming query phase */}
                   {(requestPhase || message.apiRequestDetails || apiRequestDetails) && (
                     <RequestPhaseIndicator
                       phase={requestPhase}
@@ -237,7 +171,6 @@ const { colors } = useAppTheme();
                         />
                       );
                     }
-                    // text block
                     if (!block.content.trim()) return null;
                     return (
                       <View key={`text-${idx}`}>
@@ -301,7 +234,7 @@ const { colors } = useAppTheme();
 
 export const MessageBubble = React.memo(MessageBubbleComponent);
 
-const createStyles = (colors: AppPalette) =>
+export const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
       marginVertical: 6,
@@ -426,253 +359,3 @@ const createStyles = (colors: AppPalette) =>
       alignItems: 'center',
     },
   });
-
-export const createMarkdownStyles = (colors: AppPalette) => ({
-  body: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 23,
-    flexShrink: 1,
-  },
-  heading1: {
-    color: colors.text,
-    marginTop: 4,
-    marginBottom: 10,
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '700' as const,
-  },
-  heading2: {
-    color: colors.text,
-    marginTop: 4,
-    marginBottom: 10,
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '700' as const,
-  },
-  heading3: {
-    color: colors.text,
-    marginTop: 4,
-    marginBottom: 8,
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '700' as const,
-  },
-  heading4: {
-    color: colors.text,
-    marginTop: 2,
-    marginBottom: 8,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '600' as const,
-  },
-  heading5: {
-    color: colors.text,
-    marginBottom: 6,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '600' as const,
-  },
-  heading6: {
-    color: colors.text,
-    marginBottom: 6,
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '600' as const,
-  },
-  paragraph: {
-    color: colors.text,
-    marginTop: 0,
-    marginBottom: 10,
-    flexWrap: 'wrap' as const,
-  },
-  text: {
-    color: colors.text,
-  },
-  strong: {
-    fontWeight: '700' as const,
-  },
-  em: {
-    fontStyle: 'italic',
-  },
-  s: {
-    textDecorationLine: 'line-through',
-  },
-  hr: {
-    backgroundColor: colors.border,
-    height: 1,
-    marginVertical: 12,
-  },
-  code_inline: {
-    backgroundColor: colors.codeBackground,
-    color: colors.text,
-    fontFamily: 'monospace',
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-  },
-  code_block: {
-    backgroundColor: colors.codeBackground,
-    color: colors.text,
-    fontFamily: 'monospace',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  fence: {
-    backgroundColor: colors.codeBackground,
-    color: colors.text,
-    borderColor: colors.border,
-    borderWidth: 1,
-    fontFamily: 'monospace',
-    borderRadius: 8,
-    padding: 10,
-    marginVertical: 8,
-    overflow: 'hidden' as const,
-  },
-  pre: {
-    backgroundColor: colors.codeBackground,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 0,
-    marginVertical: 8,
-    overflow: 'hidden' as const,
-  },
-  link: {
-    color: colors.link,
-  },
-  blockquote: {
-    backgroundColor: colors.surfaceAlt,
-    borderColor: colors.primary,
-    borderLeftWidth: 3,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginVertical: 6,
-  },
-  bullet_list_icon: {
-    color: colors.text,
-    marginTop: 2,
-    marginRight: 8,
-  },
-  ordered_list_icon: {
-    color: colors.textSecondary,
-    marginRight: 8,
-  },
-  list_item: {
-    color: colors.text,
-    marginBottom: 6,
-  },
-  bullet_list: {
-    color: colors.text,
-    marginBottom: 10,
-  },
-  ordered_list: {
-    color: colors.text,
-    marginBottom: 10,
-  },
-  list_item_content: {
-    color: colors.text,
-    flex: 1,
-  },
-  table: {
-    borderWidth: 0,
-    borderColor: 'transparent',
-    marginVertical: 8,
-  },
-  thead: {},
-  tbody: {},
-  tr: {
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    flexDirection: 'row' as const,
-  },
-  th: {
-    padding: 8,
-    borderRightWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceAlt,
-    alignSelf: 'stretch' as const,
-  },
-  td: {
-    padding: 8,
-    borderRightWidth: 1,
-    borderColor: colors.border,
-    alignSelf: 'stretch' as const,
-  },
-});
-
-export const getTableColumnWidth = (viewportWidth: number) =>
-  Math.max(140, Math.min(Math.floor((viewportWidth - 96) / 2), 220));
-
-export const createTableRenderRules = (colors: AppPalette, columnWidth: number) => ({
-  table: (node: any, children: any) => (
-    <ScrollView
-      key={node.key}
-      horizontal
-      showsHorizontalScrollIndicator={true}
-      contentContainerStyle={{
-        flexDirection: 'column' as const,
-      }}
-      style={{
-        marginVertical: 8,
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: 6,
-        maxWidth: '100%' as const,
-        alignSelf: 'flex-start' as const,
-      }}
-    >
-      {children}
-    </ScrollView>
-  ),
-  th: (node: any, children: any) => (
-    <View
-      key={node.key}
-      style={{
-        padding: 8,
-        width: columnWidth,
-        maxWidth: columnWidth,
-        borderRightWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surfaceAlt,
-        alignSelf: 'stretch' as const,
-      }}
-    >
-      <View style={{ width: '100%', flexShrink: 1 }}>
-        {children}
-      </View>
-    </View>
-  ),
-  td: (node: any, children: any) => (
-    <View
-      key={node.key}
-      style={{
-        padding: 8,
-        width: columnWidth,
-        maxWidth: columnWidth,
-        borderRightWidth: 1,
-        borderColor: colors.border,
-        alignSelf: 'stretch' as const,
-      }}
-    >
-      <View style={{ width: '100%', flexShrink: 1 }}>
-        {children}
-      </View>
-    </View>
-  ),
-  tr: (node: any, children: any) => (
-    <View
-      key={node.key}
-      style={{
-        flexDirection: 'row' as const,
-        borderBottomWidth: 1,
-        borderColor: colors.border,
-        alignItems: 'stretch' as const,
-      }}
-    >
-      {children}
-    </View>
-  ),
-});

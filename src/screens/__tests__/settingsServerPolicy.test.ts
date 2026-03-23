@@ -1,8 +1,4 @@
-import {
-  hasServerDraftChanges,
-  toggleAllowedToolInDraft,
-  toggleAutoApprovedToolInDraft,
-} from '../settingsServerPolicy';
+import { hasServerDraftChanges } from '../settingsServerPolicy';
 import { McpServerConfig } from '../../types';
 import { McpServerDraft } from '../settingsDraftState';
 
@@ -43,24 +39,61 @@ describe('settingsServerPolicy', () => {
     expect(hasServerDraftChanges(draft, createServer())).toBe(true);
   });
 
-  it('toggleAllowedToolInDraft disables one tool from all-enabled sentinel and filters auto-approved', () => {
-    const draft = createDraft();
-    const result = toggleAllowedToolInDraft(draft, 'tool.beta', ['tool.alpha', 'tool.beta']);
-
-    expect(result.allowedTools).toEqual(['tool.alpha']);
-    expect(result.autoApprovedTools).toEqual(['tool.alpha']);
-  });
-
-  it('toggleAutoApprovedToolInDraft enables tool first when it is currently disabled', () => {
+  it('marks draft changed when allowedTools differs', () => {
     const draft: McpServerDraft = {
       ...createDraft(),
-      allowedTools: ['tool.alpha'],
-      autoApprovedTools: [],
+      allowedTools: ['tool.alpha', 'tool.beta'],
     };
 
-    const result = toggleAutoApprovedToolInDraft(draft, 'tool.beta', ['tool.alpha', 'tool.beta']);
+    expect(hasServerDraftChanges(draft, createServer())).toBe(true);
+  });
 
-    expect(result.allowedTools).toEqual([]);
-    expect(result.autoApprovedTools).toEqual(['tool.beta']);
+  it('marks draft changed when autoApprovedTools differs', () => {
+    const draft: McpServerDraft = {
+      ...createDraft(),
+      autoApprovedTools: ['tool.alpha', 'tool.beta'],
+    };
+
+    expect(hasServerDraftChanges(draft, createServer())).toBe(true);
+  });
+
+  it('treats identical allowedTools as unchanged', () => {
+    const draft: McpServerDraft = {
+      ...createDraft(),
+      allowedTools: [],
+    };
+
+    expect(hasServerDraftChanges(draft, createServer())).toBe(false);
+  });
+
+  it('treats identical autoApprovedTools as unchanged', () => {
+    const draft: McpServerDraft = {
+      ...createDraft(),
+      autoApprovedTools: ['tool.alpha'],
+    };
+
+    expect(hasServerDraftChanges(draft, createServer())).toBe(false);
+  });
+
+  it('marks draft changed when name differs', () => {
+    const draft: McpServerDraft = {
+      ...createDraft(),
+      name: 'Different Name',
+    };
+
+    expect(hasServerDraftChanges(draft, createServer())).toBe(true);
+  });
+
+  it('marks draft changed when enabled differs', () => {
+    const draft: McpServerDraft = {
+      ...createDraft(),
+      enabled: false,
+    };
+
+    expect(hasServerDraftChanges(draft, createServer())).toBe(true);
+  });
+
+  it('treats identical draft and server as unchanged', () => {
+    expect(hasServerDraftChanges(createDraft(), createServer())).toBe(false);
   });
 });

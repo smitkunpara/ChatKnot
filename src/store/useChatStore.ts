@@ -1,32 +1,68 @@
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 import { Message, Conversation, ToolCall, ApiRequestDetails } from '../types';
 import uuid from 'react-native-uuid';
-import { createEncryptedStateStorage } from '../services/storage/EncryptedStateStorage';
 import { generateConversationTitle, isPlaceholderTitle } from '../utils/conversationHelpers';
+import {
+  clearChatStateFromRealm,
+  loadChatStateFromRealm,
+  saveChatStateToRealm,
+} from '../services/chat/ChatRealmRepository';
 
-const chatPersistStorage = createEncryptedStateStorage({
-  id: 'chat-storage',
-  keyAlias: 'chat-storage:encryption-key',
-});
+const clearConversationAncillaryState = (conversationId: string): void => {
+  try {
+    const { useChatDraftStore } = require('./useChatDraftStore') as typeof import('./useChatDraftStore');
+    useChatDraftStore.getState().clearDraft(conversationId);
+  } catch {
+    // Ignore in environments where draft storage is not available (e.g. isolated tests).
+  }
+
+  try {
+    const { useContextUsageStore } = require('./useContextUsageStore') as typeof import('./useContextUsageStore');
+    useContextUsageStore.getState().clearUsage(conversationId);
+  } catch {
+    // Ignore in environments where context usage storage is not available.
+  }
+};
+
+const clearAllAncillaryState = (): void => {
+  try {
+    const { useChatDraftStore } = require('./useChatDraftStore') as typeof import('./useChatDraftStore');
+    useChatDraftStore.getState().clearAllDrafts();
+  } catch {
+    // Ignore in environments where draft storage is not available.
+  }
+
+  try {
+    const { useContextUsageStore } = require('./useContextUsageStore') as typeof import('./useContextUsageStore');
+    useContextUsageStore.getState().clearAllUsage();
+  } catch {
+    // Ignore in environments where context usage storage is not available.
+  }
+};
 
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
+  hydrateFromDatabase: () => Promise<void>;
+  clearAllChatData: () => Promise<void>;
 
   createConversation: (providerId: string, modeId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
-  updateProviderInConversation: (conversationId: string, providerId: string) => void;
   updateModelInConversation: (conversationId: string, providerId: string, model: string) => void;
   updateModeInConversation: (conversationId: string, modeId: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'timestamp' | 'id'> & { id?: string }) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
-  updateMessageReasoning: (conversationId: string, messageId: string, reasoning: string) => void;
   finalizeMessage: (
     conversationId: string,
     messageId: string,
-    payload: { content?: string; reasoning?: string; updatedAt?: number; apiRequestDetails?: ApiRequestDetails }
+    payload: {
+      content?: string;
+      reasoning?: string;
+      updatedAt?: number;
+      apiRequestDetails?: ApiRequestDetails;
+      thoughtDurationMs?: number;
+    }
   ) => void;
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
   addToolCall: (conversationId: string, messageId: string, toolCall: ToolCall) => void;
@@ -56,13 +92,55 @@ const mapMessages = (
 ));
 
 export const useChatStore = create<ChatState>()(
-  persist(
-    (set) => ({
+  (set, get) => {
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cancelPendingPersist = () => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+    };
+
+    const schedulePersist = () => {
+      cancelPendingPersist();
+
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        const state = get();
+        saveChatStateToRealm({
+          conversations: state.conversations,
+          activeConversationId: state.activeConversationId,
+        }).catch(() => {
+          // Error already logged inside saveChatStateToRealm
+        });
+      }, 120);
+    };
+
+    return {
       conversations: [],
       activeConversationId: null,
 
+      hydrateFromDatabase: async () => {
+        const state = await loadChatStateFromRealm();
+        set({
+          conversations: state.conversations,
+          activeConversationId: state.activeConversationId,
+        });
+      },
+
+      clearAllChatData: async () => {
+        cancelPendingPersist();
+        clearAllAncillaryState();
+        set({
+          conversations: [],
+          activeConversationId: null,
+        });
+        await clearChatStateFromRealm();
+      },
+
       createConversation: (providerId, modeId, systemPrompt, modelOverride) => {
-const now = Date.now();
+        const now = Date.now();
         const newConversation: Conversation = {
           id: uuid.v4() as string,
           title: 'New Chat',
@@ -78,188 +156,160 @@ const now = Date.now();
           conversations: [newConversation, ...state.conversations],
           activeConversationId: newConversation.id,
         }));
+        schedulePersist();
       },
 
       setActiveConversation: (id) => {
-set({ activeConversationId: id });
+        set({ activeConversationId: id });
+        schedulePersist();
       },
 
-      deleteConversation: (id) => set((state) => {
-return {
+      deleteConversation: (id) => {
+        clearConversationAncillaryState(id);
+        set((state) => ({
           conversations: state.conversations.filter((c) => c.id !== id),
           activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
-        };
-      }),
+        }));
+        schedulePersist();
+      },
 
-      updateProviderInConversation: (conversationId, providerId) => set((state) => {
-return {
-          conversations: state.conversations.map((c) =>
-            c.id === conversationId ? { ...c, providerId } : c
-          ),
-        };
-      }),
-
-      updateModelInConversation: (conversationId, providerId, model) => set((state) => {
-return {
-          conversations: state.conversations.map((c) => {
-            if (c.id === conversationId) {
-              return { ...c, providerId, modelOverride: model };
-            }
-            return c;
-          }),
-        };
-      }),
-
-      updateModeInConversation: (conversationId, modeId) => set((state) => {
-return {
-          conversations: state.conversations.map((c) =>
-            c.id === conversationId ? { ...c, modeId } : c
-          ),
-        };
-      }),
-
-      addMessage: (conversationId, message) => set((state) => {
-return {
-          conversations: state.conversations.map((c) => {
-            if (c.id === conversationId) {
-              const newMessage = {
-                ...message,
-                id: message.id || (uuid.v4() as string),
-                timestamp: Date.now(),
-              };
-
-              const shouldAutoTitle =
-                message.role === 'user' &&
-                !!message.content?.trim() &&
-                isPlaceholderTitle(c.title);
-
-              return {
-                ...c,
-                title: shouldAutoTitle
-                  ? generateConversationTitle(message.content)
-                  : c.title,
-                messages: [...c.messages, newMessage],
-                updatedAt: Date.now(),
-              };
-            }
-            return c;
-          }),
-        };
-      }),
-
-      updateMessage: (conversationId, messageId, content) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            content,
+      updateModelInConversation: (conversationId, providerId, model) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            providerId,
+            modelOverride: model,
           })),
-        })),
-      })),
+        }));
+        schedulePersist();
+      },
 
-      updateMessageReasoning: (conversationId, messageId, reasoning) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            reasoning,
+      updateModeInConversation: (conversationId, modeId) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            modeId,
           })),
-        })),
-      })),
+        }));
+        schedulePersist();
+      },
 
-      finalizeMessage: (conversationId, messageId, payload) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            content: payload.content ?? message.content,
-            reasoning: payload.reasoning ?? message.reasoning,
-            ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
-          })),
-          updatedAt: payload.updatedAt ?? Date.now(),
-        })),
-      })),
+      addMessage: (conversationId, message) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => {
+            const newMessage = {
+              ...message,
+              id: message.id || (uuid.v4() as string),
+              timestamp: Date.now(),
+            };
 
-      editMessage: (conversationId, messageId, newContent) => set((state) => ({
-        conversations: state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            const index = c.messages.findIndex(m => m.id === messageId);
-            if (index === -1) return c;
-            const newMessages = c.messages.slice(0, index + 1).map(m =>
-              m.id === messageId ? { ...m, content: newContent, timestamp: Date.now() } : m
-            );
-            return { ...c, messages: newMessages, updatedAt: Date.now() };
-          }
-          return c;
-        }),
-      })),
-
-      addToolCall: (conversationId, messageId, toolCall) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => ({
-            ...message,
-            toolCalls: [...(message.toolCalls || []), toolCall],
-          })),
-          updatedAt: Date.now(),
-        })),
-      })),
-
-      updateToolCallStatus: (conversationId, messageId, toolCallId, status, payload) => set((state) => ({
-        conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-          ...conversation,
-          messages: mapMessages(conversation.messages, messageId, (message) => {
-            if (!message.toolCalls) {
-              return message;
-            }
+            const shouldAutoTitle =
+              message.role === 'user' &&
+              !!message.content?.trim() &&
+              isPlaceholderTitle(conversation.title);
 
             return {
-              ...message,
-              toolCalls: message.toolCalls.map((toolCall) =>
-                toolCall.id === toolCallId
-                  ? {
-                    ...toolCall,
-                    status,
-                    result: payload?.result ?? (status === 'failed' ? undefined : toolCall.result),
-                    error: payload?.error ?? (status !== 'failed' ? undefined : toolCall.error),
-                  }
-                  : toolCall
-              ),
+              ...conversation,
+              title: shouldAutoTitle
+                ? generateConversationTitle(message.content)
+                : conversation.title,
+              messages: [...conversation.messages, newMessage],
+              updatedAt: Date.now(),
             };
           }),
-          updatedAt: Date.now(),
-        })),
-      })),
-    }),
-    {
-      name: 'chat-storage',
-      storage: createJSONStorage(() => chatPersistStorage),
-      partialize: (state) => ({
-        conversations: state.conversations,
-        activeConversationId: state.activeConversationId,
-      }),
-      version: 2,
-      migrate: (persistedState: any) => {
-        if (!persistedState || typeof persistedState !== 'object') {
-          return {
-            conversations: [],
-            activeConversationId: null,
-          };
-        }
-
-        const conversations = Array.isArray(persistedState.conversations)
-          ? persistedState.conversations.map((c: any) => ({
-            ...c,
-            modeId: c.modeId || '', // UI will handle defaulting to active mode if empty
-            createdAt: c.createdAt || c.updatedAt || Date.now(),
-          }))
-          : [];
-
-        return {
-          conversations,
-          activeConversationId: persistedState.activeConversationId || null,
-        };
+        }));
+        schedulePersist();
       },
-    }
-  )
+
+      updateMessage: (conversationId, messageId, content) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              content,
+            })),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      finalizeMessage: (conversationId, messageId, payload) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              content: payload.content ?? message.content,
+              reasoning: payload.reasoning ?? message.reasoning,
+              ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
+              ...(payload.thoughtDurationMs !== undefined ? { thoughtDurationMs: payload.thoughtDurationMs } : {}),
+            })),
+            updatedAt: payload.updatedAt ?? Date.now(),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      editMessage: (conversationId, messageId, newContent) => {
+        set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id === conversationId) {
+              const index = c.messages.findIndex(m => m.id === messageId);
+              if (index === -1) return c;
+              const newMessages = c.messages.slice(0, index + 1).map(m =>
+                m.id === messageId ? { ...m, content: newContent, timestamp: Date.now() } : m
+              );
+              return { ...c, messages: newMessages, updatedAt: Date.now() };
+            }
+            return c;
+          }),
+        }));
+        schedulePersist();
+      },
+
+      addToolCall: (conversationId, messageId, toolCall) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => ({
+              ...message,
+              toolCalls: [...(message.toolCalls || []), toolCall],
+            })),
+            updatedAt: Date.now(),
+          })),
+        }));
+        schedulePersist();
+      },
+
+      updateToolCallStatus: (conversationId, messageId, toolCallId, status, payload) => {
+        set((state) => ({
+          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
+            ...conversation,
+            messages: mapMessages(conversation.messages, messageId, (message) => {
+              if (!message.toolCalls) {
+                return message;
+              }
+
+              return {
+                ...message,
+                toolCalls: message.toolCalls.map((toolCall) =>
+                  toolCall.id === toolCallId
+                    ? {
+                      ...toolCall,
+                      status,
+                      result: payload?.result ?? (status === 'failed' ? undefined : toolCall.result),
+                      error: payload?.error ?? (status !== 'failed' ? undefined : toolCall.error),
+                    }
+                    : toolCall
+                ),
+              };
+            }),
+            updatedAt: Date.now(),
+          })),
+        }));
+        schedulePersist();
+      },
+    };
+  }
 );

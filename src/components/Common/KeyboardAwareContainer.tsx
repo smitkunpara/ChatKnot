@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   ScrollViewProps,
   StyleProp,
@@ -25,13 +24,13 @@ export const KeyboardAwareContainer = ({
   return (
     <KeyboardAvoidingView
       style={[styles.flex, style]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="height"
       keyboardVerticalOffset={keyboardVerticalOffset}
     >
       <ScrollView
         contentContainerStyle={contentContainerStyle}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        keyboardDismissMode="on-drag"
       >
         {children}
       </ScrollView>

@@ -9,8 +9,15 @@ import {
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
-import { ContextUsageData, useContextUsageStore } from '../../store/useContextUsageStore';
+import { useContextUsageStore } from '../../store/useContextUsageStore';
 import { formatTokenCount } from '../../utils/modelContextLimits';
+import {
+  selectContextUsageForConversation,
+  getPromptUsageRatio,
+  getPromptUsagePercent,
+  getProgressBarWidthPercent,
+  getRemainingPromptTokens,
+} from './contextIndicatorHelpers';
 
 interface ContextIndicatorProps {
   conversationId: string | null;
@@ -27,22 +34,23 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [popupVisible, setPopupVisible] = useState(false);
 
-  const usage = useContextUsageStore(
-    (state) => {
-      if (!conversationId) return null;
-      const data = state.usageByConversation[conversationId];
-      if (!data) return null;
-      if (data.providerId !== providerId || data.model !== model) return null;
-      return data;
-    }
+  const usageData = useContextUsageStore(
+    (state) =>
+      selectContextUsageForConversation(
+        state.usageByConversation,
+        conversationId,
+        providerId,
+        model
+      )
   );
 
-  const usageData = usage as ContextUsageData | null;
-
-  const fillPercent = useMemo(() => {
-    if (!usageData || usageData.contextLimit <= 0) return 0;
-    return Math.min(1, usageData.lastUsage.promptTokens / usageData.contextLimit);
-  }, [usageData]);
+  const fillPercent = useMemo(() => getPromptUsageRatio(usageData), [usageData]);
+  const usagePercent = useMemo(() => getPromptUsagePercent(usageData), [usageData]);
+  const progressWidthPercent = useMemo(
+    () => getProgressBarWidthPercent(usageData),
+    [usageData]
+  );
+  const remainingTokens = useMemo(() => getRemainingPromptTokens(usageData), [usageData]);
 
   const strokeWidth = 2.5;
   const radius = 10;
@@ -76,7 +84,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
         activeOpacity={hasData ? 0.7 : 1}
         accessibilityLabel={
           hasData
-            ? `Context usage: ${Math.round(fillPercent * 100)}%`
+            ? `Context usage: ${usagePercent}%`
             : 'No context data'
         }
         accessibilityRole="button"
@@ -122,7 +130,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
         </Svg>
         {hasData && (
           <Text style={[styles.percentText, { color: fillColor }]}>
-            {Math.round(fillPercent * 100)}%
+            {usagePercent}%
           </Text>
         )}
       </TouchableOpacity>
@@ -185,7 +193,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
                       style={[
                         styles.progressBarFill,
                         {
-                          width: `${Math.min(100, (usageData?.lastUsage.promptTokens ?? 0) / (usageData?.contextLimit ?? 1) * 100)}%`,
+                          width: `${progressWidthPercent}%`,
                           backgroundColor: fillColor,
                         },
                       ]}
@@ -193,14 +201,14 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
                   </View>
                   <Text style={styles.progressBarText}>
                     {usageData
-                      ? `${Math.round((usageData.lastUsage.promptTokens / usageData.contextLimit) * 100)}% of context used`
+                      ? `${usagePercent}% of context used`
                       : 'No data'}
                   </Text>
                 </View>
 
                 {usageData?.lastUsage.promptTokens !== undefined && usageData && (
                   <Text style={styles.remainingText}>
-                    {formatTokenCount(Math.max(0, usageData.contextLimit - usageData.lastUsage.promptTokens))} tokens remaining
+                    {formatTokenCount(remainingTokens)} tokens remaining
                   </Text>
                 )}
               </View>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -23,6 +24,9 @@ import {
   SidebarConversationSummary,
   sortAndFilterConversations,
 } from './sidebarFilter';
+import { handleDeleteConversationPress } from './conversationInteractions';
+
+const SEARCH_BAR_MIN_CONVERSATIONS = 3;
 
 const areConversationSummariesEqual = (
   previous: SidebarConversationSummary[],
@@ -87,8 +91,21 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
 
   const handleDelete = (id: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    deleteConversation(id);
-    clearConversationDraft(id);
+    Alert.alert(
+      'Delete Conversation',
+      'This conversation will be permanently deleted. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteConversation(id);
+            clearConversationDraft(id);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -101,7 +118,7 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
         </TouchableOpacity>
       </View>
 
-      {conversations.length > 3 && (
+      {conversations.length > SEARCH_BAR_MIN_CONVERSATIONS && (
         <View style={styles.searchBar}>
           <Search size={15} color={colors.textTertiary} />
           <TextInput
@@ -127,11 +144,13 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          const conversationLabel = getSidebarConversationLabel(item);
+          return (
           <TouchableOpacity
             style={[styles.item, item.id === activeId ? styles.activeItem : undefined]}
             onPress={() => handleSelect(item.id)}
-            accessibilityLabel={`Open conversation: ${getSidebarConversationLabel(item)}`}
+            accessibilityLabel={`Open conversation: ${conversationLabel}`}
             accessibilityRole="button"
           >
             <View style={styles.itemMain}>
@@ -140,14 +159,20 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
                 style={[styles.itemText, item.id === activeId ? styles.activeItemText : undefined]}
                 numberOfLines={1}
               >
-                {getSidebarConversationLabel(item)}
+                {conversationLabel}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteBtn} accessibilityLabel="Delete conversation" accessibilityRole="button">
+            <TouchableOpacity
+              onPress={(event) => handleDeleteConversationPress(event, item.id, handleDelete)}
+              style={styles.deleteBtn}
+              accessibilityLabel={`Delete conversation: ${conversationLabel}`}
+              accessibilityRole="button"
+            >
               <Trash2 size={15} color={colors.textTertiary} />
             </TouchableOpacity>
           </TouchableOpacity>
-        )}
+          );
+        }}
       />
 
       <View style={styles.footer}>

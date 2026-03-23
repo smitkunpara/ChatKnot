@@ -6,5 +6,5 @@
     "types": ["jest", "node"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "App.tsx", "index.ts"]
 }

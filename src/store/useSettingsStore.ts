@@ -14,12 +14,11 @@ import {
   hydratePersistedSettingsPayload,
   migratePersistedSettingsPayload,
 } from '../services/storage/migrations';
-import { MAX_MODE_NAME_LENGTH } from '../constants/storage';
-import 'react-native-get-random-values';
+import { MAX_MODE_NAME_LENGTH, STORAGE_KEYS } from '../constants/storage';
 
 const rawSettingsPersistStorage = createEncryptedStateStorage({
-  id: 'settings-storage',
-  keyAlias: 'settings-storage:encryption-key',
+  id: STORAGE_KEYS.SETTINGS_STORAGE,
+  keyAlias: STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS,
 });
 
 const settingsPersistStorage = {
@@ -278,6 +277,10 @@ set({
 
       addMode: (mode) =>
         set((state) => {
+          if (state.modes.some((existingMode) => existingMode.id === mode.id)) {
+            return state;
+          }
+
           const safeName = mode.name.slice(0, MAX_MODE_NAME_LENGTH);
           const newMode: Mode = {
             ...mode,
@@ -316,15 +319,32 @@ set({
           return { modes: nextModes, lastUsedModeId: nextLastUsedModeId };
         }),
 
-      setLastUsedMode: (id) => set({ lastUsedModeId: id }),
+      setLastUsedMode: (id) =>
+        set((state) => {
+          if (id === null) {
+            return { lastUsedModeId: null };
+          }
+
+          if (!state.modes.some((mode) => mode.id === id)) {
+            return state;
+          }
+
+          return { lastUsedModeId: id };
+        }),
 
       setDefaultMode: (id) =>
-        set((state) => ({
-          modes: sortModes(state.modes.map((m) => ({
-            ...m,
-            isDefault: m.id === id,
-          }))),
-        })),
+        set((state) => {
+          if (!state.modes.some((mode) => mode.id === id)) {
+            return state;
+          }
+
+          return {
+            modes: sortModes(state.modes.map((m) => ({
+              ...m,
+              isDefault: m.id === id,
+            }))),
+          };
+        }),
 
       setTheme: (theme) => set({ theme }),
       replaceAllSettings: (settings) =>
@@ -360,7 +380,7 @@ set({
             : [];
 
           const nextLastUsedModeId =
-            typeof settings.lastUsedModeId === 'string'
+            typeof settings.lastUsedModeId === 'string' && nextModes.some(m => m.id === settings.lastUsedModeId)
               ? settings.lastUsedModeId
               : (nextModes[0]?.id ?? null);
 

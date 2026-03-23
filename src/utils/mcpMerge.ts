@@ -14,7 +14,7 @@ export const mergeServersWithOverrides = (
     if (!override) return server;
     return {
       ...server,
-      enabled: override.enabled,
+      enabled: override.enabled ?? server.enabled,
       allowedTools: override.allowedTools ?? server.allowedTools,
       autoApprovedTools: override.autoApprovedTools ?? server.autoApprovedTools,
     };

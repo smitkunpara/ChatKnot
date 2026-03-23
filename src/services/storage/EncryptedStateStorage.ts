@@ -1,6 +1,8 @@
 import { Alert } from 'react-native';
 import type { StateStorage } from 'zustand/middleware';
 import { defaultSecretVault } from './SecretVault';
+import { resolveDefaultFallbackStorage } from './storageHelpers';
+import { generateKey } from '../../utils/crypto';
 
 export interface MMKVLike {
   getString(key: string): string | undefined;
@@ -35,21 +37,17 @@ interface ResolvedStorage {
   fallback: StateStorage;
 }
 
-const resolveDefaultFallbackStorage = (): StateStorage => {
-  try {
-    const asyncStorage = require('@react-native-async-storage/async-storage').default;
-    return {
-      getItem: async (name) => asyncStorage.getItem(name),
-      setItem: async (name, value) => {
-        await asyncStorage.setItem(name, value);
-      },
-      removeItem: async (name) => {
-        await asyncStorage.removeItem(name);
-      },
-    };
-  } catch (error) {
-    throw new Error(`Persistent fallback storage is unavailable: ${String(error)}`);
-  }
+const createVolatileStorage = (): StateStorage => {
+  const memStore = new Map<string, string>();
+  return {
+    getItem: async (k: string) => memStore.get(k) ?? null,
+    setItem: async (k: string, v: string) => {
+      memStore.set(k, v);
+    },
+    removeItem: async (k: string) => {
+      memStore.delete(k);
+    },
+  };
 };
 
 const resolveMMKVCtor = (providedCtor?: MMKVCtor): MMKVCtor | undefined => {
@@ -65,43 +63,10 @@ const resolveMMKVCtor = (providedCtor?: MMKVCtor): MMKVCtor | undefined => {
   }
 };
 
-const getRandomValues = (buffer: Uint8Array): void => {
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
-    return;
-  }
-
-  try {
-    require('react-native-get-random-values');
-  } catch {
-    // Ignore; we still check availability below.
-  }
-
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
-    return;
-  }
-
-  throw new Error('No cryptographically secure random source available');
-};
-
-const generateKey = (): string => {
-  const bytes = new Uint8Array(32);
-  getRandomValues(bytes);
-
-  let key = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const byte = bytes[i];
-    key += byte.toString(16).padStart(2, '0');
-  }
-
-  return key;
-};
-
 export const createEncryptedStateStorage = (
   options: EncryptedStateStorageOptions
 ): StateStorage => {
-  const keyAlias = options.keyAlias ?? `${options.id}:encryption-key`;
+  const keyAlias = options.keyAlias ?? `${options.id}_encryption-key`;
   const vault = options.vault ?? defaultSecretVault;
   const fallbackStorage = options.fallbackStorage ?? resolveDefaultFallbackStorage();
   let resolvedStoragePromise: Promise<ResolvedStorage> | null = null;
@@ -121,8 +86,16 @@ export const createEncryptedStateStorage = (
         typeof vault.isPersistentStorageAvailable === 'function' &&
         !vault.isPersistentStorageAvailable()
       ) {
+        const declinedKey = `${options.id}:consent-declined`;
         const consentKey = `${options.id}:plaintext-consent`;
         const hasConsent = await fallbackStorage.getItem(consentKey);
+        const hasDeclined = await fallbackStorage.getItem(declinedKey);
+
+        if (hasDeclined === 'true') {
+          return {
+            fallback: createVolatileStorage(),
+          };
+        }
 
         if (hasConsent !== 'true') {
           let consentGranted = false;
@@ -131,47 +104,59 @@ export const createEncryptedStateStorage = (
               'Security Warning',
               'Secure hardware is unavailable on this device. Your data and API keys will be saved in plaintext. Do you wish to continue?',
               [
-                { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
+                {
+                  text: 'Cancel', style: 'cancel', onPress: () => {
+                    Promise.resolve(fallbackStorage.setItem(declinedKey, 'true'))
+                      .catch((err: unknown) => { if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('Failed to persist consent decline:', err); })
+                      .finally(() => resolve());
+                  }
+                },
                 {
                   text: 'Continue', onPress: () => {
                     consentGranted = true;
                     Promise.resolve(fallbackStorage.setItem(consentKey, 'true'))
                       .then(() => resolve())
-                      .catch((_err: unknown) => resolve());
+                      .catch((err: unknown) => { if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('Failed to persist consent grant:', err); resolve(); });
                   }
                 }
-              ]
+              ],
+              {
+                // Prevent dismissing the dialog without choosing an explicit path.
+                // Otherwise storage initialization can remain pending indefinitely.
+                cancelable: false,
+              }
             );
           });
 
           // If user declined, use volatile in-memory storage for this session only.
           // The app works but nothing persists to disk.
           if (!consentGranted) {
-            const memStore = new Map<string, string>();
             return {
-              fallback: {
-                getItem: async (k: string) => memStore.get(k) ?? null,
-                setItem: async (k: string, v: string) => { memStore.set(k, v); },
-                removeItem: async (k: string) => { memStore.delete(k); },
-              },
+              fallback: createVolatileStorage(),
             };
           }
         }
         return { fallback: fallbackStorage };
       }
 
+      let encryptionKey: string;
       try {
-        let encryptionKey = await vault.getSecret(keyAlias);
-        if (!encryptionKey) {
+        const existingKey = await vault.getSecret(keyAlias);
+        if (existingKey) {
+          encryptionKey = existingKey;
+        } else {
           const generatedKey = generateKey();
           await vault.setSecret(keyAlias, generatedKey);
-          encryptionKey = await vault.getSecret(keyAlias);
-
-          if (!encryptionKey) {
-            return { fallback: fallbackStorage };
-          }
+          encryptionKey = generatedKey;
         }
+      } catch (error) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn('EncryptedStateStorage: secure key initialization failed; using volatile in-memory storage instead of disk fallback:', error);
+        }
+        return { fallback: createVolatileStorage() };
+      }
 
+      try {
         return {
           encrypted: new mmkvCtor({
             id: options.id,
@@ -179,7 +164,10 @@ export const createEncryptedStateStorage = (
           }),
           fallback: fallbackStorage,
         };
-      } catch {
+      } catch (error) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn('EncryptedStateStorage: MMKV initialization failed; falling back to unencrypted storage:', error);
+        }
         return { fallback: fallbackStorage };
       }
     })();
@@ -210,6 +198,7 @@ export const createEncryptedStateStorage = (
       const { encrypted, fallback } = await getResolvedStorage();
       if (encrypted) {
         encrypted.delete(name);
+        return;
       }
       await fallback.removeItem(name);
     },

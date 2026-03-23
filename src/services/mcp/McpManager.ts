@@ -1,5 +1,6 @@
 import { McpClient } from './McpClient';
 import { McpServerConfig, McpToolSchema } from '../../types';
+import { sanitizeToolName } from './openApiHelpers';
 
 export interface McpToolExecutionPolicy {
   found: boolean;
@@ -34,7 +35,6 @@ class McpManagerService {
   private connectedToolsByServer: Map<string, McpToolSchema[]> = new Map();
   private runtimeStates: Map<string, McpServerRuntimeState> = new Map();
   private listeners: Set<(states: McpServerRuntimeState[]) => void> = new Set();
-  private cachedTools: McpToolSchema[] | null = null;
 
   private sanitizeNamespace(serverName: string): string {
     const normalized = (serverName || '')
@@ -61,24 +61,14 @@ class McpManagerService {
     return next;
   }
 
-  private sanitizeToolName(name: string): string {
-    // OpenAI tool name regex: ^[a-zA-Z0-9_-]{1,64}$
-    // We prefer underscores over hyphens for broader compatibility across all providers
-    const sanitized = name
-      .replace(/[^a-zA-Z0-9_]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-
-    return sanitized || 'tool';
-  }
-
   private rebuildToolRegistry() {
     this.tools.clear();
-    this.cachedTools = null;
 
     const rawNameCounts = new Map<string, number>();
     this.connectedToolsByServer.forEach(serverTools => {
       serverTools.forEach(tool => {
-        rawNameCounts.set(tool.name, (rawNameCounts.get(tool.name) || 0) + 1);
+        const key = tool.name.toLowerCase();
+        rawNameCounts.set(key, (rawNameCounts.get(key) || 0) + 1);
       });
     });
 
@@ -92,10 +82,9 @@ class McpManagerService {
       const exposedNames: string[] = [];
 
       serverTools.forEach(tool => {
-        const hasCollision = (rawNameCounts.get(tool.name) || 0) > 1;
-        // Use double underscore '__' instead of '.' for OpenAI compatibility
+        const hasCollision = (rawNameCounts.get(tool.name.toLowerCase()) || 0) > 1;
         const candidateName = hasCollision ? `${namespace}__${tool.name}` : tool.name;
-        const sanitizedCandidate = this.sanitizeToolName(candidateName);
+        const sanitizedCandidate = sanitizeToolName(candidateName);
         const exposedName = this.buildUniqueToolName(sanitizedCandidate, usedNames);
         usedNames.add(exposedName);
 
@@ -146,15 +135,12 @@ class McpManagerService {
   }
 
   async initialize(configs: McpServerConfig[]) {
-// Clear existing (or handle updates more gracefully)
-    // For MVP, we'll disconnect all and reconnect
     const clients = Array.from(this.clients.values());
     for (const client of clients) {
       client.disconnect();
     }
     this.clients.clear();
     this.tools.clear();
-    this.cachedTools = null;
     this.serverConfigs.clear();
     this.connectedToolsByServer.clear();
     this.runtimeStates.clear();
@@ -176,11 +162,13 @@ class McpManagerService {
     });
     this.notify();
 
+    let anyConnected = false;
+
     for (const config of configs) {
       if (!config.enabled) continue;
 
       try {
-const client = new McpClient(config);
+        const client = new McpClient(config);
         await client.connect();
         this.clients.set(config.id, client);
 
@@ -203,9 +191,9 @@ const client = new McpClient(config);
           openApiServerUrl: openApiMeta?.serverUrl,
           securityHeaders: openApiMeta?.securityHeaders || [],
         });
-        this.rebuildToolRegistry();
+        anyConnected = true;
       } catch (error) {
-this.connectedToolsByServer.delete(config.id);
+        this.connectedToolsByServer.delete(config.id);
         this.runtimeStates.set(config.id, {
           serverId: config.id,
           serverName: config.name,
@@ -216,26 +204,25 @@ this.connectedToolsByServer.delete(config.id);
           toolNames: [],
           error: error instanceof Error ? error.message : String(error),
         });
-        this.notify();
         console.error(`Failed to connect to MCP server ${config.name}:`, error);
       }
+    }
+
+    if (anyConnected) {
+      this.rebuildToolRegistry();
+    } else {
+      this.notify();
     }
   }
 
   getTools(): McpToolSchema[] {
-if (this.cachedTools) {
-      return this.cachedTools;
-    }
-
-    this.cachedTools = Array.from(this.tools.entries())
+    return Array.from(this.tools.entries())
       .filter(([toolName]) => this.getToolExecutionPolicy(toolName).enabled)
       .map(([, value]) => value.tool);
-
-    return this.cachedTools;
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
-const policy = this.getToolExecutionPolicy(name);
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    const policy = this.getToolExecutionPolicy(name);
     if (!policy.found) {
       throw new Error(`Tool ${name} not found`);
     }
@@ -290,10 +277,6 @@ const policy = this.getToolExecutionPolicy(name);
 
   getRuntimeState(serverId: string): McpServerRuntimeState | undefined {
     return this.runtimeStates.get(serverId);
-  }
-
-  async reinitialize(configs: McpServerConfig[]) {
-await this.initialize(configs);
   }
 }
 

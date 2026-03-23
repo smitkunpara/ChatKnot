@@ -64,7 +64,7 @@ export const ToolCall: React.FC<ToolCallProps> = ({
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.header} onPress={() => setExpanded(prev => !prev)}>
+      <TouchableOpacity style={styles.header} onPress={() => setExpanded(prev => !prev)} accessibilityLabel={`${toolCall.name} - ${statusMeta.label}. ${expanded ? 'Collapse details' : 'Expand details'}`} accessibilityRole="button">
         <View style={styles.titleRow}>
           {getStatusIcon()}
           <View style={styles.titleTextWrap}>
@@ -106,10 +106,10 @@ export const ToolCall: React.FC<ToolCallProps> = ({
 
       {requiresApproval ? (
         <View style={styles.approvalActions}>
-          <TouchableOpacity style={[styles.approvalBtn, styles.approveBtn]} onPress={onApprove}>
+          <TouchableOpacity style={[styles.approvalBtn, styles.approveBtn]} onPress={onApprove} accessibilityLabel={`Approve ${toolCall.name}`} accessibilityRole="button">
             <Text style={[styles.approvalBtnText, styles.approveBtnText]}>Approve</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.approvalBtn, styles.denyBtn]} onPress={onDeny}>
+          <TouchableOpacity style={[styles.approvalBtn, styles.denyBtn]} onPress={onDeny} accessibilityLabel={`Deny ${toolCall.name}`} accessibilityRole="button">
             <Text style={[styles.approvalBtnText, styles.denyBtnText]}>Deny</Text>
           </TouchableOpacity>
         </View>

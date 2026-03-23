@@ -3,5 +3,11 @@
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
+    <!--
+        DEV ONLY: Allow cleartext HTTP traffic for development/debugging.
+        This is intentionally enabled for debug builds to allow connecting to
+        local development servers (e.g., localhost, 10.0.2.2 for Android emulator).
+        This MUST NOT be enabled in production builds.
+    -->
     <application android:usesCleartextTraffic="true" tools:targetApi="28" tools:ignore="GoogleAppIndexingWarning" tools:replace="android:usesCleartextTraffic" />
 </manifest>

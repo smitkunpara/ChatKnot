@@ -90,7 +90,7 @@ describe('OpenApiToolExtraction', () => {
     };
 
     const tools = extractOpenApiTools(spec);
-    const schema = tools[0].inputSchema;
+    const schema = tools[0].inputSchema as any;
     
     expect(schema.type).toBe('object');
     expect(schema.properties.body).toEqual({ type: 'array', items: { type: 'string' } });
@@ -113,5 +113,125 @@ describe('OpenApiToolExtraction', () => {
     const tools = extractOpenApiTools(spec);
     expect(tools[0].inputSchema).not.toHaveProperty('required');
     expect(tools[0].inputSchema.type).toBe('object');
+  });
+
+  it('extracts multiple operations across different paths', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0.0' },
+      paths: {
+        '/users': {
+          get: {
+            operationId: 'listUsers',
+            responses: { 200: { description: 'ok' } }
+          },
+          post: {
+            operationId: 'createUser',
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: { type: 'object', properties: { name: { type: 'string' } } }
+                }
+              }
+            },
+            responses: { 201: { description: 'created' } }
+          }
+        },
+        '/users/{id}': {
+          get: {
+            operationId: 'getUser',
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: { 200: { description: 'ok' } }
+          },
+          delete: {
+            operationId: 'deleteUser',
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: { 204: { description: 'no content' } }
+          }
+        }
+      }
+    };
+
+    const tools = extractOpenApiTools(spec);
+    expect(tools).toHaveLength(4);
+    const toolNames = tools.map(t => t.name).sort();
+    expect(toolNames).toEqual(['createUser', 'deleteUser', 'getUser', 'listUsers']);
+  });
+
+  it('skips non-callable HTTP methods (trace, options, head)', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0.0' },
+      paths: {
+        '/health': {
+          get: { operationId: 'healthCheck', responses: { 200: { description: 'ok' } } },
+          post: { operationId: 'ping', responses: { 200: { description: 'ok' } } },
+          trace: { operationId: 'traceCall', responses: { 200: { description: 'ok' } } },
+          options: { operationId: 'optionsCall', responses: { 200: { description: 'ok' } } },
+          head: { operationId: 'headCall', responses: { 200: { description: 'ok' } } },
+        }
+      }
+    };
+
+    const tools = extractOpenApiTools(spec);
+    expect(tools).toHaveLength(2);
+    expect(tools.map(t => t.name)).toEqual(['healthCheck', 'ping']);
+  });
+
+  it('handles operations without operationId by generating a name from path and method', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0.0' },
+      paths: {
+        '/health': {
+          get: {
+            responses: { 200: { description: 'ok' } }
+          }
+        }
+      }
+    };
+
+    const tools = extractOpenApiTools(spec);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toMatch(/^[a-zA-Z0-9_-]+$/);
+  });
+
+  it('does not inherit global security when operation security is explicitly empty', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 'Security API', version: '1.0.0' },
+      security: [{ apiKeyAuth: [] }],
+      components: {
+        securitySchemes: {
+          apiKeyAuth: {
+            type: 'apiKey',
+            in: 'header',
+            name: 'X-API-Key',
+          },
+        },
+      },
+      paths: {
+        '/public': {
+          get: {
+            operationId: 'getPublicData',
+            security: [],
+            responses: { 200: { description: 'ok' } },
+          },
+        },
+        '/private': {
+          get: {
+            operationId: 'getPrivateData',
+            responses: { 200: { description: 'ok' } },
+          },
+        },
+      },
+    };
+
+    const tools = extractOpenApiTools(spec);
+    const publicTool = tools.find((tool) => tool.name === 'getPublicData');
+    const privateTool = tools.find((tool) => tool.name === 'getPrivateData');
+
+    expect(publicTool?._meta?.securityHeaders || []).toEqual([]);
+    expect(privateTool?._meta?.securityHeaders || []).toEqual(['X-API-Key']);
   });
 });

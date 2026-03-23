@@ -23,7 +23,9 @@ interface ChatRuntimeState {
   activeRequestConversationId: string | null;
   loadingConversationIds: Record<string, true>;
   streamingSessions: Record<string, StreamingMessageSession>;
+  resetRuntimeState: () => void;
   beginRequest: (conversationId: string) => void;
+  /** Clears loading state for the given conversation. Pass null/undefined to cancel ALL active requests. */
   finishRequest: (conversationId?: string | null) => void;
   startStreamingMessage: (conversationId: string, messageId: string) => void;
   updateStreamingMessage: (
@@ -32,6 +34,7 @@ interface ChatRuntimeState {
     payload: { content?: string; reasoning?: string; thoughtDurationMs?: number }
   ) => void;
   clearStreamingMessage: (conversationId: string, messageId?: string) => void;
+  /** Set phase for a conversation. Call order: generating_query → startStreamingMessage → thinking → null. */
   setRequestPhase: (
     conversationId: string,
     phase: RequestPhase,
@@ -45,8 +48,15 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
   loadingConversationIds: {},
   streamingSessions: {},
 
+  resetRuntimeState: () => set({
+    isLoading: false,
+    activeRequestConversationId: null,
+    loadingConversationIds: {},
+    streamingSessions: {},
+  }),
+
   beginRequest: (conversationId) => set((state) => {
-if (state.loadingConversationIds[conversationId]) {
+    if (state.loadingConversationIds[conversationId]) {
       return state;
     }
 
@@ -60,8 +70,9 @@ if (state.loadingConversationIds[conversationId]) {
     };
   }),
 
+  /** Clears loading state for the given conversation. Pass null/undefined to cancel ALL active requests. */
   finishRequest: (conversationId) => set((state) => {
-if (!conversationId) {
+    if (!conversationId) {
       return {
         isLoading: false,
         activeRequestConversationId: null,
@@ -100,8 +111,20 @@ if (!conversationId) {
   })),
 
   updateStreamingMessage: (conversationId, messageId, payload) => set((state) => {
-const session = state.streamingSessions[conversationId];
+    const session = state.streamingSessions[conversationId];
     if (!session || session.messageId !== messageId) {
+      return state;
+    }
+
+    const nextContent = payload.content ?? session.content;
+    const nextReasoning = payload.reasoning ?? session.reasoning;
+    const nextThoughtDurationMs = payload.thoughtDurationMs ?? session.thoughtDurationMs;
+
+    if (
+      nextContent === session.content
+      && nextReasoning === session.reasoning
+      && nextThoughtDurationMs === session.thoughtDurationMs
+    ) {
       return state;
     }
 
@@ -110,9 +133,9 @@ const session = state.streamingSessions[conversationId];
         ...state.streamingSessions,
         [conversationId]: {
           ...session,
-          content: payload.content ?? session.content,
-          reasoning: payload.reasoning ?? session.reasoning,
-          thoughtDurationMs: payload.thoughtDurationMs ?? session.thoughtDurationMs,
+          content: nextContent,
+          reasoning: nextReasoning,
+          thoughtDurationMs: nextThoughtDurationMs,
           updatedAt: Date.now(),
         },
       },
@@ -120,7 +143,7 @@ const session = state.streamingSessions[conversationId];
   }),
 
   clearStreamingMessage: (conversationId, messageId) => set((state) => {
-const session = state.streamingSessions[conversationId];
+    const session = state.streamingSessions[conversationId];
     if (!session) {
       return state;
     }
@@ -137,27 +160,32 @@ const session = state.streamingSessions[conversationId];
     };
   }),
 
+  /** Set phase for a conversation. Call order: generating_query → startStreamingMessage → thinking → null. */
   setRequestPhase: (conversationId, phase, apiRequestDetails) => set((state) => {
     const session = state.streamingSessions[conversationId];
 
     if (session) {
-      // Update existing session's phase
+      const nextApiRequestDetails = apiRequestDetails !== undefined
+        ? apiRequestDetails
+        : session.apiRequestDetails;
+
+      if (session.requestPhase === phase && nextApiRequestDetails === session.apiRequestDetails) {
+        return state;
+      }
+
       return {
         streamingSessions: {
           ...state.streamingSessions,
           [conversationId]: {
             ...session,
             requestPhase: phase,
-            apiRequestDetails: apiRequestDetails !== undefined
-              ? apiRequestDetails
-              : session.apiRequestDetails,
+            apiRequestDetails: nextApiRequestDetails,
           },
         },
       };
     }
 
     // No session yet (generating_query phase fires before startStreamingMessage)
-    // Create a minimal placeholder session to hold the phase
     if (phase === 'generating_query') {
       return {
         streamingSessions: {
