@@ -4,7 +4,8 @@ import { useContextUsageStore } from '../../store/useContextUsageStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useChatRuntimeStore } from '../../store/useChatRuntimeStore';
 import { defaultSecretVault } from './SecretVault';
-import { clearMigrationMarker } from './migrations';
+import { clearMigrationMarker, isSecretRef, secretRefToVaultKey } from './migrations';
+import { resolveDefaultFallbackStorage } from './storageHelpers';
 import { STORAGE_KEYS } from '../../constants/storage';
 import { deleteRealmFile } from '../chat/ChatRealmRepository';
 
@@ -14,16 +15,23 @@ const DRAFT_STORAGE_KEY_ALIAS = STORAGE_KEYS.CHAT_DRAFT_STORAGE_KEY_ALIAS;
 const CONTEXT_STORAGE_KEY_ALIAS = STORAGE_KEYS.CONTEXT_USAGE_STORAGE_KEY_ALIAS;
 const CHAT_STORAGE_KEY_ALIAS = STORAGE_KEYS.CHAT_STORAGE_KEY_ALIAS;
 
+const CONSENT_MARKER_IDS = [
+  STORAGE_KEYS.SETTINGS_STORAGE,
+  STORAGE_KEYS.CHAT_STORAGE,
+  'chat-draft-storage',
+  'context-usage-storage',
+] as const;
+
 const extractVaultKeyFromRef = (ref?: string): string | null => {
   if (!ref || typeof ref !== 'string') {
     return null;
   }
 
-  if (!ref.startsWith('vault://')) {
+  if (!isSecretRef(ref)) {
     return null;
   }
 
-  const key = ref.replace('vault://', '').trim();
+  const key = secretRefToVaultKey(ref).trim();
   return key.length > 0 ? key : null;
 };
 
@@ -66,26 +74,29 @@ const collectSecretKeysForDeletion = () => {
 const clearPersistedStoreStorage = async (): Promise<void> => {
   const maybeClearers: Array<() => Promise<void>> = [];
 
-  const settingsPersist = (useSettingsStore as any).persist;
-  if (settingsPersist?.clearStorage) {
-    maybeClearers.push(() => settingsPersist.clearStorage());
-  }
+  type PersistedStore = { persist?: { clearStorage?: () => Promise<void> } };
 
-  const draftPersist = (useChatDraftStore as any).persist;
-  if (draftPersist?.clearStorage) {
-    maybeClearers.push(() => draftPersist.clearStorage());
-  }
+  const tryPushClearer = (store: unknown) => {
+    const persist = (store as PersistedStore).persist;
+    if (persist?.clearStorage) {
+      maybeClearers.push(() => persist.clearStorage!());
+    }
+  };
 
-  const contextPersist = (useContextUsageStore as any).persist;
-  if (contextPersist?.clearStorage) {
-    maybeClearers.push(() => contextPersist.clearStorage());
-  }
+  tryPushClearer(useSettingsStore);
+  tryPushClearer(useChatDraftStore);
+  tryPushClearer(useContextUsageStore);
 
   await Promise.allSettled(maybeClearers.map((clear) => clear()));
 };
 
 export const resetAllLocalData = async (): Promise<void> => {
   const secretKeys = collectSecretKeysForDeletion();
+  const fallbackStorage = resolveDefaultFallbackStorage();
+  const fallbackStorageKeys = CONSENT_MARKER_IDS.flatMap((id) => [
+    `${id}:plaintext-consent`,
+    `${id}:consent-declined`,
+  ]);
 
   useChatRuntimeStore.getState().resetRuntimeState();
   useChatDraftStore.getState().clearAllDrafts();
@@ -106,6 +117,9 @@ export const resetAllLocalData = async (): Promise<void> => {
 
   await Promise.allSettled([
     ...secretKeys.map((key) => defaultSecretVault.deleteSecret(key)),
+    ...fallbackStorageKeys.map((key) =>
+      fallbackStorage.removeItem(key)
+    ),
     clearMigrationMarker(),
   ]);
 };

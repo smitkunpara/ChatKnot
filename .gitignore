@@ -29,11 +29,19 @@ todo.md
 *.ipa
 *.apk
 *.aab
+*.realm
+*.realm.lock
+*.realm.management/
+*.realm.note
+*.realm.wal
+*.mmkv
+*.mmkv.crc
 
 # Android
 android/build/
 android/.gradle/
 android/app/build/
+android/app/.cxx/
 android/local.properties
 android/key.properties
 android-sdk-local/

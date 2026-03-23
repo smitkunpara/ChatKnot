@@ -16,6 +16,7 @@ import { useChatRuntimeStore } from '../../../store/useChatRuntimeStore';
 import { defaultSecretVault } from '../SecretVault';
 import { clearMigrationMarker } from '../migrations';
 import { STORAGE_KEYS } from '../../../constants/storage';
+import { resolveDefaultFallbackStorage } from '../storageHelpers';
 
 jest.mock('../../../store/useChatStore');
 jest.mock('../../../store/useChatDraftStore');
@@ -25,9 +26,14 @@ jest.mock('../../../store/useChatRuntimeStore');
 jest.mock('../SecretVault');
 jest.mock('../migrations', () => ({
   clearMigrationMarker: jest.fn().mockResolvedValue(undefined),
+  isSecretRef: (value: unknown) => typeof value === 'string' && value.startsWith('vault://'),
+  secretRefToVaultKey: (ref: string) => ref.startsWith('vault://') ? ref.slice('vault://'.length) : ref,
 }));
 jest.mock('../../chat/ChatRealmRepository', () => ({
   deleteRealmFile: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../storageHelpers', () => ({
+  resolveDefaultFallbackStorage: jest.fn(),
 }));
 
 describe('resetAllLocalData', () => {
@@ -75,6 +81,13 @@ describe('resetAllLocalData', () => {
 
     (defaultSecretVault.deleteSecret as jest.Mock).mockResolvedValue(undefined);
 
+    const mockFallbackRemoveItem = jest.fn().mockResolvedValue(undefined);
+    (resolveDefaultFallbackStorage as jest.Mock).mockReturnValue({
+      getItem: jest.fn().mockResolvedValue(null),
+      setItem: jest.fn().mockResolvedValue(undefined),
+      removeItem: mockFallbackRemoveItem,
+    });
+
     await resetAllLocalData();
 
     expect(mockResetRuntimeState).toHaveBeenCalled();
@@ -111,6 +124,22 @@ describe('resetAllLocalData', () => {
     expect(defaultSecretVault.deleteSecret).toHaveBeenCalledTimes(expectedSecretsToDelete.length);
     expectedSecretsToDelete.forEach((key) => {
       expect(defaultSecretVault.deleteSecret).toHaveBeenCalledWith(key);
+    });
+
+    const expectedFallbackKeys = [
+      'settings-storage:plaintext-consent',
+      'settings-storage:consent-declined',
+      'chat-storage:plaintext-consent',
+      'chat-storage:consent-declined',
+      'chat-draft-storage:plaintext-consent',
+      'chat-draft-storage:consent-declined',
+      'context-usage-storage:plaintext-consent',
+      'context-usage-storage:consent-declined',
+    ];
+
+    expect(mockFallbackRemoveItem).toHaveBeenCalledTimes(expectedFallbackKeys.length);
+    expectedFallbackKeys.forEach((key) => {
+      expect(mockFallbackRemoveItem).toHaveBeenCalledWith(key);
     });
   });
 });

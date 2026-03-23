@@ -66,7 +66,6 @@ interface LegacyConversation {
 export interface StorageHardeningBootstrapOptions {
   legacyStorage?: MigrationStorage;
   encryptedSettingsStorage?: MigrationStorage;
-  encryptedChatStorage?: MigrationStorage;
   vault?: MigrationVault;
   logger?: MigrationLogger;
   settingsStorageKey?: string;

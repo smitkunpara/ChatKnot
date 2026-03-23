@@ -6,6 +6,8 @@ jest.mock('react-native', () => ({
   },
 }));
 
+import { Alert } from 'react-native';
+
 import {
   createEncryptedStateStorage,
   type MMKVLike,
@@ -29,6 +31,10 @@ class MockMMKV implements MMKVLike {
 }
 
 describe('EncryptedStateStorage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   const createVault = (
     existingKey: string | null = null,
     persistentStorageAvailable = true
@@ -100,7 +106,7 @@ describe('EncryptedStateStorage', () => {
     expect(legacyStorage.setItem).toHaveBeenCalledWith('settings-storage', '{"fallback":true}');
   });
 
-  it('falls back to legacy storage when encryption key cannot be persisted', async () => {
+  it('does not write to legacy storage when encryption key cannot be persisted', async () => {
     const vault = createVault(null, true);
     vault.setSecret.mockRejectedValueOnce(new Error('secure store unavailable'));
     const legacyStorage = createLegacyStorage();
@@ -114,7 +120,41 @@ describe('EncryptedStateStorage', () => {
     });
 
     await storage.setItem('settings-storage', '{"fallback":true}');
+    const value = await storage.getItem('settings-storage');
 
-    expect(legacyStorage.setItem).toHaveBeenCalledWith('settings-storage', '{"fallback":true}');
+    expect(value).toBe('{"fallback":true}');
+    expect(legacyStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('uses a non-dismissible consent alert when secure storage is unavailable', async () => {
+    const vault = createVault(null, false);
+    const legacyStorage = createLegacyStorage();
+
+    (Alert.alert as jest.Mock).mockImplementation(
+      (
+        _title: string,
+        _message: string,
+        buttons?: Array<{ onPress?: () => void }>
+      ) => {
+        buttons?.[0]?.onPress?.();
+      }
+    );
+
+    const storage = createEncryptedStateStorage({
+      id: 'settings-storage',
+      keyAlias: 'settings-storage:key',
+      vault,
+      mmkvCtor: MockMMKV,
+      fallbackStorage: legacyStorage,
+    });
+
+    await storage.getItem('settings-storage');
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({ cancelable: false })
+    );
   });
 });

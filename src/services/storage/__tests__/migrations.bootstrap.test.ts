@@ -7,6 +7,8 @@ jest.mock('react-native', () => ({
 import {
   executeStorageHardeningBootstrap,
   hydratePersistedSettingsPayload,
+  clearMigrationMarker,
+  migratePersistedSettingsPayload,
 } from '../migrations.ts';
 
 interface MemoryStorage {
@@ -69,19 +71,16 @@ describe('executeStorageHardeningBootstrap', () => {
       }),
     });
     const encryptedSettingsStorage = createStorage();
-    const encryptedChatStorage = createStorage();
     const vault = createVault();
 
     const firstRun = await executeStorageHardeningBootstrap({
       legacyStorage,
       encryptedSettingsStorage,
-      encryptedChatStorage,
       vault,
     });
     const secondRun = await executeStorageHardeningBootstrap({
       legacyStorage,
       encryptedSettingsStorage,
-      encryptedChatStorage,
       vault,
     });
 
@@ -111,14 +110,12 @@ describe('executeStorageHardeningBootstrap', () => {
       }),
     });
     const encryptedSettingsStorage = createStorage();
-    const encryptedChatStorage = createStorage();
     const vault = createVault();
     vault.isPersistentStorageAvailable.mockReturnValue(false);
 
     const firstRun = await executeStorageHardeningBootstrap({
       legacyStorage,
       encryptedSettingsStorage,
-      encryptedChatStorage,
       vault,
     });
 
@@ -176,5 +173,78 @@ describe('hydratePersistedSettingsPayload', () => {
     expect(parsed.state.mcpServers[0].headers).toEqual({
       Authorization: 'Bearer hydrated',
     });
+  });
+});
+
+describe('clearMigrationMarker', () => {
+  it('removes the marker key from storage', async () => {
+    const storage = createStorage({
+      'storage-hardening:migration:v1': '{"completedAt":"2026-01-01"}',
+    });
+
+    await clearMigrationMarker('storage-hardening:migration:v1', storage);
+
+    expect(storage.removeItem).toHaveBeenCalledWith('storage-hardening:migration:v1');
+    const marker = await storage.getItem('storage-hardening:migration:v1');
+    expect(marker).toBeNull();
+  });
+
+  it('handles missing removeItem gracefully', async () => {
+    const storageWithoutRemove = {
+      getItem: jest.fn(async () => null),
+      setItem: jest.fn(async () => {}),
+    };
+
+    await expect(
+      clearMigrationMarker('some-key', storageWithoutRemove as any)
+    ).resolves.not.toThrow();
+  });
+});
+
+describe('migratePersistedSettingsPayload wrapper', () => {
+  it('returns just the rawValue string (not the detailed result)', async () => {
+    const vault = createVault();
+    const rawPayload = toPersistedState({
+      providers: [
+        { id: 'p1', apiKey: 'secret', baseUrl: 'https://x.com', model: 'm', enabled: true, type: 'openai', name: 'P' },
+      ],
+      mcpServers: [],
+    });
+
+    const result = await migratePersistedSettingsPayload(rawPayload, { vault });
+
+    expect(typeof result).toBe('string');
+    const parsed = JSON.parse(result);
+    expect(parsed.state.providers[0].apiKey).toBe('');
+    expect(parsed.state.providers[0].apiKeyRef).toBe('vault://provider/p1/apiKey');
+  });
+});
+
+describe('bootstrap with vault missing isPersistentStorageAvailable', () => {
+  it('defaults to allowing secret persistence when method is absent', async () => {
+    const legacyStorage = createStorage({
+      'settings-storage': toPersistedState({
+        providers: [{ id: 'p1', apiKey: 'my-secret' }],
+        mcpServers: [],
+      }),
+    });
+    const encryptedSettingsStorage = createStorage();
+    const vault = {
+      getSecret: jest.fn(async () => null),
+      setSecret: jest.fn(async () => {}),
+      deleteSecret: jest.fn(async () => {}),
+      // isPersistentStorageAvailable intentionally omitted
+    };
+
+    const result = await executeStorageHardeningBootstrap({
+      legacyStorage,
+      encryptedSettingsStorage,
+      vault: vault as any,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.migratedSettings).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(vault.setSecret).toHaveBeenCalled();
   });
 });
