@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 
 interface ChatBackgroundTaskModule {
   begin(taskName?: string): Promise<number | null>;
@@ -9,7 +9,7 @@ const nativeModule = NativeModules.ChatBackgroundTask as ChatBackgroundTaskModul
 
 export class ChatBackgroundTask {
   static async begin(taskName: string = 'ChatKnot Streaming'): Promise<number | null> {
-    if (Platform.OS !== 'ios' || !nativeModule?.begin) {
+    if (!nativeModule?.begin) {
       return null;
     }
 
@@ -21,7 +21,7 @@ export class ChatBackgroundTask {
   }
 
   static end(taskId: number | null | undefined) {
-    if (Platform.OS !== 'ios' || taskId == null || !nativeModule?.end) {
+    if (taskId == null || !nativeModule?.end) {
       return;
     }
 

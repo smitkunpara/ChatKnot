@@ -1421,8 +1421,8 @@ const errorStr = serializeToolExecutionError(error);
       )}
       {/* Main content area with keyboard handling */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+        behavior="height"
+        keyboardVerticalOffset={0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
       >
         <View style={StyleSheet.absoluteFill}>
@@ -1453,7 +1453,7 @@ const errorStr = serializeToolExecutionError(error);
                 updateCellsBatchingPeriod={50}
                 windowSize={7}
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                keyboardDismissMode="on-drag"
                 scrollEventThrottle={16}
                 onScroll={(event) => {
                   const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;

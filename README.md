@@ -63,20 +63,15 @@ To generate a production APK for Android:
 npm run android:apk:release
 ```
 
-### 📱 Android Build Variants
+### 📱 Android Build Output
 
-When you build the APK, 5 different files are generated to optimize for different devices and reduce the download size:
+Release builds generate a single APK optimized for modern Android devices:
 
-| APK Variant | Recommended Device | Why use it? |
-| :--- | :--- | :--- |
-| **`arm64-v8a`** | **Modern Smartphones** | **Best for 99% of users.** Optimized for 64-bit CPUs (Samsung S-series, Pixel, etc.). Smallest size for modern hardware. |
-| **`armeabi-v7a`** | Older/Budget Phones | For legacy 32-bit devices. Use only if `arm64-v8a` fails to install. |
-| **`universal`** | Any Device | Contains all architectures in one (large size). Good if you don't know the target device's CPU. |
-| **`x86 / x86_64`** | **Emulators** | Specifically for running the app on Android Studio or Windows emulators. |
+- **`arm64-v8a`**: Recommended and supported output target.
 
 ## 📱 Platform Compatibility
 > [!IMPORTANT]
-> **Android Primary**: ChatKnot is currently only tested and fully operational on **Android**. Support for iOS and Web is in the experimental phase.
+> **Android Only**: ChatKnot currently targets **Android** only.
 
 ## 📄 License & Legal
 - **License**: MIT License - see the [LICENSE](LICENSE) file for details.

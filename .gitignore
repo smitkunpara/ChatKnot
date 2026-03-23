@@ -46,19 +46,6 @@ android/local.properties
 android/key.properties
 android-sdk-local/
 
-# iOS
-ios/build/
-ios/Pods/
-ios/.xccheckout/
-ios/*.xcworkspace/
-!ios/*.xcworkspace/contents.xcworkspacedata
-ios/xcuserdata/
-ios/*.moved-aside
-ios/*.hmap
-ios/*.ipa
-ios/*.xcuserstate
-ios/Podfile.lock
-
 # Metro
 .metro-health-check*
 
@@ -90,7 +77,6 @@ logs
 *.tsbuildinfo
 
 # generated native folders (uncomment if you want to ignore them)
-# /ios
 # /android
 
 # kilocode coverage/analysis tool artifacts

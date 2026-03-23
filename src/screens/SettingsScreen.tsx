@@ -4,7 +4,6 @@ import {
   Alert,
   BackHandler,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -1036,7 +1035,7 @@ export const SettingsScreen = () => {
 
       <KeyboardAwareContainer
         contentContainerStyle={styles.content}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+        keyboardVerticalOffset={0}
       >
         {activeView === 'index' ? (
           <>

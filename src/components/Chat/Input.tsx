@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -351,9 +350,7 @@ const createStyles = (colors: AppPalette, insetBottom: number, isKeyboardVisible
       paddingHorizontal: 12,
       paddingTop: 8,
       // Keyboard open: 10 (close to keyboard), Keyboard closed: 25 (lifted up)
-      paddingBottom: Platform.OS === 'ios'
-        ? Math.max(insetBottom, isKeyboardVisible ? 12 : 25)
-        : (isKeyboardVisible ? 10 : 20),
+      paddingBottom: Math.max(insetBottom, isKeyboardVisible ? 12 : 25),
     },
     editingBadge: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

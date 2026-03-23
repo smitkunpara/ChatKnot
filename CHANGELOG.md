@@ -376,7 +376,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Version Name:** 0.1.0
 
 ### Known Limitations
-- iOS build not tested/verified in this release cycle
 - No cloud sync — all data is local to device
 - Release APK uses self-signed certificate (not suitable for Play Store without re-signing)
 - `WRITE_EXTERNAL_STORAGE` / `READ_EXTERNAL_STORAGE` permissions still present (inherited from dependencies)

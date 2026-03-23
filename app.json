@@ -22,11 +22,6 @@
       ],
       "expo-document-picker"
     ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.mcpconnectorapp",
-      "buildNumber": "8"
-    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",

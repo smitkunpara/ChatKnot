@@ -42,7 +42,6 @@ assertEqual('package.json version', packageJson.version, expectedVersion);
 
 const appJson = JSON.parse(readRelativeFile('app.json'));
 assertEqual('app.json expo.version', appJson.expo?.version, expectedVersion);
-assertEqual('app.json expo.ios.buildNumber', appJson.expo?.ios?.buildNumber, expectedBuild);
 assertEqual('app.json expo.android.versionCode', String(appJson.expo?.android?.versionCode), expectedBuild);
 
 const buildGradle = readRelativeFile('android/app/build.gradle');
@@ -50,43 +49,6 @@ const androidVersionName = extractSingleMatch(buildGradle, /versionName\s+\"([^\
 const androidVersionCode = extractSingleMatch(buildGradle, /versionCode\s+(\d+)/, 'android versionCode');
 assertEqual('android/app/build.gradle versionName', androidVersionName, expectedVersion);
 assertEqual('android/app/build.gradle versionCode', androidVersionCode, expectedBuild);
-
-const infoPlist = readRelativeFile('ios/ChatKnot/Info.plist');
-const iosShortVersion = extractSingleMatch(
-  infoPlist,
-  /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/,
-  'CFBundleShortVersionString'
-);
-const iosBuildVersion = extractSingleMatch(
-  infoPlist,
-  /<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/,
-  'CFBundleVersion'
-);
-assertEqual('ios/ChatKnot/Info.plist CFBundleShortVersionString', iosShortVersion, expectedVersion);
-assertEqual('ios/ChatKnot/Info.plist CFBundleVersion', iosBuildVersion, expectedBuild);
-
-const pbxproj = readRelativeFile('ios/ChatKnot.xcodeproj/project.pbxproj');
-const marketingVersions = Array.from(pbxproj.matchAll(/MARKETING_VERSION = ([^;]+);/g), (match) =>
-  match[1].replaceAll('"', '').trim()
-);
-const currentProjectVersions = Array.from(
-  pbxproj.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g),
-  (match) => match[1].replaceAll('"', '').trim()
-);
-
-if (marketingVersions.length === 0) {
-  fail('Could not find MARKETING_VERSION entries in project.pbxproj.');
-}
-if (currentProjectVersions.length === 0) {
-  fail('Could not find CURRENT_PROJECT_VERSION entries in project.pbxproj.');
-}
-
-marketingVersions.forEach((version, index) => {
-  assertEqual(`ios project MARKETING_VERSION[${index}]`, version, expectedVersion);
-});
-currentProjectVersions.forEach((version, index) => {
-  assertEqual(`ios project CURRENT_PROJECT_VERSION[${index}]`, version, expectedBuild);
-});
 
 if (mismatches.length > 0) {
   console.error('Version consistency check failed:');
