@@ -12,11 +12,6 @@ const createProviderConfig = (overrides: Partial<LlmProviderConfig> = {}): LlmPr
   ...overrides,
 });
 
-const buildCacheKey = (config: LlmProviderConfig): string => {
-  const keyTail = (config.apiKey || '').slice(-4);
-  return `${config.type}:${config.baseUrl}:${keyTail}:${config.model}`;
-};
-
 describe('ProviderFactory', () => {
   beforeEach(() => {
     (ProviderFactory as any).instanceCache.clear();
@@ -63,14 +58,14 @@ describe('ProviderFactory', () => {
       expect(service1).not.toBe(service2);
     });
 
-    it('treats keys with same last 4 chars as same cache entry', () => {
+    it('does not collide when different keys share the same last 4 chars', () => {
       const config1 = createProviderConfig({ apiKey: 'sk-aaaa' });
       const config2 = createProviderConfig({ apiKey: 'xx-aaaa' });
 
       const service1 = ProviderFactory.create(config1);
       const service2 = ProviderFactory.create(config2);
 
-      expect(service1).toBe(service2);
+      expect(service1).not.toBe(service2);
     });
 
     it('differentiates by provider type', () => {
@@ -91,7 +86,6 @@ describe('ProviderFactory', () => {
       const cache = (ProviderFactory as any).instanceCache as Map<string, unknown>;
       for (const key of cache.keys()) {
         expect(key).not.toContain(secret);
-        expect(key).toContain('7890');
       }
     });
   });
@@ -131,8 +125,11 @@ describe('ProviderFactory', () => {
     });
 
     it('refreshes LRU position on cache hit', () => {
+      const services = new Map<string, ReturnType<typeof ProviderFactory.create>>();
+
       for (let i = 0; i < 20; i++) {
-        ProviderFactory.create(createProviderConfig({ id: `p-${i}`, model: `m-${i}` }));
+        const config = createProviderConfig({ id: `p-${i}`, model: `m-${i}` });
+        services.set(`m-${i}`, ProviderFactory.create(config));
       }
 
       const firstConfig = createProviderConfig({ id: 'p-0', model: 'm-0' });
@@ -140,31 +137,63 @@ describe('ProviderFactory', () => {
 
       ProviderFactory.create(createProviderConfig({ id: 'p-new', model: 'm-new' }));
 
-      const cache = (ProviderFactory as any).instanceCache as Map<string, unknown>;
-      expect(cache.has(buildCacheKey(firstConfig))).toBe(true);
+      expect(ProviderFactory.create(firstConfig)).toBe(services.get('m-0'));
+
       const evictedConfig = createProviderConfig({ id: 'p-1', model: 'm-1' });
-      expect(cache.has(buildCacheKey(evictedConfig))).toBe(false);
+      expect(ProviderFactory.create(evictedConfig)).not.toBe(services.get('m-1'));
+    });
+
+    it('treats whitespace-only apiKey as missing and falls back to apiKeyRef', () => {
+      const configWithWhitespaceKey = createProviderConfig({
+        apiKey: '   ',
+        apiKeyRef: 'secret-ref',
+      });
+      const configWithOnlyRef = createProviderConfig({
+        apiKey: '',
+        apiKeyRef: 'secret-ref',
+      });
+
+      const serviceWithWhitespaceKey = ProviderFactory.create(configWithWhitespaceKey);
+      const serviceWithOnlyRef = ProviderFactory.create(configWithOnlyRef);
+
+      expect(serviceWithWhitespaceKey).toBe(serviceWithOnlyRef);
+    });
+
+    it('normalizes surrounding whitespace in apiKey for cache reuse', () => {
+      const configWithSpaces = createProviderConfig({ apiKey: '  sk-test-key  ' });
+      const trimmedConfig = createProviderConfig({ apiKey: 'sk-test-key' });
+
+      const spacedService = ProviderFactory.create(configWithSpaces);
+      const trimmedService = ProviderFactory.create(trimmedConfig);
+
+      expect(spacedService).toBe(trimmedService);
     });
   });
 
   describe('MAX_CACHE_SIZE eviction', () => {
     it('evicts oldest entry when cache reaches MAX_CACHE_SIZE', () => {
+      let firstService: ReturnType<typeof ProviderFactory.create> | null = null;
+
       for (let i = 0; i < 20; i++) {
         const config = createProviderConfig({ id: `provider-${i}`, model: `model-${i}` });
-        ProviderFactory.create(config);
+        const service = ProviderFactory.create(config);
+        if (i === 0) {
+          firstService = service;
+        }
       }
 
       const cache = (ProviderFactory as any).instanceCache;
       expect(cache.size).toBe(20);
 
       const config21 = createProviderConfig({ id: 'provider-21', model: 'model-21' });
-      ProviderFactory.create(config21);
+      const service21 = ProviderFactory.create(config21);
 
       expect(cache.size).toBe(20);
-      expect(cache.has(buildCacheKey(config21))).toBe(true);
+      expect(ProviderFactory.create(config21)).toBe(service21);
 
       const firstConfig = createProviderConfig({ id: 'provider-0', model: 'model-0' });
-      expect(cache.has(buildCacheKey(firstConfig))).toBe(false);
+      const recreatedFirst = ProviderFactory.create(firstConfig);
+      expect(recreatedFirst).not.toBe(firstService);
     });
 
     it('evicts one entry at a time when limit exceeded', () => {

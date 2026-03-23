@@ -23,8 +23,8 @@ describe('isModelLikelyTextOutput', () => {
     expect(isModelLikelyTextOutput('embedding-ada-002')).toBe(false);
     expect(isModelLikelyTextOutput('embedding-large')).toBe(false);
     expect(isModelLikelyTextOutput({ id: 'embedding-ada-002' })).toBe(false);
-    // 'text-embedding' prefix does NOT match the 'embedding' pattern
-    expect(isModelLikelyTextOutput('text-embedding-3-small')).toBe(true);
+    expect(isModelLikelyTextOutput('text-embedding-3-small')).toBe(false);
+    expect(isModelLikelyTextOutput('text-embedding-3-large')).toBe(false);
   });
 
   it('filters out DALL-E models by id prefix', () => {

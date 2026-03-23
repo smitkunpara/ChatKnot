@@ -260,4 +260,34 @@ describe('OpenAiService.listModelsWithCapabilities', () => {
     expect(parsedBody.functions).toBeUndefined();
     expect(parsedBody.function_call).toBeUndefined();
   });
+
+  it('redacts sensitive tokens in chat completion API errors', async () => {
+    (global as any).fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: async () =>
+        'upstream failure api_key=sk-super-secret-key authorization=Bearer sk-top-secret-token',
+    });
+
+    const service = new OpenAiService(createProvider());
+    const onError = jest.fn();
+
+    await service.sendChatCompletion(
+      [],
+      'system prompt',
+      'app prompt',
+      [],
+      jest.fn(),
+      jest.fn(),
+      onError
+    );
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    const error = onError.mock.calls[0][0] as Error;
+    expect(error.message).toContain('API Error: 500 Internal Server Error');
+    expect(error.message).toContain('[REDACTED]');
+    expect(error.message).not.toContain('sk-super-secret-key');
+    expect(error.message).not.toContain('sk-top-secret-token');
+  });
 });

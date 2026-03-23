@@ -7,7 +7,7 @@ interface ModelMetadata {
 }
 
 const NON_TEXT_ID_PATTERN =
-  /^(embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator)/i;
+  /^(text-embedding|embedding|dall[-_ ]?e|whisper|tts|transcribe|speech|moderation|rerank|omni-moderation|image-generator)/i;
 
 const toStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];

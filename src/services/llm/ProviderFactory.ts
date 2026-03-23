@@ -5,10 +5,25 @@ export class ProviderFactory {
   private static instanceCache = new Map<string, OpenAiService>();
   private static readonly MAX_CACHE_SIZE = 20;
 
+  private static hashKeyMaterial(input: string): string {
+    // Lightweight stable hash to avoid embedding raw secrets in cache keys.
+    let hash = 2166136261;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
   private static buildCacheKey(config: LlmProviderConfig): string {
-    // Hash the API key suffix so the full secret never appears in cache keys.
-    const keyTail = (config.apiKey || '').slice(-4);
-    return `${config.type}:${config.baseUrl}:${keyTail}:${config.model}`;
+    const baseUrl = (config.baseUrl || '').trim().toLowerCase();
+    const trimmedApiKey = (config.apiKey || '').trim();
+    const trimmedApiKeyRef = (config.apiKeyRef || '').trim();
+    const keyMaterial = trimmedApiKey || trimmedApiKeyRef;
+    const keyFingerprint = keyMaterial
+      ? this.hashKeyMaterial(keyMaterial)
+      : '';
+    return `${config.type}:${baseUrl}:${keyFingerprint}:${config.model}`;
   }
 
   static create(config: LlmProviderConfig): OpenAiService {

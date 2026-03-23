@@ -40,25 +40,14 @@ interface StreamDelta {
   };
 }
 
-interface StreamMessage {
-  content?: string;
-  reasoning_content?: string;
-  reasoning?: string;
-  tool_calls?: StreamToolCallDelta[];
-  function_call?: {
-    name?: string;
-    arguments?: string;
-  };
-}
-
 interface StreamChoice {
   delta?: StreamDelta;
-  message?: StreamMessage;
+  message?: StreamDelta;
 }
 
 interface StreamChunk {
   choices?: StreamChoice[];
-  message?: StreamMessage;
+  message?: StreamDelta;
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -77,6 +66,7 @@ interface MergedToolCall {
 
 export class OpenAiService {
   private config: LlmProviderConfig;
+  private static readonly MAX_ERROR_PREVIEW_LENGTH = 220;
 
   constructor(config: LlmProviderConfig) {
     this.config = config;
@@ -178,8 +168,8 @@ export class OpenAiService {
           }
 
           const responseText = await response.text().catch(() => '');
-          const compactBody = responseText.replace(/\s+/g, ' ').trim();
-          const bodyPreview = compactBody ? `: ${compactBody.slice(0, 180)}` : '';
+          const sanitized = OpenAiService.sanitizeApiErrorSnippet(responseText);
+          const bodyPreview = sanitized ? `: ${sanitized}` : '';
           throw new Error(`Failed to fetch models from ${endpoint} (${statusLabel})${bodyPreview}`);
         }
 
@@ -250,6 +240,24 @@ export class OpenAiService {
       }
     }
     return tokens;
+  }
+
+  private static sanitizeApiErrorSnippet(rawText: string): string {
+    if (!rawText) return '';
+
+    const compact = rawText.replace(/\s+/g, ' ').trim();
+    if (!compact) return '';
+
+    const redacted = compact
+      .replace(/(api[_-]?key\s*[=:]\s*)([^\s,;"']+)/gi, '$1[REDACTED]')
+      .replace(/(authorization\s*[=:]\s*bearer\s+)([^\s,;"']+)/gi, '$1[REDACTED]')
+      .replace(/\bsk-[a-z0-9_-]{8,}\b/gi, '[REDACTED]');
+
+    if (redacted.length <= OpenAiService.MAX_ERROR_PREVIEW_LENGTH) {
+      return redacted;
+    }
+
+    return `${redacted.slice(0, OpenAiService.MAX_ERROR_PREVIEW_LENGTH)}…`;
   }
 
   private static extractModelList(data: unknown): unknown[] {
@@ -533,8 +541,11 @@ export class OpenAiService {
 
       const response = await fetch(`${this.getBaseUrl()}/chat/completions`, fetchOptions);
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`API Error: ${response.status} - ${text}`);
+        const text = await response.text().catch(() => '');
+        const statusLabel = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+        const sanitized = OpenAiService.sanitizeApiErrorSnippet(text);
+        const detail = sanitized ? ` - ${sanitized}` : '';
+        throw new Error(`API Error: ${statusLabel}${detail}`);
       }
 
       const mergeToolCalls = (current: MergedToolCall[], newCalls: StreamToolCallDelta[]): MergedToolCall[] => {
@@ -589,7 +600,6 @@ export class OpenAiService {
       };
 
       let fullContent = '';
-      let fullReasoning = '';
       let toolCallsBuffer: MergedToolCall[] = [];
       const responseWithBody = response as Response & { body?: { getReader(): ReadableStreamDefaultReader<Uint8Array> } };
       const reader = responseWithBody.body?.getReader();
@@ -603,78 +613,36 @@ export class OpenAiService {
         onChunk(contentChunk, undefined);
       };
 
-      const processDelta = (delta: StreamDelta | undefined): boolean => {
-        if (!delta) return false;
+      const processStreamEntry = (entry: StreamDelta | undefined): boolean => {
+        if (!entry) return false;
         let emitted = false;
 
-        const reasoningChunk = delta.reasoning_content || delta.reasoning || '';
+        const reasoningChunk = entry.reasoning_content || entry.reasoning || '';
         if (reasoningChunk && onReasoning) {
-          fullReasoning += reasoningChunk;
           onReasoning(reasoningChunk);
           emitted = true;
         }
 
-        if (delta.content) {
-          emitContentChunk(delta.content);
+        if (entry.content) {
+          emitContentChunk(entry.content);
           emitted = true;
         }
 
-        if (delta.tool_calls) {
-          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, delta.tool_calls);
+        if (entry.tool_calls) {
+          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, entry.tool_calls);
           onChunk('', toolCallsBuffer);
           emitted = true;
         }
 
-        if (delta.function_call) {
+        if (entry.function_call) {
           toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
             {
               index: 0,
               id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
               type: 'function',
               function: {
-                name: delta.function_call.name,
-                arguments: delta.function_call.arguments || '',
-              },
-            },
-          ]);
-          onChunk('', toolCallsBuffer);
-          emitted = true;
-        }
-
-        return emitted;
-      };
-
-      const processMessageFields = (message: StreamMessage | undefined): boolean => {
-        if (!message) return false;
-        let emitted = false;
-
-        const reasoningChunk = message.reasoning_content || message.reasoning || '';
-        if (reasoningChunk && onReasoning) {
-          fullReasoning += reasoningChunk;
-          onReasoning(reasoningChunk);
-          emitted = true;
-        }
-
-        if (message.content) {
-          emitContentChunk(message.content);
-          emitted = true;
-        }
-
-        if (message.tool_calls) {
-          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, message.tool_calls);
-          onChunk('', toolCallsBuffer);
-          emitted = true;
-        }
-
-        if (message.function_call) {
-          toolCallsBuffer = mergeToolCalls(toolCallsBuffer, [
-            {
-              index: 0,
-              id: toolCallsBuffer[0]?.id || 'legacy_function_call_0',
-              type: 'function',
-              function: {
-                name: message.function_call.name,
-                arguments: message.function_call.arguments || '',
+                name: entry.function_call.name,
+                arguments: entry.function_call.arguments || '',
               },
             },
           ]);
@@ -705,11 +673,11 @@ export class OpenAiService {
           const delta = choice?.delta;
           const message = choice?.message ?? json.message;
 
-          if (processDelta(delta)) {
+          if (processStreamEntry(delta)) {
             return true;
           }
 
-          return processMessageFields(message);
+          return processStreamEntry(message);
         } catch {
           // Ignore partial or non-JSON control events.
           return false;
@@ -738,6 +706,10 @@ export class OpenAiService {
         const dataLines = event
           .split(/\r?\n/)
           .map((line) => line.trimEnd())
+          .map((line, index) => {
+            const normalized = index === 0 ? line.replace(/^\uFEFF/, '') : line;
+            return normalized.trimStart();
+          })
           .filter((line) => line.startsWith('data:'))
           .map((line) => line.replace(/^data:\s?/, ''));
 

@@ -463,4 +463,88 @@ describe('OpenAiService Streaming', () => {
       totalTokens: 15,
     });
   });
+
+  it('parses SSE events when the first data line is BOM-prefixed', async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      encoder.encode('\uFEFFdata: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'),
+      encoder.encode('data: [DONE]\n\n'),
+    ];
+    const mockRead = jest
+      .fn()
+      .mockResolvedValueOnce({ done: false, value: chunks[0] })
+      .mockResolvedValueOnce({ done: false, value: chunks[1] })
+      .mockResolvedValueOnce({ done: true, value: undefined });
+
+    const mockReader = {
+      read: mockRead,
+      cancel: jest.fn().mockResolvedValue(undefined),
+    };
+
+    (global as any).fetch.mockResolvedValue({
+      ok: true,
+      body: { getReader: () => mockReader },
+    });
+
+    const service = new OpenAiService(createProvider());
+    const onChunk = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    await service.sendChatCompletion(
+      [],
+      'system prompt',
+      'app prompt',
+      [],
+      onChunk,
+      onComplete,
+      onError
+    );
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onChunk).toHaveBeenCalledWith('Hello', undefined);
+    expect(onComplete).toHaveBeenCalledWith('Hello', undefined);
+  });
+
+  it('parses SSE events when data lines have leading spaces', async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      encoder.encode('  data: {"choices":[{"delta":{"content":"Hi"}}]}\r\n\r\n'),
+      encoder.encode('   data: [DONE]\r\n\r\n'),
+    ];
+    const mockRead = jest
+      .fn()
+      .mockResolvedValueOnce({ done: false, value: chunks[0] })
+      .mockResolvedValueOnce({ done: false, value: chunks[1] })
+      .mockResolvedValueOnce({ done: true, value: undefined });
+
+    const mockReader = {
+      read: mockRead,
+      cancel: jest.fn().mockResolvedValue(undefined),
+    };
+
+    (global as any).fetch.mockResolvedValue({
+      ok: true,
+      body: { getReader: () => mockReader },
+    });
+
+    const service = new OpenAiService(createProvider());
+    const onChunk = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    await service.sendChatCompletion(
+      [],
+      'system prompt',
+      'app prompt',
+      [],
+      onChunk,
+      onComplete,
+      onError
+    );
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onChunk).toHaveBeenCalledWith('Hi', undefined);
+    expect(onComplete).toHaveBeenCalledWith('Hi', undefined);
+  });
 });
