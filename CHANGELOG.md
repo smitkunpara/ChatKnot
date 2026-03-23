@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Android-Only Project Cleanup** — Removed iOS project files/folders and iOS-specific build/version-check paths so the repository now targets Android packaging only, including older branches of the build workflow.
+- **Single Android Artifact Strategy** — Removed multi-ABI split artifact generation and now build only the latest supported Android target.
+- **APK Output Filename Format** — Release APK output now uses the simplified format `ChatKnot_<version>.apk` (example: `ChatKnot_0.4.0.apk`).
+
 ## [0.4.0] - 2026-03-22
 
 ### Added
