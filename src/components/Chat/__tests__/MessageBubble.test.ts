@@ -1,175 +1,65 @@
-import { ContentBlock } from '../../../utils/parseThinkingBlocks';
+import {
+  buildAssistantContentBlocks,
+  getAttachmentImageSource,
+  hasUsableReasoning,
+} from '../messageBubbleHelpers';
+import { Attachment } from '../../../types';
 
-describe('MessageBubble content block logic', () => {
-  describe('shouldHideBubble calculation', () => {
-    it('returns true for system messages', () => {
-      const isSystem = true;
-      const isTool = false;
-      const shouldRenderBubble = false;
-      const shouldShowAssistant = false;
-      const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
-      
-      expect(shouldHideBubble).toBe(true);
+describe('MessageBubble attachment helpers', () => {
+  const baseAttachment: Attachment = {
+    id: 'att-1',
+    type: 'image',
+    uri: 'file:///cache/image.png',
+    name: 'image.png',
+    mimeType: 'image/png',
+    size: 1024,
+  };
+
+  it('prefers base64 data URI when available', () => {
+    const source = getAttachmentImageSource({
+      ...baseAttachment,
+      base64: 'aGVsbG8=',
     });
 
-    it('returns true for tool messages', () => {
-      const isSystem = false;
-      const isTool = true;
-      const shouldRenderBubble = false;
-      const shouldShowAssistant = false;
-      const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
-      
-      expect(shouldHideBubble).toBe(true);
-    });
-
-    it('returns false for user messages', () => {
-      const isSystem = false;
-      const isTool = false;
-      const isUser = true;
-      const shouldRenderBubble = true;
-      const shouldShowAssistant = !isUser;
-      const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
-      
-      expect(shouldHideBubble).toBe(false);
+    expect(source).toEqual({
+      uri: 'data:image/png;base64,aGVsbG8=',
     });
   });
 
-  describe('shouldRenderBubble calculation', () => {
-    it('returns true when has text', () => {
-      const hasText = true;
-      const hasToolCalls = false;
-      const hasAttachments = false;
-      const hasReasoning = false;
-      const isStreaming = false;
-      const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
-      
-      expect(shouldRenderBubble).toBe(true);
-    });
+  it('falls back to file URI when base64 was stripped for persistence', () => {
+    const source = getAttachmentImageSource(baseAttachment);
 
-    it('returns true when streaming', () => {
-      const hasText = false;
-      const hasToolCalls = false;
-      const hasAttachments = false;
-      const hasReasoning = false;
-      const isStreaming = true;
-      const shouldRenderBubble = hasText || hasToolCalls || hasAttachments || hasReasoning || !!isStreaming;
-      
-      expect(shouldRenderBubble).toBe(true);
+    expect(source).toEqual({
+      uri: 'file:///cache/image.png',
     });
   });
+});
 
-  describe('contentBlocks derivation', () => {
-    it('returns text block for user messages', () => {
-      const isUser = true;
-      const messageContent = 'Hello';
-      const result = isUser ? [{ type: 'text' as const, content: messageContent || '' }] : [];
-      
-      expect(result).toEqual([{ type: 'text', content: 'Hello' }]);
-    });
-
-    it('handles streamed reasoning with stripped content', () => {
-      const hasStreamedReasoning = true;
-      const messageReasoning = 'Thinking process';
-      const messageContent = '<think>Thinking process</think> Final answer';
-      const rawContent = messageContent || '';
-      const strippedContent = rawContent.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
-      const blocks: ContentBlock[] = [{ type: 'think', content: messageReasoning }];
-      if (strippedContent) {
-        blocks.push({ type: 'text', content: strippedContent });
-      }
-      
-      expect(blocks).toEqual([
-        { type: 'think', content: 'Thinking process' },
-        { type: 'text', content: 'Final answer' },
-      ]);
-    });
+describe('MessageBubble thinking fallback helpers', () => {
+  it('treats whitespace-only reasoning as unusable', () => {
+    expect(hasUsableReasoning('   ')).toBe(false);
+    expect(hasUsableReasoning('\n\t')).toBe(false);
   });
 
-  describe('isStreamingThinking calculation', () => {
-    it('detects streaming thinking with streamed reasoning', () => {
-      const isStreaming = true;
-      const hasStreamedReasoning = true;
-      const contentBlocks: ContentBlock[] = [{ type: 'think', content: 'Thinking...' }];
-      const isStreamingThinking = !!isStreaming && (
-        (hasStreamedReasoning && !contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0)) ||
-        (contentBlocks.length > 0 && contentBlocks[contentBlocks.length - 1].type === 'think')
-      );
-      
-      expect(isStreamingThinking).toBe(true);
-    });
-
-    it('detects streaming thinking with inline think blocks', () => {
-      const isStreaming = true;
-      const hasStreamedReasoning = false;
-      const contentBlocks: ContentBlock[] = [
-        { type: 'text', content: 'Hello ' },
-        { type: 'think', content: 'Still thinking...' },
-      ];
-      const isStreamingThinking = !!isStreaming && (
-        (hasStreamedReasoning && !contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0)) ||
-        (contentBlocks.length > 0 && contentBlocks[contentBlocks.length - 1].type === 'think')
-      );
-      
-      expect(isStreamingThinking).toBe(true);
-    });
+  it('treats non-empty reasoning as usable', () => {
+    expect(hasUsableReasoning('Reasoning text')).toBe(true);
   });
 
-  describe('action visibility', () => {
-    it('shows copy action for non-streaming messages with text', () => {
-      const isStreaming = false;
-      const hasText = true;
-      const showCopyAction = !isStreaming && hasText;
-      
-      expect(showCopyAction).toBe(true);
-    });
+  it('falls back to parsing content when persisted reasoning is blank', () => {
+    const blocks = buildAssistantContentBlocks('<think>Hidden thought</think>Final answer', '   ');
 
-    it('hides copy action while streaming', () => {
-      const isStreaming = true;
-      const hasText = true;
-      const showCopyAction = !isStreaming && hasText;
-      
-      expect(showCopyAction).toBe(false);
-    });
-
-    it('shows retry action for assistant non-streaming messages', () => {
-      const isUser = false;
-      const isStreaming = false;
-      const onRetryAssistant = true;
-      const showRetryAction = !isUser && !isStreaming && !!onRetryAssistant;
-      
-      expect(showRetryAction).toBe(true);
-    });
-
-    it('shows edit action for user messages', () => {
-      const isUser = true;
-      const onEdit = true;
-      const showEditAction = isUser && !!onEdit;
-      
-      expect(showEditAction).toBe(true);
-    });
+    expect(blocks).toEqual([
+      { type: 'think', content: 'Hidden thought' },
+      { type: 'text', content: 'Final answer' },
+    ]);
   });
 
-  describe('isToolOnlyAssistant calculation', () => {
-    it('identifies tool-only assistant correctly', () => {
-      const isUser = false;
-      const hasToolCalls = true;
-      const hasText = false;
-      const hasReasoning = false;
-      const isError = false;
-      const isToolOnlyAssistant = !isUser && hasToolCalls && !hasText && !hasReasoning && !isError;
-      
-      expect(isToolOnlyAssistant).toBe(true);
-    });
+  it('preserves visible text whitespace after stripping thought tags when reasoning is present', () => {
+    const blocks = buildAssistantContentBlocks('<think>Internal</think>  Final answer', 'Structured reasoning');
 
-    it('does not identify as tool-only when has text', () => {
-      const isUser = false;
-      const hasToolCalls = true;
-      const hasText = true;
-      const hasReasoning = false;
-      const isError = false;
-      const isToolOnlyAssistant = !isUser && hasToolCalls && !hasText && !hasReasoning && !isError;
-      
-      expect(isToolOnlyAssistant).toBe(false);
-    });
+    expect(blocks).toEqual([
+      { type: 'think', content: 'Structured reasoning' },
+      { type: 'text', content: '  Final answer' },
+    ]);
   });
 });

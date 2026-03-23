@@ -44,4 +44,15 @@ describe('sortAndFilterConversations', () => {
     const result = sortAndFilterConversations(withMissing, '');
     expect(result.map((item) => item.id)).toEqual(['1', '2']);
   });
+
+  it('uses createdAt and id as deterministic tiebreakers when updatedAt is equal', () => {
+    const withEqualUpdated = [
+      { id: 'c', title: 'Third', updatedAt: 10, createdAt: 5 },
+      { id: 'a', title: 'First', updatedAt: 10, createdAt: 8 },
+      { id: 'b', title: 'Second', updatedAt: 10, createdAt: 8 },
+    ];
+
+    const result = sortAndFilterConversations(withEqualUpdated, '');
+    expect(result.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+  });
 });

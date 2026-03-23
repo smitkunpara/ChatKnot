@@ -1,3 +1,13 @@
+import {
+  BUTTON_SIZE,
+  BUTTON_MARGIN,
+  CONTAINER_PADDING,
+  BUTTON_BR,
+  CONTAINER_BR,
+  LINE_HEIGHT,
+  MAX_INPUT_HEIGHT,
+} from '../inputConstants';
+
 describe('Input component logic', () => {
   describe('canSend calculation', () => {
     it('returns true when text is not empty', () => {
@@ -103,12 +113,6 @@ describe('Input component logic', () => {
 
   describe('The Formula constants', () => {
     it('applies correct formula values', () => {
-      const BUTTON_SIZE = 30;
-      const BUTTON_MARGIN = 3;
-      const CONTAINER_PADDING = 3;
-      const BUTTON_BR = 5;
-      const CONTAINER_BR = BUTTON_BR + BUTTON_MARGIN + CONTAINER_PADDING;
-
       expect(BUTTON_SIZE).toBe(30);
       expect(BUTTON_MARGIN).toBe(3);
       expect(CONTAINER_PADDING).toBe(3);
@@ -117,9 +121,6 @@ describe('Input component logic', () => {
     });
 
     it('applies line height and max input height', () => {
-      const LINE_HEIGHT = 20;
-      const MAX_INPUT_HEIGHT = 106;
-
       expect(LINE_HEIGHT).toBe(20);
       expect(MAX_INPUT_HEIGHT).toBe(106);
       expect(MAX_INPUT_HEIGHT / LINE_HEIGHT).toBe(5.3);

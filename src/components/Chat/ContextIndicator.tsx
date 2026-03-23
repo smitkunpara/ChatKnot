@@ -11,6 +11,13 @@ import Svg, { Circle } from 'react-native-svg';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useContextUsageStore } from '../../store/useContextUsageStore';
 import { formatTokenCount } from '../../utils/modelContextLimits';
+import {
+  selectContextUsageForConversation,
+  getPromptUsageRatio,
+  getPromptUsagePercent,
+  getProgressBarWidthPercent,
+  getRemainingPromptTokens,
+} from './contextIndicatorHelpers';
 
 interface ContextIndicatorProps {
   conversationId: string | null;
@@ -28,19 +35,22 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   const [popupVisible, setPopupVisible] = useState(false);
 
   const usageData = useContextUsageStore(
-    (state) => {
-      if (!conversationId) return null;
-      const data = state.usageByConversation[conversationId];
-      if (!data) return null;
-      if (data.providerId !== providerId || data.model !== model) return null;
-      return data;
-    }
+    (state) =>
+      selectContextUsageForConversation(
+        state.usageByConversation,
+        conversationId,
+        providerId,
+        model
+      )
   );
 
-  const fillPercent = useMemo(() => {
-    if (!usageData || usageData.contextLimit <= 0) return 0;
-    return Math.min(1, usageData.lastUsage.promptTokens / usageData.contextLimit);
-  }, [usageData]);
+  const fillPercent = useMemo(() => getPromptUsageRatio(usageData), [usageData]);
+  const usagePercent = useMemo(() => getPromptUsagePercent(usageData), [usageData]);
+  const progressWidthPercent = useMemo(
+    () => getProgressBarWidthPercent(usageData),
+    [usageData]
+  );
+  const remainingTokens = useMemo(() => getRemainingPromptTokens(usageData), [usageData]);
 
   const strokeWidth = 2.5;
   const radius = 10;
@@ -74,7 +84,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
         activeOpacity={hasData ? 0.7 : 1}
         accessibilityLabel={
           hasData
-            ? `Context usage: ${Math.round(fillPercent * 100)}%`
+            ? `Context usage: ${usagePercent}%`
             : 'No context data'
         }
         accessibilityRole="button"
@@ -120,7 +130,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
         </Svg>
         {hasData && (
           <Text style={[styles.percentText, { color: fillColor }]}>
-            {Math.round(fillPercent * 100)}%
+            {usagePercent}%
           </Text>
         )}
       </TouchableOpacity>
@@ -183,22 +193,22 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
                       style={[
                         styles.progressBarFill,
                         {
-                          width: `${(usageData?.contextLimit ?? 0) > 0 ? Math.min(100, (usageData!.lastUsage.promptTokens / usageData!.contextLimit) * 100) : 0}%`,
+                          width: `${progressWidthPercent}%`,
                           backgroundColor: fillColor,
                         },
                       ]}
                     />
                   </View>
                   <Text style={styles.progressBarText}>
-                    {usageData && usageData.contextLimit > 0
-                      ? `${Math.round((usageData.lastUsage.promptTokens / usageData.contextLimit) * 100)}% of context used`
+                    {usageData
+                      ? `${usagePercent}% of context used`
                       : 'No data'}
                   </Text>
                 </View>
 
                 {usageData?.lastUsage.promptTokens !== undefined && usageData && (
                   <Text style={styles.remainingText}>
-                    {formatTokenCount(Math.max(0, usageData.contextLimit - usageData.lastUsage.promptTokens))} tokens remaining
+                    {formatTokenCount(remainingTokens)} tokens remaining
                   </Text>
                 )}
               </View>

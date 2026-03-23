@@ -37,10 +37,26 @@ describe('parseThinkingBlocks', () => {
     ]);
   });
 
-  it('filters out empty think blocks after trimming', () => {
+  it('filters out think blocks that are empty after trimming', () => {
     const result = parseThinkingBlocks('<think></think>Response');
-    const hasThinkBlock = result.some(b => b.type === 'think' && b.content.includes('think'));
-    expect(hasThinkBlock).toBe(true);
+    expect(result).toEqual([
+      { type: 'text', content: 'Response' },
+    ]);
+  });
+
+  it('filters out think blocks that are whitespace-only after trimming', () => {
+    const whitespaceResult = parseThinkingBlocks('<think>   </think>Response');
+    expect(whitespaceResult).toEqual([
+      { type: 'text', content: 'Response' },
+    ]);
+  });
+
+  it('preserves think blocks with real content', () => {
+    const realResult = parseThinkingBlocks('<think>Thinking hard</think>Response');
+    expect(realResult).toEqual([
+      { type: 'think', content: 'Thinking hard' },
+      { type: 'text', content: 'Response' },
+    ]);
   });
 
   it('trims whitespace from think blocks', () => {

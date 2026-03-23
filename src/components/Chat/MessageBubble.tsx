@@ -21,10 +21,13 @@ import {
   createMarkdownStyles,
   createTableRenderRules,
   getTableColumnWidth,
-  MarkdownStyles,
-  TableRenderRules,
 } from './chatMarkdownStyles';
-import { parseThinkingBlocks, ContentBlock } from '../../utils/parseThinkingBlocks';
+import { ContentBlock } from '../../utils/parseThinkingBlocks';
+import {
+  buildAssistantContentBlocks,
+  getAttachmentImageSource,
+  hasUsableReasoning,
+} from './messageBubbleHelpers';
 
 interface MessageBubbleProps {
   message: Message;
@@ -72,27 +75,13 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
     await Clipboard.setStringAsync(message.content || '');
   };
 
-  const hasStreamedReasoning = !!message.reasoning;
+  const hasStreamedReasoning = hasUsableReasoning(message.reasoning);
 
   const contentBlocks: ContentBlock[] = useMemo(() => {
     if (isUser) return [{ type: 'text' as const, content: message.content || '' }];
 
-    if (hasStreamedReasoning) {
-      const rawContent = message.content || '';
-      const strippedContent = rawContent.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
-      const blocks: ContentBlock[] = [{ type: 'think', content: message.reasoning! }];
-      if (strippedContent) {
-        blocks.push({ type: 'text', content: strippedContent });
-      }
-      return blocks;
-    }
-
-    if (message.content) {
-      return parseThinkingBlocks(message.content);
-    }
-
-    return [{ type: 'text' as const, content: '' }];
-  }, [message.content, message.reasoning, isUser, hasStreamedReasoning]);
+    return buildAssistantContentBlocks(message.content, message.reasoning);
+  }, [message.content, message.reasoning, isUser]);
 
   const isStreamingThinking = !!isStreaming && (
     (hasStreamedReasoning && !contentBlocks.some(b => b.type === 'text' && b.content.trim().length > 0)) ||
@@ -125,9 +114,9 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                 <View style={styles.attachmentsContainer}>
                   {message.attachments?.map((att) => (
                     <View key={att.id} style={styles.attachmentItem}>
-                      {att.type === 'image' && att.base64 ? (
+                      {att.type === 'image' ? (
                         <Image
-                          source={{ uri: `data:${att.mimeType};base64,${att.base64}` }}
+                          source={getAttachmentImageSource(att)}
                           style={styles.attachedImage}
                         />
                       ) : (

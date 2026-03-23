@@ -149,19 +149,13 @@ interface DetailRowProps {
     label: string;
     value: string;
     colors: AppPalette;
-    isStatus?: boolean;
-    statusOk?: boolean;
 }
 
-const DetailRow: React.FC<DetailRowProps> = ({ label, value, colors, isStatus, statusOk }) => {
-    const valueColor = isStatus
-        ? (statusOk ? colors.success : colors.danger)
-        : colors.text;
-
+const DetailRow: React.FC<DetailRowProps> = ({ label, value, colors }) => {
     return (
         <View style={{ flexDirection: 'row', marginBottom: 4, gap: 6 }}>
             <Text style={{ fontSize: 11, color: colors.textTertiary, minWidth: 58 }}>{label}</Text>
-            <Text style={{ fontSize: 11, color: valueColor, flex: 1, flexWrap: 'wrap' }} numberOfLines={2}>
+            <Text style={{ fontSize: 11, color: colors.text, flex: 1, flexWrap: 'wrap' }} numberOfLines={2}>
                 {value}
             </Text>
         </View>

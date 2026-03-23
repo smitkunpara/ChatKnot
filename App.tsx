@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -96,7 +96,7 @@ export default function App() {
         if (isMounted) {
           applyHealthCheckReport(
             report,
-            bootGlobalServers,
+            servers,
             providers,
             updateMcpServer,
             updateProvider

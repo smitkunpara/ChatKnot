@@ -1,16 +1,6 @@
-describe('formatDuration', () => {
-  const formatDuration = (totalMs: number): string => {
-    if (totalMs === 0) return '';
-    if (totalMs < 1000) return `${totalMs}ms`;
-    const totalSeconds = totalMs / 1000;
-    if (totalSeconds < 60) {
-      return `${Math.max(0, totalSeconds).toFixed(1)}s`;
-    }
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${Math.floor(seconds)}s`;
-  };
+import { formatDuration } from '../thinkingFormat';
 
+describe('formatDuration', () => {
   it('returns empty string for 0ms', () => {
     expect(formatDuration(0)).toBe('');
   });
@@ -37,6 +27,14 @@ describe('formatDuration', () => {
 
   it('handles large values', () => {
     expect(formatDuration(3661000)).toBe('61m 1s');
+  });
+
+  it('handles edge case of 1ms', () => {
+    expect(formatDuration(1)).toBe('1ms');
+  });
+
+  it('handles exactly 60 seconds', () => {
+    expect(formatDuration(60000)).toBe('1m 0s');
   });
 });
 

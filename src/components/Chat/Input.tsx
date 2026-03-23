@@ -20,16 +20,25 @@ import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Attachment } from '../../types';
 import { ContextIndicator } from './ContextIndicator';
+import {
+  BUTTON_SIZE,
+  BUTTON_MARGIN,
+  CONTAINER_PADDING,
+  BUTTON_BR,
+  CONTAINER_BR,
+  LINE_HEIGHT,
+  MAX_INPUT_HEIGHT,
+} from './inputConstants';
 
-// Slimmer, strictly calculated UI properties (The Formula)
-export const BUTTON_SIZE = 30;
-export const BUTTON_MARGIN = 3;
-export const CONTAINER_PADDING = 3;
-export const BUTTON_BR = 5; // Boxy rounded corner for buttons
-export const CONTAINER_BR = BUTTON_BR + BUTTON_MARGIN + CONTAINER_PADDING; // 11
-
-export const LINE_HEIGHT = 20;
-export const MAX_INPUT_HEIGHT = 106;      // Roughly 5 lines, then scrolls
+export {
+  BUTTON_SIZE,
+  BUTTON_MARGIN,
+  CONTAINER_PADDING,
+  BUTTON_BR,
+  CONTAINER_BR,
+  LINE_HEIGHT,
+  MAX_INPUT_HEIGHT,
+} from './inputConstants';
 
 interface InputProps {
   onSend: (text: string) => void;
@@ -178,7 +187,7 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
   // Plus button
   const plusBtn = (
-    <TouchableOpacity style={styles.actionButton} onPress={showAttachmentOptions} disabled={isLoading}>
+    <TouchableOpacity style={styles.actionButton} onPress={showAttachmentOptions} disabled={isLoading} accessibilityLabel="Attach file or image" accessibilityRole="button">
       <Plus size={20} color={isLoading ? colors.placeholder : colors.textSecondary} />
     </TouchableOpacity>
   );
@@ -193,6 +202,8 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       ]}
       onPress={isLoading ? onStop : handleSend}
       disabled={!canSend && !isLoading}
+      accessibilityLabel={isLoading ? 'Stop generation' : 'Send message'}
+      accessibilityRole="button"
     >
       {isLoading ? (
         <StopCircle color={colors.onPrimary} size={18} />
@@ -214,6 +225,8 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setText('');
                 onCancelEdit?.();
               }}
+              accessibilityLabel="Cancel editing"
+              accessibilityRole="button"
             >
               <X size={15} color={colors.text} />
             </TouchableOpacity>
@@ -237,7 +250,7 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   </View>
                 )}
                 <Text style={styles.attachmentName} numberOfLines={1}>{att.name}</Text>
-                <TouchableOpacity onPress={() => onRemoveAttachment(att.id)} style={styles.attachmentRemove}>
+                <TouchableOpacity onPress={() => onRemoveAttachment(att.id)} style={styles.attachmentRemove} accessibilityLabel={`Remove ${att.name}`} accessibilityRole="button">
                   <X size={12} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
@@ -305,6 +318,8 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               style={[styles.modalOption, !visionSupported && styles.modalOptionDisabled]}
               disabled={!visionSupported}
               onPress={() => { setShowAttachmentMenu(false); void pickImage(); }}
+              accessibilityLabel="Attach image"
+              accessibilityRole="button"
             >
               <View style={styles.modalIconWrap}>
                 <ImageIcon size={20} color={visionSupported ? colors.primary : colors.textTertiary} />
@@ -313,11 +328,11 @@ void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 <Text style={styles.modalOptionText}>Image</Text>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalOption} onPress={() => { setShowAttachmentMenu(false); void pickFile(); }}>
+            <TouchableOpacity style={styles.modalOption} onPress={() => { setShowAttachmentMenu(false); void pickFile(); }} accessibilityLabel="Attach document or file" accessibilityRole="button">
               <View style={styles.modalIconWrap}><FileText size={20} color={colors.primary} /></View>
               <Text style={styles.modalOptionText}>Document or File</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAttachmentMenu(false)}>
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAttachmentMenu(false)} accessibilityLabel="Cancel" accessibilityRole="button">
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>

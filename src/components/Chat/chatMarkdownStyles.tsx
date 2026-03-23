@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollView, View, TextStyle, ViewStyle } from 'react-native';
+import type { ASTNode, RenderRules } from 'react-native-markdown-display';
 import { AppPalette } from '../../theme/useAppTheme';
 
 export type MarkdownStyles = {
@@ -36,12 +37,7 @@ export type MarkdownStyles = {
   td: ViewStyle;
 };
 
-export type TableRenderRules = {
-  table: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
-  th: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
-  td: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
-  tr: (node: { key?: string }, children: React.ReactNode) => React.ReactElement;
-};
+export type TableRenderRules = Pick<RenderRules, 'table' | 'th' | 'td' | 'tr'>;
 
 export const getTableColumnWidth = (viewportWidth: number) =>
   Math.max(140, Math.min(Math.floor((viewportWidth - 96) / 2), 220));
@@ -223,7 +219,7 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
 });
 
 export const createTableRenderRules = (colors: AppPalette, columnWidth: number): TableRenderRules => ({
-  table: (node: any, children: any) => (
+  table: (node: ASTNode, children: React.ReactNode[]) => (
     <ScrollView
       key={node.key}
       horizontal
@@ -243,7 +239,7 @@ export const createTableRenderRules = (colors: AppPalette, columnWidth: number):
       {children}
     </ScrollView>
   ),
-  th: (node: any, children: any) => (
+  th: (node: ASTNode, children: React.ReactNode[]) => (
     <View
       key={node.key}
       style={{
@@ -261,7 +257,7 @@ export const createTableRenderRules = (colors: AppPalette, columnWidth: number):
       </View>
     </View>
   ),
-  td: (node: any, children: any) => (
+  td: (node: ASTNode, children: React.ReactNode[]) => (
     <View
       key={node.key}
       style={{
@@ -278,7 +274,7 @@ export const createTableRenderRules = (colors: AppPalette, columnWidth: number):
       </View>
     </View>
   ),
-  tr: (node: any, children: any) => (
+  tr: (node: ASTNode, children: React.ReactNode[]) => (
     <View
       key={node.key}
       style={{

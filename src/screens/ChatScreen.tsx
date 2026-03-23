@@ -13,9 +13,9 @@ import {
   Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import { AlertTriangle, Menu, Share2, X, Check } from 'lucide-react-native';
+import { AppDrawerNavigation } from '../navigation/AppNavigator';
+import { AlertTriangle, Menu, Share2, Check } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChatStore } from '../store/useChatStore';
@@ -27,6 +27,8 @@ import { McpManager } from '../services/mcp/McpManager';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { Input } from '../components/Chat/Input';
 import { ModelSelector, ModelSelectorHandle } from '../components/Chat/ModelSelector';
+import { WarningModal } from '../components/Chat/WarningModal';
+import { ExportModal } from '../components/Chat/ExportModal';
 import { ToolCall, Attachment, Message } from '../types';
 import { useContextUsageStore } from '../store/useContextUsageStore';
 import { getContextLimitForModel } from '../utils/modelContextLimits';
@@ -61,7 +63,6 @@ import { formatLocalDateTime } from '../utils/dateFormat';
 import { mergeServersWithOverrides } from '../utils/mcpMerge';
 import { getActiveMode } from '../utils/getActiveMode';
 import * as FileSystem from 'expo-file-system';
-import { ExportFormat, ExportOptions, exportChat } from '../services/export/ChatExportService';
 import {
   formatToolFailureMessage,
   serializeToolFailurePayload,
@@ -70,9 +71,11 @@ import {
 
 const INITIAL_VISIBLE_MESSAGE_COUNT = 220;
 const LOAD_MORE_MESSAGE_STEP = 180;
+const STREAM_FLUSH_INTERVAL_MS = 48;
+const MAX_ATTACHMENT_BASE64_CACHE_SIZE = 48;
 
 export const ChatScreen = () => {
-const navigation = useNavigation<DrawerNavigationProp<any>>();
+const navigation = useNavigation<AppDrawerNavigation>();
   const isScreenFocused = useIsFocused();
   const flatListRef = useRef<FlatList>(null);
   const modelSelectorRef = useRef<ModelSelectorHandle>(null);
@@ -259,11 +262,6 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
   const toolApprovalConversationIdsRef = useRef<Map<string, string>>(new Map());
   const [exportModalVisible, setExportModalVisible] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
-  const [includeToolInput, setIncludeToolInput] = useState(false);
-  const [includeToolOutput, setIncludeToolOutput] = useState(false);
-  const [includeThinking, setIncludeThinking] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   // Ref-based: mutating this never triggers a re-render, avoiding feedback loops with onScroll.
   const userScrolledAwayRef = useRef(false);
   const pendingInstantScrollConversationIdRef = useRef<string | null>(activeConversationId);
@@ -644,25 +642,50 @@ const navigation = useNavigation<DrawerNavigationProp<any>>();
   ]);
 
   const attachmentBase64Cache = useRef<Map<string, string>>(new Map());
+  const attachmentBase64PendingReads = useRef<Map<string, Promise<string>>>(new Map());
 
   useEffect(() => {
     attachmentBase64Cache.current.clear();
+    attachmentBase64PendingReads.current.clear();
   }, [activeConversationId]);
 
   const readFileAsBase64 = async (uri: string): Promise<string> => {
-if (attachmentBase64Cache.current.has(uri)) {
-      return attachmentBase64Cache.current.get(uri)!;
+    const cached = attachmentBase64Cache.current.get(uri);
+    if (cached !== undefined) {
+      return cached;
     }
-    const base64 = await FileSystem.readAsStringAsync(uri, {
+
+    const pendingRead = attachmentBase64PendingReads.current.get(uri);
+    if (pendingRead) {
+      return pendingRead;
+    }
+
+    const readPromise = FileSystem.readAsStringAsync(uri, {
       encoding: 'base64',
-    });
-    attachmentBase64Cache.current.set(uri, base64);
-    return base64;
+    })
+      .then((base64) => {
+        if (!attachmentBase64Cache.current.has(uri)
+          && attachmentBase64Cache.current.size >= MAX_ATTACHMENT_BASE64_CACHE_SIZE) {
+          const oldestUri = attachmentBase64Cache.current.keys().next().value;
+          if (oldestUri) {
+            attachmentBase64Cache.current.delete(oldestUri);
+          }
+        }
+        attachmentBase64Cache.current.set(uri, base64);
+        return base64;
+      })
+      .finally(() => {
+        attachmentBase64PendingReads.current.delete(uri);
+      });
+
+    attachmentBase64PendingReads.current.set(uri, readPromise);
+    return readPromise;
   };
 
   const createStreamingController = useCallback((conversationId: string, messageId: string) => {
-let latestContent = '';
+    let latestContent = '';
     let latestReasoning = '';
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
     const pushSnapshotToRuntime = () => {
       updateStreamingMessage(conversationId, messageId, {
@@ -672,12 +695,23 @@ let latestContent = '';
     };
 
     const flush = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
       pushSnapshotToRuntime();
     };
 
     const scheduleFlush = () => {
-      // Keep latest chunk state per conversation. Rendering stays screen-aware.
-      pushSnapshotToRuntime();
+      if (flushTimer) {
+        return;
+      }
+
+      // Coalesce high-frequency chunks into a small update window.
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        pushSnapshotToRuntime();
+      }, STREAM_FLUSH_INTERVAL_MS);
     };
 
     return {
@@ -691,7 +725,10 @@ let latestContent = '';
       },
       flush,
       dispose: () => {
-        // No buffered frame/timer cleanup needed in immediate mode.
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
       },
     };
   }, [updateStreamingMessage]);
@@ -741,10 +778,13 @@ Keyboard.dismiss();
         return;
       }
 
+      const settingsState = useSettingsStore.getState();
+      const modeForConversation = getActiveMode(settingsState.modes, settingsState.lastUsedModeId, null);
+
       createConversation(
         modelResolution.selection.providerId,
-        activeMode?.id || '',
-        activeMode?.systemPrompt || 'You are a helpful AI assistant.',
+        modeForConversation?.id || '',
+        modeForConversation?.systemPrompt || 'You are a helpful AI assistant.',
         modelResolution.selection.model
       );
 
@@ -888,7 +928,11 @@ if (!currentAssistantMsgId) {
           .conversations.find(c => c.id === conversationId);
         if (!currentConv) break;
         const settingsState = useSettingsStore.getState();
-        const loopMode = activeMode;
+        const loopMode = getActiveMode(
+          settingsState.modes,
+          settingsState.lastUsedModeId,
+          currentConv.modeId,
+        );
         const modelSelection = resolveModelSelection({
           providers: settingsState.providers,
           selectedProviderId: currentConv.providerId,
@@ -1022,7 +1066,7 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
         const requestController = new AbortController();
         activeRequestControllersRef.current.set(conversationId, requestController);
 
-        const result = await new Promise<{ fullContent: string; toolCalls?: any[] }>((resolve, reject) => {
+        const result = await new Promise<{ fullContent: string; toolCalls?: unknown[] }>((resolve, reject) => {
           let receivedFirstChunk = false;
           service
             .sendChatCompletion(
@@ -1126,7 +1170,7 @@ if (activeRequestControllersRef.current.get(conversationId) === requestControlle
 
         const toolNameMap = new Map(mcpTools.map(tool => [tool.name.toLowerCase(), tool.name]));
         let toolCalls = toolsEnabledForRequest
-          ? normalizeToolCalls(result.toolCalls)
+          ? normalizeToolCalls(result.toolCalls as Parameters<typeof normalizeToolCalls>[0])
           : [];
 
         // Fallback for providers/models that emit XML-based pseudo tool calls instead of native tool_calls.
@@ -1357,25 +1401,6 @@ const errorStr = serializeToolExecutionError(error);
 
   const chatHasMessages = !!activeConversation?.messages.some(m => m.role === 'user' || m.role === 'assistant');
 
-  const handleExport = async () => {
-    if (!activeConversation) return;
-    setIsExporting(true);
-    try {
-      const opts: ExportOptions = {
-        format: exportFormat,
-        includeToolInput,
-        includeToolOutput,
-        includeThinking,
-      };
-      await exportChat(activeConversation, opts);
-    } catch (e: any) {
-      Alert.alert('Export Failed', e?.message || 'Unable to export chat.');
-    } finally {
-      setIsExporting(false);
-      setExportModalVisible(false);
-    }
-  };
-
   return (
     <View style={styles.container}>
       {/* Full-screen warning when no AI provider is configured */}
@@ -1574,13 +1599,7 @@ const errorStr = serializeToolExecutionError(error);
         </View>
         <TouchableOpacity
           style={styles.exportButton}
-          onPress={() => {
-            setExportFormat('pdf');
-            setIncludeToolInput(false);
-            setIncludeToolOutput(false);
-            setIncludeThinking(false);
-            setExportModalVisible(true);
-          }}
+          onPress={() => setExportModalVisible(true)}
           disabled={!chatHasMessages}
           accessibilityLabel="Export chat"
           accessibilityRole="button"
@@ -1589,161 +1608,44 @@ const errorStr = serializeToolExecutionError(error);
         </TouchableOpacity>
       </View>
 
-      <Modal
+      <ExportModal
         visible={exportModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setExportModalVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setExportModalVisible(false)}>
-          <View style={styles.exportOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.exportContent}>
-                <View style={styles.exportHeader}>
-                  <Text style={styles.exportTitle}>Export Chat</Text>
-                  <TouchableOpacity onPress={() => setExportModalVisible(false)} style={styles.exportCloseBtn}>
-                    <X size={18} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                </View>
+        conversation={activeConversation}
+        onClose={() => setExportModalVisible(false)}
+      />
 
-                <Text style={styles.exportSectionLabel}>Export Format</Text>
-                <View style={styles.exportFormatRow}>
-                  {(['pdf', 'markdown', 'json'] as ExportFormat[]).map(fmt => (
-                    <TouchableOpacity
-                      key={fmt}
-                      style={[styles.exportFormatBtn, exportFormat === fmt && styles.exportFormatBtnActive]}
-                      onPress={() => setExportFormat(fmt)}
-                    >
-                      <Text style={[styles.exportFormatText, exportFormat === fmt && styles.exportFormatTextActive]}>
-                        {fmt === 'pdf' ? 'PDF' : fmt === 'markdown' ? 'Markdown' : 'JSON'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {exportFormat !== 'json' && (
-                  <>
-                    <Text style={styles.exportSectionLabel}>Export Options</Text>
-                    <TouchableOpacity
-                      style={styles.exportCheckRow}
-                      onPress={() => setIncludeThinking(v => !v)}
-                    >
-                      <View style={[styles.exportCheckBox, includeThinking && styles.exportCheckBoxActive]}>
-                        {includeThinking && <Check size={14} color={colors.onPrimary} />}
-                      </View>
-                      <Text style={styles.exportCheckLabel}>Include model thinking</Text>
-                    </TouchableOpacity>
-
-                    <Text style={styles.exportSectionLabel}>Tool Details</Text>
-                    <TouchableOpacity
-                      style={styles.exportCheckRow}
-                      onPress={() => setIncludeToolInput(v => !v)}
-                    >
-                      <View style={[styles.exportCheckBox, includeToolInput && styles.exportCheckBoxActive]}>
-                        {includeToolInput && <Check size={14} color={colors.onPrimary} />}
-                      </View>
-                      <Text style={styles.exportCheckLabel}>Include tool input</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.exportCheckRow}
-                      onPress={() => setIncludeToolOutput(v => !v)}
-                    >
-                      <View style={[styles.exportCheckBox, includeToolOutput && styles.exportCheckBoxActive]}>
-                        {includeToolOutput && <Check size={14} color={colors.onPrimary} />}
-                      </View>
-                      <Text style={styles.exportCheckLabel}>Include tool output</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                <View style={styles.exportActions}>
-                  <TouchableOpacity style={styles.exportCancelBtn} onPress={() => setExportModalVisible(false)}>
-                    <Text style={styles.exportCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.exportConfirmBtn, isExporting && styles.exportConfirmBtnDisabled]}
-                    onPress={handleExport}
-                    disabled={isExporting}
-                  >
-                    <Text style={styles.exportConfirmText}>{isExporting ? 'Exporting...' : 'Export'}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      <Modal
+      <WarningModal
         visible={visionWarningVisible}
-        transparent
-        animationType="fade"
+        title="Vision Not Supported"
+        message="This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included."
+        primaryActionLabel="Switch Model"
+        secondaryActionLabel="Continue with Text Only"
+        onPrimaryAction={() => {
+          setVisionWarningVisible(false);
+          setTimeout(() => modelSelectorRef.current?.open(), 300);
+        }}
+        onSecondaryAction={() => {
+          setVisionWarningVisible(false);
+          if (hasEnabledMcpTools && !currentModelToolsSupported) {
+            setToolsWarningVisible(true);
+          }
+        }}
         onRequestClose={() => setVisionWarningVisible(false)}
-      >
-        <View style={styles.visionOverlay}>
-          <View style={styles.visionContent}>
-            <Text style={styles.visionTitle}>Vision Not Supported</Text>
-            <Text style={styles.visionMessage}>
-              This conversation contains images, but the current model doesn't support vision. Images won't be sent to the AI — only text content will be included.
-            </Text>
-            <View style={styles.visionActions}>
-              <TouchableOpacity
-                style={styles.visionSwitchBtn}
-                onPress={() => {
-                  setVisionWarningVisible(false);
-                  setTimeout(() => modelSelectorRef.current?.open(), 300);
-                }}
-              >
-                <Text style={styles.visionSwitchText}>Switch Model</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.visionContinueBtn}
-                onPress={() => {
-                  setVisionWarningVisible(false);
-                  if (hasEnabledMcpTools && !currentModelToolsSupported) {
-                    setToolsWarningVisible(true);
-                  }
-                }}
-              >
-                <Text style={styles.visionContinueText}>Continue with Text Only</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      />
 
-      <Modal
+      <WarningModal
         visible={toolsWarningVisible}
-        transparent
-        animationType="fade"
+        title="MCP Tools Not Supported"
+        message="This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI."
+        primaryActionLabel="Switch Model"
+        secondaryActionLabel="Continue Without MCP"
+        onPrimaryAction={() => {
+          setToolsWarningVisible(false);
+          setTimeout(() => modelSelectorRef.current?.open(), 300);
+        }}
+        onSecondaryAction={() => setToolsWarningVisible(false)}
         onRequestClose={() => setToolsWarningVisible(false)}
-      >
-        <View style={styles.visionOverlay}>
-          <View style={styles.visionContent}>
-            <Text style={styles.visionTitle}>MCP Tools Not Supported</Text>
-            <Text style={styles.visionMessage}>
-              This model does not support tool calling. MCP tool details and MCP tool calls will not be shared with the AI.
-            </Text>
-            <View style={styles.visionActions}>
-              <TouchableOpacity
-                style={styles.visionSwitchBtn}
-                onPress={() => {
-                  setToolsWarningVisible(false);
-                  setTimeout(() => modelSelectorRef.current?.open(), 300);
-                }}
-              >
-                <Text style={styles.visionSwitchText}>Switch Model</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.visionContinueBtn}
-                onPress={() => setToolsWarningVisible(false)}
-              >
-                <Text style={styles.visionContinueText}>Continue Without MCP</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      />
 
       {/* Mode Selector Modal */}
       <Modal
@@ -1753,7 +1655,7 @@ const errorStr = serializeToolExecutionError(error);
         onRequestClose={() => setModeSelectorVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setModeSelectorVisible(false)}>
-          <View style={styles.exportOverlay}>
+          <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.modeModalContent}>
                 <Text style={styles.modeModalTitle}>Switch Mode</Text>
@@ -1946,168 +1848,32 @@ const createStyles = (colors: AppPalette, insetsTop: number) =>
       borderColor: colors.subtleBorder,
       marginLeft: 8,
     },
-    exportOverlay: {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       alignItems: 'center',
-    },
-    exportContent: {
-      width: '85%',
-      maxWidth: 360,
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 20,
-    },
-    exportHeader: {
-      flexDirection: 'row' as const,
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 16,
-    },
-    exportTitle: {
-      fontSize: 18,
-      fontWeight: '600' as const,
-      color: colors.text,
-    },
-    exportCloseBtn: {
-      padding: 4,
-    },
-    exportSectionLabel: {
-      fontSize: 13,
-      fontWeight: '500' as const,
-      color: colors.textSecondary,
-      marginBottom: 8,
-      marginTop: 4,
-    },
-    exportFormatRow: {
-      flexDirection: 'row' as const,
-      gap: 8,
-      marginBottom: 16,
-    },
-    exportFormatBtn: {
-      flex: 1,
-      paddingVertical: 10,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center' as const,
-    },
-    exportFormatBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primarySoft,
-    },
-    exportFormatText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    exportFormatTextActive: {
-      color: colors.primary,
-      fontWeight: '600' as const,
-    },
-    exportCheckRow: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      paddingVertical: 8,
-      gap: 10,
-    },
-    exportCheckBox: {
-      width: 22,
-      height: 22,
-      borderRadius: 5,
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      justifyContent: 'center' as const,
-      alignItems: 'center' as const,
-    },
-    exportCheckBoxActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    exportCheckLabel: {
-      fontSize: 14,
-      color: colors.text,
-    },
-    exportActions: {
-      flexDirection: 'row' as const,
-      justifyContent: 'flex-end',
-      gap: 10,
-      marginTop: 20,
-    },
-    exportCancelBtn: {
-      paddingVertical: 10,
-      paddingHorizontal: 18,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    exportCancelText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    exportConfirmBtn: {
-      paddingVertical: 10,
-      paddingHorizontal: 22,
-      borderRadius: 10,
-      backgroundColor: colors.primary,
-    },
-    exportConfirmBtnDisabled: {
-      opacity: 0.5,
-    },
-    exportConfirmText: {
-      fontSize: 14,
-      fontWeight: '600' as const,
-      color: colors.onPrimary,
-    },
-    visionOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    visionContent: {
-      width: '85%',
-      maxWidth: 360,
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 20,
-    },
-    visionTitle: {
-      fontSize: 17,
-      fontWeight: '600' as const,
-      color: colors.text,
-      marginBottom: 10,
-    },
-    visionMessage: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: colors.textSecondary,
-      marginBottom: 20,
-    },
-    visionActions: {
-      gap: 10,
-    },
-    visionSwitchBtn: {
-      paddingVertical: 12,
-      borderRadius: 10,
-      backgroundColor: colors.primary,
-      alignItems: 'center' as const,
-    },
-    visionSwitchText: {
-      fontSize: 15,
-      fontWeight: '600' as const,
-      color: colors.onPrimary,
-    },
-    visionContinueBtn: {
-      paddingVertical: 12,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center' as const,
-    },
-    visionContinueText: {
-      fontSize: 15,
-      color: colors.textSecondary,
     },
     modeModalContent: {
       width: '80%',

@@ -1,5 +1,5 @@
 import React from 'react';
-import { createDrawerNavigator } from '@react-navigation/drawer';
+import { createDrawerNavigator, DrawerNavigationProp } from '@react-navigation/drawer';
 import { NavigationContainer } from '@react-navigation/native';
 import { ChatScreen } from '../screens/ChatScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -9,7 +9,15 @@ import { StartupWarningBanner } from '../components/Common/StartupWarningBanner'
 import { View } from 'react-native';
 import { shouldShowStartupWarnings } from './appNavigatorHelpers';
 
-const Drawer = createDrawerNavigator();
+export type AppDrawerParamList = {
+  Chat: undefined;
+  Settings: undefined;
+};
+
+export type AppDrawerNavigation = DrawerNavigationProp<AppDrawerParamList>;
+
+const Drawer = createDrawerNavigator<AppDrawerParamList>();
+const noop = () => {};
 
 interface AppNavigatorProps {
   startupWarnings?: string[];
@@ -18,9 +26,9 @@ interface AppNavigatorProps {
 
 export const AppNavigator: React.FC<AppNavigatorProps> = ({
   startupWarnings = [],
-  onDismissWarnings = () => { },
+  onDismissWarnings = noop,
 }) => {
-const { colors } = useAppTheme();
+  const { colors } = useAppTheme();
   const startupWarningVisible = shouldShowStartupWarnings(startupWarnings);
 
   return (

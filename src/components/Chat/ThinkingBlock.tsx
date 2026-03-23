@@ -17,6 +17,7 @@ import {
     createTableRenderRules,
     getTableColumnWidth,
 } from './chatMarkdownStyles';
+import { formatDuration } from './thinkingFormat';
 
 interface ThinkingBlockProps {
     /** The raw thinking text (content between <think> tags). */
@@ -26,19 +27,6 @@ interface ThinkingBlockProps {
     /** Persisted duration in milliseconds for finished thoughts. */
     durationMs?: number;
 }
-
-/** Format elapsed milliseconds into a clean string like "0.4s" or "32.1s" */
-export const formatDuration = (totalMs: number): string => {
-    if (totalMs === 0) return '';
-    if (totalMs < 1000) return `${totalMs}ms`;
-    const totalSeconds = totalMs / 1000;
-    if (totalSeconds < 60) {
-        return `${Math.max(0, totalSeconds).toFixed(1)}s`;
-    }
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${Math.floor(seconds)}s`;
-};
 
 /**
  * Renders a collapsible "Thinking" section.
@@ -61,7 +49,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
     const { colors } = useAppTheme();
     const { width: viewportWidth } = useWindowDimensions();
     const styles = useMemo(() => createStyles(colors), [colors]);
-    const markdownStyles = useMemo(() => createMarkdownStyles(colors) as any, [colors]);
+    const markdownStyles = useMemo(() => createMarkdownStyles(colors), [colors]);
     const tableRenderRules = useMemo(
         () => createTableRenderRules(colors, getTableColumnWidth(viewportWidth)),
         [colors, viewportWidth]

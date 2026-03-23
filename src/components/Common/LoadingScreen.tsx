@@ -9,6 +9,7 @@ import {
 import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { resolveStartupVersion, StartupVersionSource } from './loadingVersion';
 
 const FALLBACK_VERSION = '0.4.0';
 
@@ -23,7 +24,7 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   const version = useMemo(
-    () => Constants.expoConfig?.version || FALLBACK_VERSION,
+    () => resolveStartupVersion(Constants as unknown as StartupVersionSource, FALLBACK_VERSION),
     []
   );
 
