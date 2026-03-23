@@ -44,6 +44,35 @@ describe('StartupHealthCheck safety actions', () => {
     (global as any).fetch = jest.fn();
   });
 
+  it('passes MCP token to endpoint validation during health checks', async () => {
+    const validateSpy = jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: true,
+      normalizedInputUrl: 'https://mcp.example.com',
+      resolvedSpecUrl: 'https://mcp.example.com/openapi.json',
+      resolvedBaseUrl: 'https://mcp.example.com',
+      spec: {
+        openapi: '3.0.0',
+        info: { title: 'Demo', version: '1.0.0' },
+        paths: { '/status': { get: { operationId: 'status' } } },
+      },
+      tools: [{ name: 'status', description: 'status', inputSchema: { type: 'object', properties: {} } }],
+    });
+
+    (global as any).fetch.mockRejectedValue(new Error('connect ETIMEDOUT api.example.com'));
+
+    await runStartupHealthCheck(
+      [createServer({ token: 'server-secret-token' })],
+      [createProvider()],
+      () => { }
+    );
+
+    expect(validateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'server-secret-token',
+      })
+    );
+  });
+
   it('turns off MCP and AI providers on connectivity failures and includes reason in warnings', async () => {
     jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
       ok: false,
@@ -184,6 +213,168 @@ describe('StartupHealthCheck safety actions', () => {
     const mcpWarning = report.warnings.find(w => w.includes('alpha_mcp'));
     expect(mcpWarning).toBeDefined();
     expect(mcpWarning).not.toContain('sk-secret123');
+  });
+
+  it('normalizes error messages by stripping known prefixes', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'FETCH_FAILED',
+        field: 'network',
+        message: 'Unable to fetch models: connection refused.',
+      },
+    });
+
+    (global as any).fetch.mockRejectedValue(new Error('Failed to fetch models from https://api.example.com (ENOTFOUND)'));
+
+    const report = await runStartupHealthCheck(
+      [createServer()],
+      [createProvider()],
+      () => { }
+    );
+
+    const mcpWarning = report.warnings.find(w => w.includes('alpha_mcp'));
+    expect(mcpWarning).toBeDefined();
+    expect(mcpWarning).not.toContain('Unable to fetch models:');
+    const aiWarning = report.warnings.find(w => w.includes('alpha_ai_provider'));
+    expect(aiWarning).toBeDefined();
+    expect(aiWarning).not.toContain('Failed to fetch models from');
+  });
+
+  it('handles empty or whitespace-only error messages with fallback', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'FETCH_FAILED',
+        field: 'network',
+        message: '   ',
+      },
+    });
+
+    (global as any).fetch.mockRejectedValue(new Error(''));
+
+    const report = await runStartupHealthCheck(
+      [createServer()],
+      [createProvider()],
+      () => { }
+    );
+
+    const mcpWarning = report.warnings.find(w => w.includes('MCP "Alpha MCP"'));
+    expect(mcpWarning).toBeDefined();
+    expect(mcpWarning).toContain('unknown connectivity issue');
+    expect(report.disabledMcpServers).toEqual([]);
+  });
+
+  it('strips multiple credential patterns from warnings', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'FETCH_FAILED',
+        field: 'network',
+        message: 'connection refused. token=abc123 and secret=xyz789 authorization=bearer fail.',
+      },
+    });
+
+    (global as any).fetch.mockRejectedValue(new Error('connect ETIMEDOUT'));
+
+    const report = await runStartupHealthCheck(
+      [createServer()],
+      [createProvider({ apiKey: '', baseUrl: '' })],
+      () => { }
+    );
+
+    const mcpWarning = report.warnings.find(w => w.includes('alpha_mcp'));
+    expect(mcpWarning).toBeDefined();
+    expect(mcpWarning).not.toContain('abc123');
+    expect(mcpWarning).not.toContain('xyz789');
+  });
+
+  it('strips Authorization header style credentials from warnings', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'FETCH_FAILED',
+        field: 'network',
+        message: 'HTTP 503 upstream failure. Authorization: Bearer sk-live-very-secret token:abc123',
+      },
+    });
+
+    (global as any).fetch.mockRejectedValue(new Error('connect ETIMEDOUT'));
+
+    const report = await runStartupHealthCheck(
+      [createServer()],
+      [createProvider({ apiKey: '', baseUrl: '' })],
+      () => { }
+    );
+
+    const mcpWarning = report.warnings.find(w => w.includes('alpha_mcp'));
+    expect(mcpWarning).toBeDefined();
+    expect(mcpWarning).not.toContain('sk-live-very-secret');
+    expect(mcpWarning).not.toContain('abc123');
+  });
+
+  it('classifies 502 and 503 as network issues (disables provider)', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: true,
+      normalizedInputUrl: 'https://mcp.example.com',
+      resolvedSpecUrl: 'https://mcp.example.com/openapi.json',
+      resolvedBaseUrl: 'https://mcp.example.com',
+      spec: { openapi: '3.0.0', info: { title: 'D', version: '1' }, paths: {} },
+      tools: [],
+    });
+
+    (global as any).fetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      json: async () => ({}),
+      text: async () => '',
+    });
+
+    const report = await runStartupHealthCheck(
+      [createServer()],
+      [createProvider()],
+      () => { }
+    );
+
+    expect(report.disabledAiProviders).toEqual(['provider-1']);
+  });
+
+  it('handles timeout by disabling both MCP and AI on network failure', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockRejectedValue(
+      new Error('MCP Alpha MCP: network timeout after 15s')
+    );
+
+    (global as any).fetch.mockRejectedValue(
+      new Error('AI Alpha: network timeout after 15s')
+    );
+
+    const report = await runStartupHealthCheck(
+      [createServer()],
+      [createProvider()],
+      () => { }
+    );
+
+    expect(report.disabledMcpServers).toEqual(['server-1']);
+    expect(report.disabledAiProviders).toEqual(['provider-1']);
+  });
+
+  it('generates properly formatted warning labels from server names', async () => {
+    jest.spyOn(openApiValidation, 'validateOpenApiEndpoint').mockResolvedValue({
+      ok: false,
+      error: { code: 'FETCH_FAILED', field: 'network', message: 'connection refused' },
+    });
+
+    (global as any).fetch.mockRejectedValue(new Error('ETIMEDOUT'));
+
+    const report = await runStartupHealthCheck(
+      [createServer({ name: 'My Custom Server!' })],
+      [createProvider({ name: 'OpenAI Provider' })],
+      () => { }
+    );
+
+    expect(report.warnings.some(w => w.includes('(my_custom_server_mcp)'))).toBe(true);
+    expect(report.warnings.some(w => w.includes('(openai_provider_ai_provider)'))).toBe(true);
   });
 });
 
@@ -334,6 +525,37 @@ describe('applyHealthCheckReport MCP tool reconciliation', () => {
     applyHealthCheckReport(report, [createServer()], [], updateMcpServer, jest.fn());
     expect(updateMcpServer).not.toHaveBeenCalled();
   });
+
+  it('reconciles tools for servers only present in the passed list (mode-only servers)', () => {
+    const updateMcpServer = jest.fn();
+    const globalServers = [createServer({ id: 'global-1', name: 'Global' })];
+    const modeOnlyServer = createServer({ id: 'mode-1', name: 'Mode Only' });
+    const mergedServers = [...globalServers, modeOnlyServer];
+
+    const report: HealthCheckReport = {
+      mcpResults: [{
+        serverId: 'mode-1',
+        serverName: 'Mode Only',
+        reachable: true,
+        toolsChanged: true,
+        removedTools: [],
+        currentTools: ['tool-a'],
+        validatedTools: [makeTool('tool-a')],
+      }],
+      aiResults: [],
+      warnings: [],
+      disabledMcpServers: [],
+      disabledAiProviders: [],
+      removedVisibleModels: [],
+    };
+
+    applyHealthCheckReport(report, mergedServers, [], updateMcpServer, jest.fn());
+
+    expect(updateMcpServer).toHaveBeenCalledTimes(1);
+    const updated = updateMcpServer.mock.calls[0][0];
+    expect(updated.id).toBe('mode-1');
+    expect(updated.tools).toEqual([makeTool('tool-a')]);
+  });
 });
 
 describe('applyHealthCheckReport AI model reconciliation', () => {
@@ -456,5 +678,105 @@ describe('applyHealthCheckReport AI model reconciliation', () => {
     const updated = updateProvider.mock.calls[0][0];
     expect(updated.modelCapabilities).not.toHaveProperty('old-model');
     expect(updated.modelCapabilities['gpt-4'].fileInput).toBe(true);
+  });
+
+  it('updates provider when only capabilities change (model list unchanged)', () => {
+    const updateProvider = jest.fn();
+    const provider = createProvider({
+      availableModels: ['gpt-4'],
+      modelCapabilities: {
+        'gpt-4': { vision: false, tools: true, fileInput: false },
+      },
+    });
+
+    const report: HealthCheckReport = {
+      mcpResults: [],
+      aiResults: [{
+        providerId: 'provider-1',
+        providerName: 'Alpha',
+        reachable: true,
+        modelsChanged: false,
+        removedModels: [],
+        currentModels: ['gpt-4'],
+        capabilities: {
+          'gpt-4': { vision: true, tools: true, fileInput: true },
+        },
+      }],
+      warnings: [],
+      disabledMcpServers: [],
+      disabledAiProviders: [],
+      removedVisibleModels: [],
+    };
+
+    applyHealthCheckReport(report, [], [provider], jest.fn(), updateProvider);
+
+    expect(updateProvider).toHaveBeenCalledTimes(1);
+    const updated = updateProvider.mock.calls[0][0];
+    expect(updated.modelCapabilities['gpt-4'].vision).toBe(true);
+    expect(updated.modelCapabilities['gpt-4'].fileInput).toBe(true);
+  });
+
+  it('skips provider update when neither models nor capabilities changed', () => {
+    const updateProvider = jest.fn();
+    const provider = createProvider({
+      availableModels: ['gpt-4'],
+      modelCapabilities: {
+        'gpt-4': { vision: true, tools: true, fileInput: false },
+      },
+    });
+
+    const report: HealthCheckReport = {
+      mcpResults: [],
+      aiResults: [{
+        providerId: 'provider-1',
+        providerName: 'Alpha',
+        reachable: true,
+        modelsChanged: false,
+        removedModels: [],
+        currentModels: ['gpt-4'],
+        capabilities: {
+          'gpt-4': { vision: true, tools: true, fileInput: false },
+        },
+      }],
+      warnings: [],
+      disabledMcpServers: [],
+      disabledAiProviders: [],
+      removedVisibleModels: [],
+    };
+
+    applyHealthCheckReport(report, [], [provider], jest.fn(), updateProvider);
+
+    expect(updateProvider).not.toHaveBeenCalled();
+  });
+
+  it('cleans hidden models that were removed from provider', () => {
+    const updateProvider = jest.fn();
+    const provider = createProvider({
+      availableModels: ['gpt-4', 'gpt-3.5-turbo'],
+      hiddenModels: ['gpt-3.5-turbo', 'old-hidden-model'],
+    });
+
+    const report: HealthCheckReport = {
+      mcpResults: [],
+      aiResults: [{
+        providerId: 'provider-1',
+        providerName: 'Alpha',
+        reachable: true,
+        modelsChanged: true,
+        removedModels: ['gpt-3.5-turbo'],
+        currentModels: ['gpt-4'],
+        capabilities: {},
+      }],
+      warnings: [],
+      disabledMcpServers: [],
+      disabledAiProviders: [],
+      removedVisibleModels: [],
+    };
+
+    applyHealthCheckReport(report, [], [provider], jest.fn(), updateProvider);
+
+    const updated = updateProvider.mock.calls[0][0];
+    expect(updated.hiddenModels).not.toContain('gpt-3.5-turbo');
+    expect(updated.hiddenModels).not.toContain('old-hidden-model');
   });
 });

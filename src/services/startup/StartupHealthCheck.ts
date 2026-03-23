@@ -69,7 +69,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     });
 }
 
-const CREDENTIAL_PATTERN = /\b(api[_-]?key|token|secret|authorization|bearer)\s*=\s*\S+/gi;
+const CREDENTIAL_PATTERN = /\b(api[_-]?key|token|secret|authorization|bearer)\s*(?:=|:)\s*(?:bearer\s+)?\S+/gi;
 
 const sanitizeErrorForDisplay = (reason: string): string =>
   reason.replace(CREDENTIAL_PATTERN, '$1=[REDACTED]');
@@ -154,6 +154,7 @@ async function checkMcpServer(
       validateOpenApiEndpoint({
         url: server.url,
         headers: server.headers || {},
+        token: server.token,
       }),
       NETWORK_TIMEOUT_MS,
       `MCP ${server.name}`
@@ -270,15 +271,15 @@ export async function runStartupHealthCheck(
 
   const [mcpResults, aiResults] = await Promise.all([
     Promise.allSettled(mcpPromises).then(results =>
-      results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean)
+      results.filter((r): r is PromiseFulfilledResult<McpHealthResult> => r.status === 'fulfilled').map(r => r.value)
     ),
     Promise.allSettled(aiPromises).then(results =>
-      results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean)
+      results.filter((r): r is PromiseFulfilledResult<AiHealthResult> => r.status === 'fulfilled').map(r => r.value)
     ),
   ]);
 
-  report.mcpResults = mcpResults as McpHealthResult[];
-  report.aiResults = aiResults as AiHealthResult[];
+  report.mcpResults = mcpResults;
+  report.aiResults = aiResults;
 
   for (let i = 0; i < report.mcpResults.length; i++) {
     const mcpResult = report.mcpResults[i];
