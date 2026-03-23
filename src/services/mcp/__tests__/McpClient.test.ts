@@ -222,6 +222,47 @@ describe('McpClient OpenAPI execution paths', () => {
     }
   });
 
+  it('truncates error payloads that exceed max depth', async () => {
+    const client = await setupOpenApiClient([
+      {
+        name: 'failingTool',
+        _meta: { method: 'get', path: '/fail', baseUrl: 'http://test.com' },
+      },
+    ]);
+
+    // Build a 15-level deep nested object
+    let deep: any = { value: 'bottom' };
+    for (let i = 0; i < 15; i++) {
+      deep = { level: i, nested: deep };
+    }
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: async () => JSON.stringify({ message: 'error', details: deep }),
+    });
+
+    try {
+      await client.callTool('failingTool', {});
+      fail('Should have thrown');
+    } catch (e: any) {
+      expect(e.data).toBeDefined();
+      expect(e.data.message).toBe('error');
+
+      // Walk down the nested structure to verify max depth marker
+      let current = e.data.details;
+      let foundMaxDepth = false;
+      for (let i = 0; i < 20; i++) {
+        if (current === '[max depth exceeded]') {
+          foundMaxDepth = true;
+          break;
+        }
+        current = current?.nested;
+      }
+      expect(foundMaxDepth).toBe(true);
+    }
+  });
+
   it('disconnects cleanly', async () => {
     const client = await setupOpenApiClient([]);
 
@@ -367,6 +408,56 @@ describe('McpClient OpenAPI execution paths', () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Custom my-api-key',
+        }),
+      })
+    );
+
+    mockFetch.mockReset();
+  });
+
+  it('treats token-derived Authorization as satisfying required security headers', async () => {
+    (validateOpenApiEndpoint as jest.Mock).mockResolvedValue({
+      ok: true,
+      spec: { info: { title: 'Test API' }, servers: [{ url: 'http://test.com' }] },
+      tools: [
+        {
+          name: 'secureTool',
+          _meta: {
+            method: 'get',
+            path: '/secure',
+            baseUrl: 'http://test.com',
+            securityHeaders: ['Authorization'],
+          },
+        },
+      ],
+      resolvedBaseUrl: 'http://test.com',
+      normalizedInputUrl: 'http://test.com/openapi.json',
+    });
+
+    const client = new McpClient({
+      id: 'test',
+      name: 'test',
+      url: 'http://test.com/openapi.json',
+      enabled: true,
+      token: 'my-secret-token',
+      tools: [],
+      allowedTools: [],
+    });
+    await client.connect();
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ ok: true }),
+      text: async () => '',
+    });
+
+    await expect(client.callTool('secureTool', {})).resolves.toEqual({ ok: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://test.com/secure',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer my-secret-token',
         }),
       })
     );

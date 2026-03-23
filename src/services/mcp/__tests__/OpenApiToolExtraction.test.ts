@@ -195,4 +195,43 @@ describe('OpenApiToolExtraction', () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toMatch(/^[a-zA-Z0-9_-]+$/);
   });
+
+  it('does not inherit global security when operation security is explicitly empty', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 'Security API', version: '1.0.0' },
+      security: [{ apiKeyAuth: [] }],
+      components: {
+        securitySchemes: {
+          apiKeyAuth: {
+            type: 'apiKey',
+            in: 'header',
+            name: 'X-API-Key',
+          },
+        },
+      },
+      paths: {
+        '/public': {
+          get: {
+            operationId: 'getPublicData',
+            security: [],
+            responses: { 200: { description: 'ok' } },
+          },
+        },
+        '/private': {
+          get: {
+            operationId: 'getPrivateData',
+            responses: { 200: { description: 'ok' } },
+          },
+        },
+      },
+    };
+
+    const tools = extractOpenApiTools(spec);
+    const publicTool = tools.find((tool) => tool.name === 'getPublicData');
+    const privateTool = tools.find((tool) => tool.name === 'getPrivateData');
+
+    expect(publicTool?._meta?.securityHeaders || []).toEqual([]);
+    expect(privateTool?._meta?.securityHeaders || []).toEqual(['X-API-Key']);
+  });
 });

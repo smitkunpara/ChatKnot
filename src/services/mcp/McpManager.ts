@@ -67,7 +67,8 @@ class McpManagerService {
     const rawNameCounts = new Map<string, number>();
     this.connectedToolsByServer.forEach(serverTools => {
       serverTools.forEach(tool => {
-        rawNameCounts.set(tool.name, (rawNameCounts.get(tool.name) || 0) + 1);
+        const key = tool.name.toLowerCase();
+        rawNameCounts.set(key, (rawNameCounts.get(key) || 0) + 1);
       });
     });
 
@@ -81,7 +82,7 @@ class McpManagerService {
       const exposedNames: string[] = [];
 
       serverTools.forEach(tool => {
-        const hasCollision = (rawNameCounts.get(tool.name) || 0) > 1;
+        const hasCollision = (rawNameCounts.get(tool.name.toLowerCase()) || 0) > 1;
         const candidateName = hasCollision ? `${namespace}__${tool.name}` : tool.name;
         const sanitizedCandidate = sanitizeToolName(candidateName);
         const exposedName = this.buildUniqueToolName(sanitizedCandidate, usedNames);
@@ -220,7 +221,7 @@ class McpManagerService {
       .map(([, value]) => value.tool);
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     const policy = this.getToolExecutionPolicy(name);
     if (!policy.found) {
       throw new Error(`Tool ${name} not found`);

@@ -149,6 +149,41 @@ describe('McpManager', () => {
     });
   });
 
+  it('namespaces case-insensitive colliding tool names across servers', async () => {
+    toolsByServerId['server-a'] = [
+      {
+        name: 'Search',
+        description: 'Server A Search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+    toolsByServerId['server-b'] = [
+      {
+        name: 'search',
+        description: 'Server B search tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ];
+
+    await McpManager.initialize([
+      createServer('server-a', 'Alpha Server'),
+      createServer('server-b', 'Beta Server'),
+    ]);
+
+    const allToolNames = McpManager.getTools().map(tool => tool.name);
+    expect(new Set(allToolNames).size).toBe(2);
+
+    const runtimeStates = McpManager.getRuntimeStates();
+    const alphaState = runtimeStates.find(state => state.serverId === 'server-a');
+    const betaState = runtimeStates.find(state => state.serverId === 'server-b');
+
+    expect(alphaState?.toolNames[0]).not.toBe(betaState?.toolNames[0]);
+
+    allToolNames.forEach(name => {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]+$/);
+    });
+  });
+
   it('exposes tool execution policy and blocks disabled tools', async () => {
     toolsByServerId['server-a'] = [
       {

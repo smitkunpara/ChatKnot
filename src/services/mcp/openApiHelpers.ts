@@ -1,10 +1,3 @@
-export type OpenApiToolMeta = {
-  path: string;
-  method: string;
-  baseUrl?: string;
-  securityHeaders?: string[];
-};
-
 export const ensureHttpUrl = (rawUrl: string): string => {
   const trimmed = (rawUrl || '').trim();
   if (!trimmed) return '';
@@ -12,20 +5,22 @@ export const ensureHttpUrl = (rawUrl: string): string => {
   return `https://${trimmed}`;
 };
 
-export const extractSecuritySchemeNames = (security: any): string[] => {
+export const extractSecuritySchemeNames = (security: unknown): string[] => {
   if (!Array.isArray(security)) return [];
   const names: string[] = [];
   for (const entry of security) {
     if (!entry || typeof entry !== 'object') continue;
-    for (const key of Object.keys(entry)) {
+    for (const key of Object.keys(entry as Record<string, unknown>)) {
       if (!names.includes(key)) names.push(key);
     }
   }
   return names;
 };
 
-export const extractSecurityHeaders = (spec: any, schemeNames: string[]): string[] => {
-  const schemes = spec?.components?.securitySchemes || {};
+export const extractSecurityHeaders = (spec: unknown, schemeNames: string[]): string[] => {
+  const specObj = spec as Record<string, unknown> | undefined;
+  const components = specObj?.components as Record<string, unknown> | undefined;
+  const schemes = (components?.securitySchemes || {}) as Record<string, Record<string, unknown>>;
   const headers: string[] = [];
 
   for (const schemeName of schemeNames) {
