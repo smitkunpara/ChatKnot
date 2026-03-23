@@ -231,9 +231,44 @@ const openRealm = async (): Promise<Realm> => {
   });
 };
 
+const isRealmDecryptionFailure = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes('decryption failed')
+    || message.includes('failed the hmac check')
+    || message.includes('encryption key is incorrect')
+  );
+};
+
+const recoverRealmAfterDecryptionFailure = async (): Promise<void> => {
+  try {
+    await defaultSecretVault.deleteSecret(CHAT_REALM_KEY_ALIAS);
+  } catch {
+    // Best-effort cleanup for stale encryption key.
+  }
+
+  try {
+    Realm.deleteFile({ path: CHAT_REALM_PATH });
+  } catch {
+    // Best-effort cleanup for corrupted realm file.
+  }
+};
+
 const getRealm = async (): Promise<Realm> => {
   if (!realmPromise) {
-    realmPromise = openRealm().catch((error) => {
+    realmPromise = (async () => {
+      try {
+        return await openRealm();
+      } catch (error) {
+        if (!isRealmDecryptionFailure(error)) {
+          throw error;
+        }
+
+        console.warn('Realm decryption failed; resetting chat realm file and encryption key.');
+        await recoverRealmAfterDecryptionFailure();
+        return openRealm();
+      }
+    })().catch((error) => {
       realmPromise = null;
       throw error;
     });
@@ -241,23 +276,30 @@ const getRealm = async (): Promise<Realm> => {
   return realmPromise;
 };
 
-export const closeRealm = (): void => {
-  if (realmPromise) {
-    realmPromise
-      .then((realm) => {
-        if (!realm.isClosed) {
-          realm.close();
-        }
-      })
-      .catch(() => {
-        // Ignore errors during close
-      });
-    realmPromise = null;
+const closeRealmInternal = async (): Promise<void> => {
+  if (!realmPromise) {
+    return;
+  }
+
+  const pendingRealm = realmPromise;
+  realmPromise = null;
+
+  try {
+    const realm = await pendingRealm;
+    if (!realm.isClosed) {
+      realm.close();
+    }
+  } catch {
+    // Ignore errors during close.
   }
 };
 
+export const closeRealm = (): void => {
+  void closeRealmInternal();
+};
+
 export const deleteRealmFile = async (): Promise<void> => {
-  closeRealm();
+  await closeRealmInternal();
   try {
     Realm.deleteFile({ path: CHAT_REALM_PATH });
   } catch {
@@ -363,9 +405,15 @@ export const loadChatStateFromRealm = async (): Promise<ChatPersistedState> => {
       messages: mapMessageRecords(realm, entry.id),
     }));
 
+    const activeConversationId = appState?.activeConversationId ?? null;
+    const normalizedActiveConversationId =
+      activeConversationId && conversations.some((conversation) => conversation.id === activeConversationId)
+        ? activeConversationId
+        : null;
+
     return {
       conversations,
-      activeConversationId: appState?.activeConversationId ?? null,
+      activeConversationId: normalizedActiveConversationId,
     };
   } catch (error) {
     console.warn('Failed to load chat state from Realm. Falling back to empty state.', error);

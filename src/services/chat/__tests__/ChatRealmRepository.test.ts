@@ -122,6 +122,7 @@ const mockRealm = {
 const mockSecretVault = {
   getSecret: jest.fn().mockResolvedValue(null),
   setSecret: jest.fn().mockResolvedValue(undefined),
+  deleteSecret: jest.fn().mockResolvedValue(undefined),
 };
 
 jest.mock('../../storage/SecretVault', () => ({
@@ -171,6 +172,26 @@ describe('ChatRealmRepository', () => {
       expect(state).toEqual({ conversations: [], activeConversationId: null });
     });
 
+    it('recovers from realm decryption failure by rotating key and deleting realm file', async () => {
+      (Realm.open as jest.Mock)
+        .mockRejectedValueOnce(new Error('Realm file decryption failed: page 0 failed the HMAC check'))
+        .mockResolvedValueOnce(mockRealm);
+
+      (mockRealm.objectForPrimaryKey as jest.Mock).mockReturnValue(null);
+      (mockRealm.objects as jest.Mock).mockReturnValue({
+        sorted: jest.fn().mockReturnValue({
+          map: jest.fn().mockReturnValue([]),
+        }),
+      });
+
+      const state = await loadChatStateFromRealm();
+
+      expect(mockSecretVault.deleteSecret).toHaveBeenCalledWith('chat-realm:encryption-key');
+      expect(Realm.deleteFile).toHaveBeenCalledWith({ path: 'chat.realm' });
+      expect(Realm.open).toHaveBeenCalledTimes(2);
+      expect(state).toEqual({ conversations: [], activeConversationId: null });
+    });
+
     it('returns empty state when no app state exists', async () => {
       (mockRealm.objectForPrimaryKey as jest.Mock).mockReturnValue(null);
       (mockRealm.objects as jest.Mock).mockReturnValue({
@@ -183,7 +204,7 @@ describe('ChatRealmRepository', () => {
       expect(state).toEqual({ conversations: [], activeConversationId: null });
     });
 
-    it('loads activeConversationId from app state', async () => {
+    it('normalizes stale activeConversationId to null', async () => {
       (mockRealm.objectForPrimaryKey as jest.Mock).mockReturnValue({
         id: 'chat-state-v2',
         activeConversationId: 'conv-123',
@@ -193,6 +214,53 @@ describe('ChatRealmRepository', () => {
         sorted: jest.fn().mockReturnValue({
           map: jest.fn().mockReturnValue([]),
         }),
+      });
+
+      const state = await loadChatStateFromRealm();
+      expect(state.activeConversationId).toBeNull();
+    });
+
+    it('loads activeConversationId when the conversation exists', async () => {
+      (mockRealm.objectForPrimaryKey as jest.Mock).mockReturnValue({
+        id: 'chat-state-v2',
+        activeConversationId: 'conv-123',
+        updatedAt: Date.now(),
+      });
+
+      (mockRealm.objects as jest.Mock).mockImplementation((schemaName: string) => {
+        if (schemaName === 'ConversationRecord') {
+          return {
+            sorted: jest.fn().mockReturnValue({
+              map: jest.fn().mockReturnValue([
+                {
+                  id: 'conv-123',
+                  title: 'Test',
+                  providerId: 'provider-1',
+                  modeId: 'mode-1',
+                  systemPrompt: 'You are helpful',
+                  createdAt: 1,
+                  updatedAt: 2,
+                },
+              ]),
+            }),
+          };
+        }
+
+        if (schemaName === 'MessageRecord') {
+          return {
+            filtered: jest.fn().mockReturnValue({
+              sorted: jest.fn().mockReturnValue({
+                map: jest.fn().mockReturnValue([]),
+              }),
+            }),
+          };
+        }
+
+        return {
+          filtered: jest.fn().mockReturnValue({
+            map: jest.fn().mockReturnValue([]),
+          }),
+        };
       });
 
       const state = await loadChatStateFromRealm();
@@ -275,6 +343,19 @@ describe('ChatRealmRepository', () => {
         throw new Error('delete failed');
       });
       await expect(deleteRealmFile()).resolves.not.toThrow();
+    });
+
+    it('closes an open realm before deleting the file', async () => {
+      (mockRealm.objects as jest.Mock).mockReturnValue({
+        sorted: jest.fn().mockReturnValue({
+          map: jest.fn().mockReturnValue([]),
+        }),
+      });
+
+      await loadChatStateFromRealm();
+      await deleteRealmFile();
+
+      expect(Realm.deleteFile).toHaveBeenCalledWith({ path: 'chat.realm' });
     });
   });
 });
