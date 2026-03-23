@@ -180,4 +180,44 @@ describe('useChatRuntimeStore', () => {
     expect(updated.thoughtDurationMs).toBe(3200);
     expect(updated.content).toBe('more content');
   });
+
+  it('skips updateStreamingMessage when payload does not change session values', () => {
+    const store = useChatRuntimeStore.getState();
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.updateStreamingMessage('conversation-1', 'message-1', {
+      content: 'same-content',
+      reasoning: 'same-reasoning',
+      thoughtDurationMs: 1500,
+    });
+
+    const beforeNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    store.updateStreamingMessage('conversation-1', 'message-1', {
+      content: 'same-content',
+      reasoning: 'same-reasoning',
+      thoughtDurationMs: 1500,
+    });
+    const afterNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+
+    expect(afterNoop).toBe(beforeNoop);
+  });
+
+  it('skips setRequestPhase when phase and metadata are unchanged', () => {
+    const store = useChatRuntimeStore.getState();
+    const details = {
+      model: 'gpt-4.1-mini',
+      modeName: 'Default',
+      providerUrl: 'https://provider.example.com',
+      requestedAt: Date.now(),
+    };
+
+    store.startStreamingMessage('conversation-1', 'message-1');
+    store.setRequestPhase('conversation-1', 'api_request', details);
+
+    const beforeNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+    store.setRequestPhase('conversation-1', 'api_request', details);
+    const afterNoop = useChatRuntimeStore.getState().streamingSessions['conversation-1'];
+
+    expect(afterNoop).toBe(beforeNoop);
+  });
 });

@@ -10,7 +10,7 @@ export interface ContentBlock {
  */
 export const parseThinkingBlocks = (raw: string): ContentBlock[] => {
   const blocks: ContentBlock[] = [];
-  const regex = /<think>([\s\S]+?)(<\/think>|$)/gi;
+  const regex = /<think>([\s\S]*?)(<\/think>|$)/gi;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;

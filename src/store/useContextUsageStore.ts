@@ -27,6 +27,37 @@ interface ContextUsageState {
   getUsage: (conversationId: string) => ContextUsageData | null;
 }
 
+const sanitizeUsageNumber = (value: number): number => {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return value;
+};
+
+const sanitizeUsageData = (data: ContextUsageData): ContextUsageData | null => {
+  const conversationId = data.conversationId.trim();
+  if (!conversationId) {
+    return null;
+  }
+
+  const promptTokens = sanitizeUsageNumber(data.lastUsage.promptTokens);
+  const completionTokens = sanitizeUsageNumber(data.lastUsage.completionTokens);
+  const totalTokens = sanitizeUsageNumber(data.lastUsage.totalTokens);
+
+  return {
+    ...data,
+    conversationId,
+    contextLimit: sanitizeUsageNumber(data.contextLimit),
+    timestamp: Number.isFinite(data.timestamp) ? data.timestamp : Date.now(),
+    lastUsage: {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+    },
+  };
+};
+
 const contextPersistStorage = createEncryptedStateStorage({
   id: 'context-usage-storage',
   keyAlias: STORAGE_KEYS.CONTEXT_USAGE_STORAGE_KEY_ALIAS,
@@ -38,10 +69,15 @@ export const useContextUsageStore = create<ContextUsageState>()(
       usageByConversation: {},
 
       updateUsage: (data) => {
+        const sanitized = sanitizeUsageData(data);
+        if (!sanitized) {
+          return;
+        }
+
         set((state) => ({
           usageByConversation: {
             ...state.usageByConversation,
-            [data.conversationId]: data,
+            [sanitized.conversationId]: sanitized,
           },
         }));
       },

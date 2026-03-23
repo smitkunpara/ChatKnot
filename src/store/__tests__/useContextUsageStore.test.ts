@@ -10,7 +10,38 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-import { useContextUsageStore } from '../useContextUsageStore';
+import { useContextUsageStore, type ContextUsageData } from '../useContextUsageStore';
+
+type ContextUsageStoreModule = typeof import('../useContextUsageStore');
+
+const flushPersistence = async (): Promise<void> => {
+  await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
+const loadStore = async (storageSeed: Map<string, string> = new Map()): Promise<{
+  store: ContextUsageStoreModule['useContextUsageStore'];
+}> => {
+  jest.resetModules();
+
+  const storage = {
+    getItem: jest.fn(async (name: string) => storageSeed.get(name) ?? null),
+    setItem: jest.fn(async (name: string, value: string) => {
+      storageSeed.set(name, value);
+    }),
+    removeItem: jest.fn(async (name: string) => {
+      storageSeed.delete(name);
+    }),
+  };
+
+  jest.doMock('../../services/storage/EncryptedStateStorage', () => ({
+    createEncryptedStateStorage: () => storage,
+  }));
+
+  const module = (await import('../useContextUsageStore')) as ContextUsageStoreModule;
+  await module.useContextUsageStore.persist.rehydrate();
+  return { store: module.useContextUsageStore };
+};
 
 describe('useContextUsageStore', () => {
   beforeEach(() => {
@@ -111,5 +142,83 @@ describe('useContextUsageStore', () => {
     store.clearAllUsage();
 
     expect(Object.keys(useContextUsageStore.getState().usageByConversation)).toHaveLength(0);
+  });
+
+  it('ignores updates with blank conversation id', () => {
+    const store = useContextUsageStore.getState();
+
+    store.updateUsage({
+      conversationId: '   ',
+      providerId: 'p',
+      model: 'm',
+      contextLimit: 1000,
+      lastUsage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      timestamp: 100,
+    });
+
+    expect(store.usageByConversation).toEqual({});
+  });
+
+  it('sanitizes non-finite and negative usage values', () => {
+    const store = useContextUsageStore.getState();
+
+    store.updateUsage({
+      conversationId: 'chat-sanitize',
+      providerId: 'p',
+      model: 'm',
+      contextLimit: Number.NaN,
+      lastUsage: {
+        promptTokens: -10,
+        completionTokens: Number.POSITIVE_INFINITY,
+        totalTokens: -1,
+      },
+      timestamp: Number.NaN,
+    });
+
+    const sanitized = store.getUsage('chat-sanitize');
+    expect(sanitized).not.toBeNull();
+    expect(sanitized?.contextLimit).toBe(0);
+    expect(sanitized?.lastUsage.promptTokens).toBe(0);
+    expect(sanitized?.lastUsage.completionTokens).toBe(0);
+    expect(sanitized?.lastUsage.totalTokens).toBe(0);
+    expect(Number.isFinite(sanitized?.timestamp ?? Number.NaN)).toBe(true);
+  });
+});
+
+describe('useContextUsageStore persistence', () => {
+  it('persists and rehydrates usage data across store reload', async () => {
+    const storageSeed = new Map<string, string>();
+    const firstLoad = await loadStore(storageSeed);
+
+    const usageData: ContextUsageData = {
+      conversationId: 'conv-persist',
+      providerId: 'prov-persist',
+      model: 'gpt-4o',
+      contextLimit: 128000,
+      lastUsage: { promptTokens: 500, completionTokens: 200, totalTokens: 700 },
+      timestamp: 9999,
+    };
+
+    firstLoad.store.getState().updateUsage(usageData);
+    await flushPersistence();
+
+    // Verify data was serialized to storage
+    const persistedValue = storageSeed.get('context-usage-storage');
+    expect(persistedValue).toBeTruthy();
+    const parsed = JSON.parse(persistedValue!);
+    expect(parsed.state.usageByConversation['conv-persist']).toEqual(usageData);
+
+    // Rehydrate in a fresh store instance
+    const secondLoad = await loadStore(storageSeed);
+    const rehydrated = secondLoad.store.getState();
+
+    expect(rehydrated.usageByConversation['conv-persist']).toEqual(usageData);
+  });
+
+  it('rehydrates empty state when no data was persisted', async () => {
+    const storageSeed = new Map<string, string>();
+    const { store } = await loadStore(storageSeed);
+
+    expect(store.getState().usageByConversation).toEqual({});
   });
 });

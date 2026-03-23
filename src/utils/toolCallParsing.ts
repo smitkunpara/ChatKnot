@@ -1,14 +1,36 @@
 import uuid from 'react-native-uuid';
 
-export const normalizeToolCalls = (toolCalls: any[] | undefined): Array<{ id: string; name: string; arguments: string }> => {
+interface RawToolCall {
+  id?: string;
+  function?: { name?: string; arguments?: string | Record<string, unknown> };
+  name?: string;
+  arguments?: string | Record<string, unknown>;
+}
+
+interface ParsedToolRequest {
+  tool_calls?: unknown[];
+  calls?: unknown[];
+  tools?: unknown[];
+  tool_call?: Record<string, unknown>;
+  call?: Record<string, unknown>;
+  function?: { name?: string };
+  name?: string;
+  tool?: string;
+  tool_name?: string;
+  function_name?: string;
+  [key: string]: unknown;
+}
+
+export const normalizeToolCalls = (toolCalls: RawToolCall[] | undefined): Array<{ id: string; name: string; arguments: string }> => {
   if (!Array.isArray(toolCalls)) return [];
 
   const normalized = toolCalls
     .map(call => {
-      const rawArgs = call?.function?.arguments;
+      const rawName = call?.function?.name || call?.name || '';
+      const rawArgs = call?.function?.arguments ?? call?.arguments;
       return {
         id: (call?.id || uuid.v4()) as string,
-        name: call?.function?.name || '',
+        name: rawName,
         arguments:
           typeof rawArgs === 'string'
             ? rawArgs
@@ -19,14 +41,21 @@ export const normalizeToolCalls = (toolCalls: any[] | undefined): Array<{ id: st
     })
     .filter(call => call.name);
 
-  // Some providers duplicate tool calls in streamed chunks. Keep order, drop duplicates.
-  const seen = new Set<string>();
-  return normalized.filter(call => {
+  // Some providers duplicate tool calls in streamed chunks. Keep stable order,
+  // but prefer the latest payload for the same logical call id+name.
+  const latestByKey = new Map<string, { id: string; name: string; arguments: string }>();
+  const order: string[] = [];
+  for (const call of normalized) {
     const key = `${call.id}:${call.name}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    if (!latestByKey.has(key)) {
+      order.push(key);
+    }
+    latestByKey.set(key, call);
+  }
+
+  return order
+    .map((key) => latestByKey.get(key))
+    .filter((call): call is { id: string; name: string; arguments: string } => Boolean(call));
 };
 
 const decodeXmlEntities = (value: string): string =>
@@ -121,7 +150,7 @@ const stripLegacyXmlToolCalls = (content: string): string => {
   return stripped;
 };
 
-const extractToolRequestEntries = (parsed: any): any[] => {
+const extractToolRequestEntries = (parsed: ParsedToolRequest | null): unknown[] => {
   if (!parsed) return [];
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed.tool_calls)) return parsed.tool_calls;
@@ -141,33 +170,34 @@ const extractToolRequestEntries = (parsed: any): any[] => {
 };
 
 const normalizeToolCallFromLegacyJson = (
-  entry: any,
+  entry: Record<string, unknown>,
   toolNameMap: Map<string, string>
 ): { id: string; name: string; arguments: string } | null => {
+  const fn = entry.function as Record<string, unknown> | undefined;
   const rawName =
-    entry?.function?.name ||
-    entry?.name ||
-    entry?.tool ||
-    entry?.tool_name ||
-    entry?.function_name;
+    fn?.name ||
+    entry.name ||
+    entry.tool ||
+    entry.tool_name ||
+    entry.function_name;
   if (!rawName || typeof rawName !== 'string') return null;
 
   const canonicalName = toolNameMap.get(rawName.trim().toLowerCase());
   if (!canonicalName) return null;
 
   const rawArgs =
-    entry?.function?.arguments ??
-    entry?.arguments ??
-    entry?.args ??
-    entry?.parameters ??
-    entry?.input ??
+    fn?.arguments ??
+    entry.arguments ??
+    entry.args ??
+    entry.parameters ??
+    entry.input ??
     {};
 
   const normalizedArgs =
     typeof rawArgs === 'string' ? stripCodeFence(rawArgs) : JSON.stringify(rawArgs ?? {});
 
   return {
-    id: (entry?.id || uuid.v4()) as string,
+    id: (entry.id || uuid.v4()) as string,
     name: canonicalName,
     arguments: normalizedArgs,
   };
@@ -200,7 +230,8 @@ export const extractLegacyJsonToolCalls = (
       const parsed = tryParseJsonWithRepair(candidate);
       const entries = extractToolRequestEntries(parsed);
       for (const entry of entries) {
-        const normalized = normalizeToolCallFromLegacyJson(entry, toolNameMap);
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+        const normalized = normalizeToolCallFromLegacyJson(entry as Record<string, unknown>, toolNameMap);
         if (!normalized) continue;
         const key = `${normalized.name}:${normalized.arguments}`;
         if (seen.has(key)) continue;
@@ -234,7 +265,7 @@ export const stripLegacyStructuredToolCalls = (content: string): string => {
   return withoutXml;
 };
 
-export const tryParseJsonWithRepair = (value: string): any => {
+export const tryParseJsonWithRepair = (value: string): ParsedToolRequest => {
   const normalized = stripCodeFence(value);
   try {
     return JSON.parse(normalized);
@@ -247,7 +278,7 @@ export const tryParseJsonWithRepair = (value: string): any => {
   }
 };
 
-export const parseToolArguments = (rawArgs: string, toolName: string): any => {
+export const parseToolArguments = (rawArgs: string, toolName: string): Record<string, unknown> => {
   if (!rawArgs || !rawArgs.trim()) return {};
 
   const trimmed = rawArgs.trim();
@@ -259,9 +290,19 @@ export const parseToolArguments = (rawArgs: string, toolName: string): any => {
   }
 
   try {
-    const parsed = tryParseJsonWithRepair(trimmed);
+    const parsed: unknown = tryParseJsonWithRepair(trimmed);
+    if (typeof parsed === 'string') {
+      const nested = parsed.trim();
+      if (
+        nested.startsWith('{') ||
+        nested.startsWith('[') ||
+        nested.startsWith('<')
+      ) {
+        return parseToolArguments(nested, toolName);
+      }
+    }
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed;
+      return parsed as Record<string, unknown>;
     }
     return { value: parsed };
   } catch {
@@ -269,31 +310,32 @@ export const parseToolArguments = (rawArgs: string, toolName: string): any => {
   }
 };
 
-export const serializeToolResult = (value: any): string => {
+export const serializeToolResult = (value: unknown): string => {
   if (typeof value === 'string') return value;
 
   // Handle standard MCP CallToolResult format by flattening the text content.
   // This prevents the AI from seeing double-JSON-encoded payload strings,
   // making formatting issues or rich error feedback much clearer.
-  if (value && typeof value === 'object' && Array.isArray(value.content)) {
-    const textParts = value.content
-      .filter((c: any) => c.type === 'text')
-      .map((c: any) => c.text);
+  if (value && typeof value === 'object' && Array.isArray((value as Record<string, unknown>).content)) {
+    const content = (value as Record<string, unknown>).content as Array<Record<string, unknown>>;
+    const textParts = content
+      .filter((c) => c.type === 'text')
+      .map((c) => c.text as string);
 
     // If there's extra root metadata besides 'content' and 'isError'/'_meta', preserve it at the top level
     const extraKeys = Object.keys(value).filter(k => k !== 'content' && k !== 'isError' && k !== '_meta');
     
     if (extraKeys.length > 0) {
       // If there are extra top-level keys, send an object containing the text and the extra keys
-      const output: any = {};
+      const output: Record<string, unknown> = {};
       if (textParts.length > 0) {
         // Try to parse the text as JSON to avoid escaping it again
-        let parsedText;
+        let parsedText: unknown;
         try { parsedText = JSON.parse(textParts.join('\n')); } catch { parsedText = textParts.join('\n'); }
         output.content = parsedText;
       }
-      for (const k of extraKeys) output[k] = value[k];
-      if (value.isError) output.isError = true;
+      for (const k of extraKeys) output[k] = (value as Record<string, unknown>)[k];
+      if ((value as Record<string, unknown>).isError) output.isError = true;
       try {
         return JSON.stringify(output, null, 2);
       } catch {
@@ -308,7 +350,8 @@ export const serializeToolResult = (value: any): string => {
   }
 
   try {
-    return JSON.stringify(value, null, 2);
+    const serialized = JSON.stringify(value, null, 2);
+    return serialized === undefined ? String(value) : serialized;
   } catch {
     return String(value);
   }
@@ -317,15 +360,17 @@ export const serializeToolResult = (value: any): string => {
 export const buildToolExecutionQueue = (
   calls: Array<{ id: string; name: string; arguments: string }>
 ): Array<{ id: string; name: string; arguments: string }> => {
-  const queue: Array<{ id: string; name: string; arguments: string }> = [];
-  const seen = new Set<string>();
+  const latestById = new Map<string, { id: string; name: string; arguments: string }>();
+  const order: string[] = [];
 
   for (const call of calls) {
-    const key = call.id;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    queue.push(call);
+    if (!latestById.has(call.id)) {
+      order.push(call.id);
+    }
+    latestById.set(call.id, call);
   }
 
-  return queue;
+  return order
+    .map((id) => latestById.get(id))
+    .filter((call): call is { id: string; name: string; arguments: string } => Boolean(call));
 };

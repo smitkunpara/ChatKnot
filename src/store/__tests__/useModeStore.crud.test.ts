@@ -104,6 +104,15 @@ describe('useSettingsStore mode CRUD', () => {
     expect(store.getState().lastUsedModeId).toBeNull();
   });
 
+  it('setLastUsedMode ignores unknown mode id', async () => {
+    const { store } = await loadStore();
+    store.getState().addMode(createMode({ id: 'mode-1' }));
+
+    store.getState().setLastUsedMode('missing-mode');
+
+    expect(store.getState().lastUsedModeId).toBe('mode-1');
+  });
+
   it('updateMode with mcpServerOverrides replaces the mode overrides', async () => {
     const { store } = await loadStore();
     store.getState().addMode(createMode({
@@ -160,6 +169,28 @@ describe('useSettingsStore mode CRUD', () => {
     expect(state.modes.find(m => m.id === 'mode-1')?.isDefault).toBe(false);
     // Default mode should be sorted first
     expect(state.modes[0].id).toBe('mode-2');
+  });
+
+  it('setDefaultMode ignores unknown mode id', async () => {
+    const { store } = await loadStore();
+    store.getState().addMode(createMode({ id: 'mode-1', isDefault: true }));
+    store.getState().addMode(createMode({ id: 'mode-2', isDefault: false }));
+
+    store.getState().setDefaultMode('mode-missing');
+
+    const state = store.getState();
+    expect(state.modes.find(m => m.id === 'mode-1')?.isDefault).toBe(true);
+    expect(state.modes.find(m => m.id === 'mode-2')?.isDefault).toBe(false);
+  });
+
+  it('addMode ignores duplicate ids', async () => {
+    const { store } = await loadStore();
+    store.getState().addMode(createMode({ id: 'mode-1', name: 'Original' }));
+
+    store.getState().addMode(createMode({ id: 'mode-1', name: 'Duplicate' }));
+
+    expect(store.getState().modes).toHaveLength(1);
+    expect(store.getState().modes[0].name).toBe('Original');
   });
 
   it('removeMcpServer cascades deletion to mode overrides', async () => {

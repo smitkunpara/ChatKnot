@@ -49,7 +49,6 @@ interface ChatState {
   createConversation: (providerId: string, modeId: string, systemPrompt: string, modelOverride?: string) => void;
   setActiveConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
-  updateProviderInConversation: (conversationId: string, providerId: string) => void;
   updateModelInConversation: (conversationId: string, providerId: string, model: string) => void;
   updateModeInConversation: (conversationId: string, modeId: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'timestamp' | 'id'> & { id?: string }) => void;
@@ -170,16 +169,6 @@ export const useChatStore = create<ChatState>()(
         set((state) => ({
           conversations: state.conversations.filter((c) => c.id !== id),
           activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
-        }));
-        schedulePersist();
-      },
-
-      updateProviderInConversation: (conversationId, providerId) => {
-        set((state) => ({
-          conversations: mapConversations(state.conversations, conversationId, (conversation) => ({
-            ...conversation,
-            providerId,
-          })),
         }));
         schedulePersist();
       },

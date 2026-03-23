@@ -277,6 +277,10 @@ set({
 
       addMode: (mode) =>
         set((state) => {
+          if (state.modes.some((existingMode) => existingMode.id === mode.id)) {
+            return state;
+          }
+
           const safeName = mode.name.slice(0, MAX_MODE_NAME_LENGTH);
           const newMode: Mode = {
             ...mode,
@@ -315,15 +319,32 @@ set({
           return { modes: nextModes, lastUsedModeId: nextLastUsedModeId };
         }),
 
-      setLastUsedMode: (id) => set({ lastUsedModeId: id }),
+      setLastUsedMode: (id) =>
+        set((state) => {
+          if (id === null) {
+            return { lastUsedModeId: null };
+          }
+
+          if (!state.modes.some((mode) => mode.id === id)) {
+            return state;
+          }
+
+          return { lastUsedModeId: id };
+        }),
 
       setDefaultMode: (id) =>
-        set((state) => ({
-          modes: sortModes(state.modes.map((m) => ({
-            ...m,
-            isDefault: m.id === id,
-          }))),
-        })),
+        set((state) => {
+          if (!state.modes.some((mode) => mode.id === id)) {
+            return state;
+          }
+
+          return {
+            modes: sortModes(state.modes.map((m) => ({
+              ...m,
+              isDefault: m.id === id,
+            }))),
+          };
+        }),
 
       setTheme: (theme) => set({ theme }),
       replaceAllSettings: (settings) =>

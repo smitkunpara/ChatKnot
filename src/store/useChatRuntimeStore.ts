@@ -116,14 +116,26 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
       return state;
     }
 
+    const nextContent = payload.content ?? session.content;
+    const nextReasoning = payload.reasoning ?? session.reasoning;
+    const nextThoughtDurationMs = payload.thoughtDurationMs ?? session.thoughtDurationMs;
+
+    if (
+      nextContent === session.content
+      && nextReasoning === session.reasoning
+      && nextThoughtDurationMs === session.thoughtDurationMs
+    ) {
+      return state;
+    }
+
     return {
       streamingSessions: {
         ...state.streamingSessions,
         [conversationId]: {
           ...session,
-          content: payload.content ?? session.content,
-          reasoning: payload.reasoning ?? session.reasoning,
-          thoughtDurationMs: payload.thoughtDurationMs ?? session.thoughtDurationMs,
+          content: nextContent,
+          reasoning: nextReasoning,
+          thoughtDurationMs: nextThoughtDurationMs,
           updatedAt: Date.now(),
         },
       },
@@ -153,15 +165,21 @@ export const useChatRuntimeStore = create<ChatRuntimeState>()((set) => ({
     const session = state.streamingSessions[conversationId];
 
     if (session) {
+      const nextApiRequestDetails = apiRequestDetails !== undefined
+        ? apiRequestDetails
+        : session.apiRequestDetails;
+
+      if (session.requestPhase === phase && nextApiRequestDetails === session.apiRequestDetails) {
+        return state;
+      }
+
       return {
         streamingSessions: {
           ...state.streamingSessions,
           [conversationId]: {
             ...session,
             requestPhase: phase,
-            apiRequestDetails: apiRequestDetails !== undefined
-              ? apiRequestDetails
-              : session.apiRequestDetails,
+            apiRequestDetails: nextApiRequestDetails,
           },
         },
       };

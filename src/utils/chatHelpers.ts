@@ -11,17 +11,18 @@ export const FALLBACK_FINAL_TEXT =
  * Extract a user-friendly error message from API errors.
  * Parses raw JSON error bodies and maps HTTP status codes to readable messages.
  */
-export const getErrorMessage = (error: any): string => {
+export const getErrorMessage = (error: unknown): string => {
   if (!error) return 'Unknown error';
 
-  const raw = typeof error === 'string' ? error : error.message || '';
+  const raw = typeof error === 'string' ? error : (error instanceof Error ? error.message : '');
   if (!raw) return 'Unexpected error';
 
   return formatApiError(raw);
 };
 
-export const serializeToolExecutionError = (error: any): string => {
-  const errorData = error?.data;
+export const serializeToolExecutionError = (error: unknown): string => {
+  const record = error as Record<string, unknown> | undefined;
+  const errorData = record?.data;
   if (errorData !== undefined) {
     if (typeof errorData === 'string') {
       return errorData;
@@ -130,6 +131,14 @@ export const buildEffectiveSystemPrompt = ({
   return conversationPrompt?.trim() || modePrompt?.trim() || globalPrompt?.trim() || 'You are a helpful AI assistant.';
 };
 
+const sanitizeModeNameForPrompt = (modeName: string): string => {
+  return modeName
+    .replace(/["\\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+};
+
 export const buildAppSystemPrompt = ({
   toolsEnabledForRequest,
   hasConnectedMcpServer,
@@ -152,7 +161,10 @@ export const buildAppSystemPrompt = ({
   }
 
   if (modeName) {
-    lines.push(`- The user is currently in "${modeName}" mode. Adapt your responses to best suit this mode.`);
+    const safeModeName = sanitizeModeNameForPrompt(modeName);
+    if (safeModeName) {
+      lines.push(`- The user is currently in "${safeModeName}" mode. Adapt your responses to best suit this mode.`);
+    }
   }
 
   if (hasConnectedMcpServer) {

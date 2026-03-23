@@ -7,6 +7,8 @@ const LOCAL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
+  hourCycle: 'h23',
+  numberingSystem: 'latn',
 });
 
 interface SidebarConversationLabelInput {
@@ -25,14 +27,12 @@ export const formatLocalDateTime = (timestamp: number): string => {
   const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
   const month = parts.find((part) => part.type === 'month')?.value ?? '00';
   const day = parts.find((part) => part.type === 'day')?.value ?? '00';
-  const hour = parts.find((part) => part.type === 'hour')?.value ?? '00';
+  const rawHour = parts.find((part) => part.type === 'hour')?.value ?? '00';
+  const hour = rawHour === '24' ? '00' : rawHour;
   const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
 
   return `${year}-${month}-${day} ${hour}:${minute}`;
 };
-
-/** @deprecated Use formatLocalDateTime instead. Kept for backward compatibility. */
-export const formatIstDateTime = formatLocalDateTime;
 
 export const getSidebarConversationLabel = (
   conversation: SidebarConversationLabelInput
