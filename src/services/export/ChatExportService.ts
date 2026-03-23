@@ -113,7 +113,8 @@ export async function exportChat(
   conversation: Conversation,
   opts: ExportOptions,
 ): Promise<void> {
-  const safeTitle = conversation.title.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
+  const sanitizedTitle = conversation.title.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
+  const safeTitle = sanitizedTitle || 'chat_export';
 
   if (opts.includeToolInput || opts.includeToolOutput) {
     return new Promise((resolve, reject) => {

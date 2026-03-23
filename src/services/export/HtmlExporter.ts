@@ -19,8 +19,9 @@ export function escapeHtml(text: string): string {
 }
 
 function renderMarkdownSafe(src: string): string {
-  const html = marked.parse(src, MARKED_OPTIONS) as string;
-  return escapeHtml(html);
+  // Escape user-provided HTML first, then render markdown syntax.
+  const escapedSource = escapeHtml(src);
+  return marked.parse(escapedSource, MARKED_OPTIONS) as string;
 }
 
 function formatToolCallHtml(

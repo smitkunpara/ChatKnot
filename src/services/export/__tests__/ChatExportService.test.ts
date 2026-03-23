@@ -296,6 +296,28 @@ describe('JsonExporter', () => {
 });
 
 describe('HtmlExporter', () => {
+  it('renders markdown syntax while keeping HTML escaped', () => {
+    const conv: Conversation = {
+      ...conversation,
+      messages: [
+        {
+          id: 'm-md',
+          role: 'assistant',
+          content: '**bold** and <b>raw-html</b>',
+          timestamp: 10,
+        },
+      ],
+    };
+
+    const html = toHtml(conv, htmlOpts);
+
+    // The marked mock wraps content with <p> tags; ensure we don't escape parser output.
+    expect(html).toContain('<p>**bold** and &lt;b&gt;raw-html&lt;/b&gt;</p>');
+    expect(html).not.toContain('&lt;p&gt;**bold** and &lt;b&gt;raw-html&lt;/b&gt;&lt;/p&gt;');
+    expect(html).toContain('&lt;b&gt;raw-html&lt;/b&gt;');
+    expect(html).not.toContain('<b>raw-html</b>');
+  });
+
   it('escapes raw HTML/script content in generated HTML', () => {
     const opts: HtmlExportOptions = {
       ...htmlOpts,
