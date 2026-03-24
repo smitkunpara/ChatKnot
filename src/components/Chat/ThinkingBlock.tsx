@@ -11,7 +11,6 @@ import {
 import { ChevronDown, ChevronUp, Brain } from 'lucide-react-native';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import Markdown from 'react-native-markdown-display';
-import { ShinyText } from '../Common/ShinyText';
 import {
     createMarkdownStyles,
     createTableRenderRules,
@@ -131,13 +130,9 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
                     <Brain size={14} color={colors.primary} />
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         {isStreaming ? (
-                            <ShinyText
-                                text={durationText ? `Thinking ${durationText}` : 'Thinking…'}
-                                color={colors.textSecondary}
-                                shineColor={colors.text}
-                                style={styles.headerText}
-                                speed={1.5}
-                            />
+                            <Text style={[styles.headerText, { color: colors.text }]}>
+                                {durationText ? `Thinking ${durationText}` : 'Thinking…'}
+                            </Text>
                         ) : (
                             <>
                                 <Text style={styles.headerText}>Thought</Text>

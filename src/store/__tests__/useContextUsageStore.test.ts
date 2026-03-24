@@ -1,14 +1,6 @@
 jest.mock('react-native', () => ({
   Alert: { alert: jest.fn() },
 }));
-jest.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    setItem: jest.fn(),
-    getItem: jest.fn(),
-    removeItem: jest.fn(),
-    clear: jest.fn(),
-  },
-}));
 
 import { useContextUsageStore, type ContextUsageData } from '../useContextUsageStore';
 

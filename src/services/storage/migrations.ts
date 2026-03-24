@@ -96,20 +96,7 @@ export interface LegacyMcpServerSecrets {
 }
 
 const resolveDefaultLegacyStorage = (): MigrationStorage => {
-  try {
-    const asyncStorage = require('@react-native-async-storage/async-storage').default;
-    return {
-      getItem: async (key: string) => asyncStorage.getItem(key),
-      setItem: async (key: string, value: string) => {
-        await asyncStorage.setItem(key, value);
-      },
-      removeItem: async (key: string) => {
-        await asyncStorage.removeItem(key);
-      },
-    };
-  } catch (error) {
-    throw new Error(`Async storage is unavailable for migration bootstrap: ${String(error)}`);
-  }
+  throw new Error('AsyncStorage migration path has been removed in v0.4.1. Migrations are now only supported from MMKV-based versions (0.3.0+).');
 };
 
 const createDefaultEncryptedStorage = (id: string, keyAlias: string): MigrationStorage => {

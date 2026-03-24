@@ -68,7 +68,7 @@ export const createEncryptedStateStorage = (
 ): StateStorage => {
   const keyAlias = options.keyAlias ?? `${options.id}_encryption-key`;
   const vault = options.vault ?? defaultSecretVault;
-  const fallbackStorage = options.fallbackStorage ?? resolveDefaultFallbackStorage();
+  const fallbackStorage = options.fallbackStorage ?? createVolatileStorage();
   let resolvedStoragePromise: Promise<ResolvedStorage> | null = null;
 
   const getResolvedStorage = async (): Promise<ResolvedStorage> => {

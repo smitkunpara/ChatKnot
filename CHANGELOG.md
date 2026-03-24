@@ -8,12 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.1] - 2026-03-24
 
 ### Removed
-- **Reduced Bundle Size** — Removed unused dependencies to minimize APK size:
-  - `react-native-reanimated` (~4.1.1) — unused, animations use standard React Native Animated API
-  - `react-native-worklets` (0.5.1) — unused, required by reanimated
-  - `react-native-url-polyfill` — unused, built into React Native 0.81+
-  - `text-encoding-polyfill` — unused, built into React Native 0.81+
-  - `expo-constants` — replaced with static version in LoadingScreen
+- **Drastic Bundle Size Reduction** — Stripped redundant native dependencies to minimize APK footprint and background overhead:
+  - `react-native-reanimated` (~4.1.1) — animations refactored to standard React Native Animated API.
+  - `react-native-worklets` (0.5.1) — removed as it was only required by reanimated.
+  - `react-native-url-polyfill` — removed, as URL support is native in React Native 0.81+.
+  - `text-encoding-polyfill` — removed, as text encoding is native in React Native 0.81+.
+  - `expo-constants` — replaced with static configuration in `LoadingScreen.tsx`.
+  - `@react-native-async-storage/async-storage` — removed legacy fallback; all persistence now uses high-performance MMKV and Realm.
+  - `@react-native-masked-view/masked-view` — removed to eliminate native overhead for purely cosmetic effects.
+- **Haptic Feedback & Vibrations** — Removed all `expo-haptics` logic and the `android.permission.VIBRATE` permission to keep the app strictly focused and reduce non-essential background permissions.
+- **ShinyText Effect** — Removed the `ShinyText` component and its native masking dependency, replacing it with a high-performance standard Animated opacity pulse for the "Thinking" state.
 
 ### Added
 - **Dynamic AI Context Limits** — The app now extracts model context-window properties directly from OpenAI-compatible and OpenRouter `/models` payloads, enabling accurate "percentage used" logic for unknown or custom models.
@@ -28,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **JSON Export Strict Compliance** — Refactored the JSON chat export payload to strictly comply with the standard OpenAI messaging schema. Tool outputs are now exclusively mapped to separate `tool` role messages rather than being illegally injected into the `tool_calls` arguments.
+- **Storage Fallback Strategy** — Replaced `AsyncStorage` with an in-memory **Volatile Storage** as the ultimate secure fallback for encrypted state, ensuring the app remains usable even if secure hardware is temporarily locked.
+
+### Fixed
+- **Build Noise & Warnings** — Resolved multiple Gradle and Kotlin deprecation warnings in `MainApplication.kt` and `AndroidManifest.xml` for a "zero-warning" production build environment.
+- **NODE_ENV Release Consistency** — Explicitly set `NODE_ENV=production` in build scripts to ensure Expo plugins correctly identify the release environment.
+- **Context Restoration fallback** — Added token estimation logic for legacy messages that lack explicit usage metadata, preventing the context indicator from resetting to 0% when editing older chats.
 
 ## [0.4.0] - 2026-03-22
 
