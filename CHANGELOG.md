@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-24
+
 ### Added
 - **Dynamic AI Context Limits** — The app now extracts model context-window properties directly from OpenAI-compatible and OpenRouter `/models` payloads, enabling accurate "percentage used" logic for unknown or custom models.
 - **Context Limit Switch Enforcement** — Switching to a model mid-conversation with a context window smaller than current usage is now blocked, triggering a warning modal with an option to start a fresh chat.

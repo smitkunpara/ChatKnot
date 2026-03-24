@@ -460,13 +460,22 @@ const navigation = useNavigation<AppDrawerNavigation>();
         timestamp: Date.now(),
       });
     } else if (knownLimit !== null) {
-      // no historical usage left, reset to zero
+      let estimatedTokens = 0;
+      messages.forEach(m => {
+        estimatedTokens += Math.ceil((m.content?.length || 0) / 4);
+        if (m.reasoning) estimatedTokens += Math.ceil(m.reasoning.length / 4);
+      });
+      // Fallback: estimate usage if messages exist but lack explicit tracking (legacy chats)
       usageStore.updateUsage({
         conversationId,
         providerId,
         model,
         contextLimit: knownLimit,
-        lastUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        lastUsage: { 
+          promptTokens: estimatedTokens, 
+          completionTokens: 0, 
+          totalTokens: estimatedTokens 
+        },
         timestamp: Date.now(),
       });
     } else {
@@ -812,6 +821,7 @@ const navigation = useNavigation<AppDrawerNavigation>();
     reasoning: string,
     apiRequestDetails?: import('../types').ApiRequestDetails | null,
     thoughtDurationMs?: number,
+    contextUsage?: import('../types').Message['contextUsage'] | null,
   ) => {
 const conversation = useChatStore
       .getState()
@@ -824,6 +834,7 @@ const conversation = useChatStore
         reasoning,
         ...(apiRequestDetails ? { apiRequestDetails } : {}),
         ...(thoughtDurationMs !== undefined ? { thoughtDurationMs } : {}),
+        ...(contextUsage ? { contextUsage } : {}),
       });
     } else {
       addMessage(conversationId, {
@@ -833,6 +844,7 @@ const conversation = useChatStore
         reasoning,
         ...(apiRequestDetails ? { apiRequestDetails } : {}),
         ...(thoughtDurationMs !== undefined ? { thoughtDurationMs } : {}),
+        ...(contextUsage ? { contextUsage } : {}),
       });
     }
 
@@ -975,6 +987,7 @@ if (!currentAssistantMsgId) {
           nextReasoning,
           currentApiRequestDetails,
           options?.thoughtDurationMs ?? finalThoughtDurationMs,
+          finalContextUsage
         );
       }
 

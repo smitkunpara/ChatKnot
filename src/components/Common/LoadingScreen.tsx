@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { resolveStartupVersion, StartupVersionSource } from './loadingVersion';
 
-const FALLBACK_VERSION = '0.4.0';
+const FALLBACK_VERSION = '0.4.1';
 
 interface Props {
   statusMessage: string;
