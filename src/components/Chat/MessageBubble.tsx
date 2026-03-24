@@ -173,7 +173,7 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
                     }
                     if (!block.content.trim()) return null;
                     return (
-                      <View key={`text-${idx}`}>
+                      <View key={`text-${idx}`} style={styles.assistantTextContainer}>
                         <Markdown
                           style={markdownStyles}
                           rules={tableRenderRules}
@@ -237,18 +237,19 @@ export const MessageBubble = React.memo(MessageBubbleComponent);
 export const createStyles = (colors: AppPalette) =>
   StyleSheet.create({
     container: {
-      marginVertical: 6,
       paddingHorizontal: 12,
       width: '100%',
     },
-    toolOnlyContainer: {
-      marginVertical: 2,
-    },
     userContainer: {
       alignItems: 'flex-end',
+      marginVertical: 4,
     },
     assistantContainer: {
       alignItems: 'flex-start',
+      marginVertical: 0,
+    },
+    toolOnlyContainer: {
+      marginVertical: 0,
     },
     messageRow: {
       flexDirection: 'row',
@@ -269,8 +270,11 @@ export const createStyles = (colors: AppPalette) =>
       borderColor: colors.primary,
     },
     assistantContent: {
-      paddingVertical: 4,
+      paddingVertical: 0,
       paddingHorizontal: 2,
+    },
+    assistantTextContainer: {
+      marginVertical: 4,
     },
     toolOnlyAssistantContent: {
       paddingVertical: 0,
@@ -347,7 +351,7 @@ export const createStyles = (colors: AppPalette) =>
       padding: 4,
     },
     toolCallsContainer: {
-      marginBottom: 8,
+      marginBottom: 0,
       width: '100%',
     },
     toolCallsContainerCompact: {
@@ -357,5 +361,6 @@ export const createStyles = (colors: AppPalette) =>
       flexDirection: 'row',
       flexWrap: 'wrap',
       alignItems: 'center',
+      marginVertical: 4,
     },
   });

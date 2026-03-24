@@ -51,54 +51,50 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
   },
   heading1: {
     color: colors.text,
-    marginTop: 4,
-    marginBottom: 10,
+    marginVertical: 4,
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700' as const,
   },
   heading2: {
     color: colors.text,
-    marginTop: 4,
-    marginBottom: 10,
+    marginVertical: 4,
     fontSize: 24,
     lineHeight: 30,
     fontWeight: '700' as const,
   },
   heading3: {
     color: colors.text,
-    marginTop: 4,
-    marginBottom: 8,
+    marginVertical: 4,
     fontSize: 20,
     lineHeight: 26,
     fontWeight: '700' as const,
   },
   heading4: {
     color: colors.text,
-    marginTop: 2,
-    marginBottom: 8,
+    marginVertical: 4,
     fontSize: 18,
     lineHeight: 24,
     fontWeight: '600' as const,
   },
   heading5: {
     color: colors.text,
-    marginBottom: 6,
+    marginVertical: 4,
     fontSize: 16,
     lineHeight: 22,
     fontWeight: '600' as const,
   },
   heading6: {
     color: colors.text,
-    marginBottom: 6,
+    marginVertical: 4,
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '600' as const,
   },
   paragraph: {
     color: colors.text,
-    marginTop: 0,
-    marginBottom: 10,
+    marginTop: 4,
+    marginBottom: 4,
     flexWrap: 'wrap' as const,
   },
   text: {
@@ -143,7 +139,7 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
     fontFamily: 'monospace',
     borderRadius: 8,
     padding: 10,
-    marginVertical: 8,
+    marginVertical: 4,
     overflow: 'hidden' as const,
   },
   pre: {
@@ -152,7 +148,7 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
     borderWidth: 1,
     borderColor: colors.border,
     padding: 0,
-    marginVertical: 8,
+    marginVertical: 4,
     overflow: 'hidden' as const,
   },
   link: {
@@ -164,7 +160,7 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
     borderLeftWidth: 3,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    marginVertical: 6,
+    marginVertical: 4,
   },
   bullet_list_icon: {
     color: colors.text,
@@ -177,15 +173,15 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
   },
   list_item: {
     color: colors.text,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   bullet_list: {
     color: colors.text,
-    marginBottom: 10,
+    marginBottom: 4,
   },
   ordered_list: {
     color: colors.text,
-    marginBottom: 10,
+    marginBottom: 4,
   },
   list_item_content: {
     color: colors.text,
@@ -194,7 +190,7 @@ export const createMarkdownStyles = (colors: AppPalette): MarkdownStyles => ({
   table: {
     borderWidth: 0,
     borderColor: 'transparent',
-    marginVertical: 8,
+    marginVertical: 4,
   },
   thead: {},
   tbody: {},
@@ -228,7 +224,7 @@ export const createTableRenderRules = (colors: AppPalette, columnWidth: number):
         flexDirection: 'column' as const,
       }}
       style={{
-        marginVertical: 8,
+        marginVertical: 4,
         borderWidth: 1,
         borderColor: colors.border,
         borderRadius: 6,

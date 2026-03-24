@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transactional Token Tracking** — Token usage now updates only at the conclusion of a response, preventing UI "flickering" and ensuring the store stays strictly in sync with finalized turn data.
 - **Historical Usage Restoration** — Editing or retrying any historical message now automatically "rewinds" the contextual usage state for that chat, ensuring usage stats match only the surviving history.
 - **New Chat Context Awareness** — The context indicator ring now initializes at 0% for recognized model families on brand-new chats, providing immediate visual feedback before the first turn.
+- **Harmonized Chat Loop Spacing** — Re-engineered the vertical spacing of the entire chat flow, replacing disparate margins with a unified 8px (4+4) grid across API requests, thinking blocks, MCP tools, and markdown content.
+- **Seamless Assistant Turns** — Eliminated interstitial gaps and container padding between consecutive assistant turns in tool-calling loops, creating a single, continuous, and "seam-free" response flow.
 
 ## [0.4.0] - 2026-03-22
 

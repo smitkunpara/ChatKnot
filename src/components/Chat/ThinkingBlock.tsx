@@ -169,7 +169,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
 const createStyles = (colors: AppPalette) =>
     StyleSheet.create({
         container: {
-            marginBottom: 8,
+            marginVertical: 4,
             borderRadius: 10,
             borderWidth: 1,
             borderColor: colors.border,
