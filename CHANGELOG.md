@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New Chat Context Awareness** — The context indicator ring now initializes at 0% for recognized model families on brand-new chats, providing immediate visual feedback before the first turn.
 - **Harmonized Chat Loop Spacing** — Re-engineered the vertical spacing of the entire chat flow, replacing disparate margins with a unified 8px (4+4) grid across API requests, thinking blocks, MCP tools, and markdown content.
 - **Seamless Assistant Turns** — Eliminated interstitial gaps and container padding between consecutive assistant turns in tool-calling loops, creating a single, continuous, and "seam-free" response flow.
+- **Export Context Metadata** — Markdown, PDF (HTML), and JSON exports now permanently record and display the specific AI model name and active mode for every assistant message.
+- **Export Header Cleanup** — Streamlined PDF and Markdown exports by removing redundant top-level conversation titles and dates in favor of the cleaner, inline per-message metadata.
+
+### Changed
+- **JSON Export Strict Compliance** — Refactored the JSON chat export payload to strictly comply with the standard OpenAI messaging schema. Tool outputs are now exclusively mapped to separate `tool` role messages rather than being illegally injected into the `tool_calls` arguments.
 
 ## [0.4.0] - 2026-03-22
 

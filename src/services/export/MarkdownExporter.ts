@@ -58,12 +58,7 @@ function formatToolCallMarkdown(
 
 export function toMarkdown(conversation: Conversation, opts: MarkdownExportOptions): string {
   const lines: string[] = [];
-  lines.push(`# ${conversation.title}`);
-  lines.push('');
-  lines.push(`**Date:** ${formatLocalDateTime(conversation.createdAt || conversation.updatedAt)}`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
+
 
   const toolMessages = conversation.messages.filter(m => m.role === 'tool');
 
@@ -73,6 +68,16 @@ export function toMarkdown(conversation: Conversation, opts: MarkdownExportOptio
     const label = msg.role === 'user' ? '**You**' : '**Assistant**';
     const time = formatLocalDateTime(msg.timestamp);
     lines.push(`### ${label} — ${time}`);
+    
+    if (msg.role === 'assistant' && msg.apiRequestDetails) {
+      const details = [];
+      if (msg.apiRequestDetails.model) details.push(`Model: \`${msg.apiRequestDetails.model}\``);
+      if (msg.apiRequestDetails.modeName) details.push(`Mode: \`${msg.apiRequestDetails.modeName}\``);
+      if (details.length > 0) {
+        lines.push(`*${details.join(' | ')}*`);
+      }
+    }
+
     lines.push('');
 
     if (opts.includeThinking && msg.reasoning?.trim()) {

@@ -15,8 +15,6 @@ interface OpenAiToolCall {
   id: string;
   type: 'function';
   function: OpenAiToolCallFunction;
-  output?: string;
-  error?: string;
 }
 
 interface OpenAiMessage {
@@ -75,16 +73,6 @@ export function toJson(conversation: Conversation, opts: JsonExportOptions): str
             type: 'function',
             function: fn,
           };
-
-          if (opts.includeToolOutput) {
-            const toolMsg = toolMessages.find(m => m.toolCallId === tc.id);
-            if (toolMsg?.content) {
-              toolCall.output = toolMsg.content;
-            }
-            if (tc.error) {
-              toolCall.error = tc.error;
-            }
-          }
 
           toolCallsArray.push(toolCall);
         }

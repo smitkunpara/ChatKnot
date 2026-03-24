@@ -70,6 +70,15 @@ export function toHtml(conversation: Conversation, opts: HtmlExportOptions): str
     let block = `<div class="message ${roleClass}">`;
     block += `<div class="message-header"><strong>${label}</strong><span class="time">${escapeHtml(time)}</span></div>`;
 
+    if (!isUser && msg.apiRequestDetails) {
+      const details = [];
+      if (msg.apiRequestDetails.model) details.push(`Model: <code>${escapeHtml(msg.apiRequestDetails.model)}</code>`);
+      if (msg.apiRequestDetails.modeName) details.push(`Mode: <code>${escapeHtml(msg.apiRequestDetails.modeName)}</code>`);
+      if (details.length > 0) {
+        block += `<div class="message-meta">${details.join(' | ')}</div>`;
+      }
+    }
+
     if (opts.includeThinking && msg.reasoning?.trim()) {
       const renderedReasoning = renderMarkdownSafe(msg.reasoning.trim());
       block += `<div class="thinking"><strong>Thought:</strong><div class="thinking-content">${renderedReasoning}</div></div>`;
@@ -109,6 +118,7 @@ export function toHtml(conversation: Conversation, opts: HtmlExportOptions): str
     .message-content h2 { font-size: 16px; }
     .message-content h3 { font-size: 14px; }
     .message-content p { margin: 4px 0; }
+    .message-meta { margin-bottom: 8px; font-size: 12px; color: #666; font-style: italic; }
     .message-content ul, .message-content ol { margin: 4px 0; padding-left: 20px; }
     .message-content li { margin: 2px 0; }
     .message-content blockquote { border-left: 3px solid #ccc; margin: 8px 0; padding: 4px 12px; color: #555; }
@@ -128,9 +138,6 @@ export function toHtml(conversation: Conversation, opts: HtmlExportOptions): str
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(conversation.title)}</h1>
-  <div class="meta">${formatLocalDateTime(conversation.createdAt || conversation.updatedAt)}</div>
-  <hr>
   ${messageBlocks.join('\n  ')}
 </body>
 </html>`;
