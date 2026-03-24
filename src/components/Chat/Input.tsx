@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import uuid from 'react-native-uuid';
 import { ChevronDown, FileText, ImageIcon, Plus, Send, StopCircle, X } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
@@ -116,7 +115,6 @@ const { colors } = useAppTheme();
 
   const handleSend = () => {
 if (!currentText.trim() && attachments.length === 0) return;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(currentText.trim());
     if (isControlled) {
       onChangeText?.('');
@@ -180,7 +178,6 @@ try {
   };
 
   const showAttachmentOptions = () => {
-void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowAttachmentMenu(true);
   };
 

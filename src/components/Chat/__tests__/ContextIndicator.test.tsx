@@ -123,24 +123,16 @@ describe('ContextIndicator helpers', () => {
       'conv-1': entry,
     };
 
-    it('returns data when provider and model match', () => {
-      expect(selectContextUsageForConversation(usageByConversation, 'conv-1', 'openai', 'gpt-4o')).toEqual(entry);
-    });
-
-    it('returns null when provider mismatches', () => {
-      expect(selectContextUsageForConversation(usageByConversation, 'conv-1', 'anthropic', 'gpt-4o')).toBeNull();
-    });
-
-    it('returns null when model mismatches', () => {
-      expect(selectContextUsageForConversation(usageByConversation, 'conv-1', 'openai', 'gpt-3.5-turbo')).toBeNull();
+    it('returns data when conversation exists', () => {
+      expect(selectContextUsageForConversation(usageByConversation, 'conv-1')).toEqual(entry);
     });
 
     it('returns null when conversation is missing', () => {
-      expect(selectContextUsageForConversation(usageByConversation, 'missing', 'openai', 'gpt-4o')).toBeNull();
+      expect(selectContextUsageForConversation(usageByConversation, 'missing')).toBeNull();
     });
 
     it('returns null when conversation id is null', () => {
-      expect(selectContextUsageForConversation(usageByConversation, null, 'openai', 'gpt-4o')).toBeNull();
+      expect(selectContextUsageForConversation(usageByConversation, null)).toBeNull();
     });
   });
 });

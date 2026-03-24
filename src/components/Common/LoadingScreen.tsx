@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -6,12 +6,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { resolveStartupVersion, StartupVersionSource } from './loadingVersion';
 
-const FALLBACK_VERSION = '0.4.1';
+const APP_VERSION = '0.4.1';
 
 interface Props {
   statusMessage: string;
@@ -22,11 +20,6 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
   const { colors } = useAppTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
-
-  const version = useMemo(
-    () => resolveStartupVersion(Constants as unknown as StartupVersionSource, FALLBACK_VERSION),
-    []
-  );
 
   useEffect(() => {
     const anim = Animated.timing(fadeAnim, {
@@ -58,7 +51,7 @@ export const LoadingScreen: React.FC<Props> = ({ statusMessage, progress }) => {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         <Text style={[styles.title, { color: colors.text }]}>ChatKnot</Text>
-        <Text style={[styles.version, { color: colors.textSecondary }]}>v{version}</Text>
+        <Text style={[styles.version, { color: colors.textSecondary }]}>v{APP_VERSION}</Text>
 
         <View style={styles.spinnerRow}>
           <ActivityIndicator size="small" color={colors.primary} />

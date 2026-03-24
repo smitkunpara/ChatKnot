@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
 import { Copy, Edit2, FileText, RotateCcw } from 'lucide-react-native';
 import { Message, ApiRequestDetails } from '../../types';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
@@ -71,7 +70,6 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
   const shouldHideBubble = isSystem || isTool || (!shouldRenderBubble && !shouldShowAssistant);
 
   const copyToClipboard = async () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await Clipboard.setStringAsync(message.content || '');
   };
 

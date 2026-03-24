@@ -14,7 +14,6 @@ import { MessageSquare, PlusCircle, Search, Settings as SettingsIcon, Trash2 } f
 import { useChatStore } from '../../store/useChatStore';
 import { useChatDraftStore } from '../../store/useChatDraftStore';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
-import * as Haptics from 'expo-haptics';
 import {
   getSidebarConversationLabel,
   getSidebarNewChatCtaLabel,
@@ -90,7 +89,6 @@ export const Sidebar: React.FC<DrawerContentComponentProps> = (props) => {
   };
 
   const handleDelete = (id: string) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       'Delete Conversation',
       'This conversation will be permanently deleted. This cannot be undone.',

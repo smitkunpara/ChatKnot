@@ -5,9 +5,15 @@ All notable changes to ChatKnot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [0.4.1] - 2026-03-24
+
+### Removed
+- **Reduced Bundle Size** — Removed unused dependencies to minimize APK size:
+  - `react-native-reanimated` (~4.1.1) — unused, animations use standard React Native Animated API
+  - `react-native-worklets` (0.5.1) — unused, required by reanimated
+  - `react-native-url-polyfill` — unused, built into React Native 0.81+
+  - `text-encoding-polyfill` — unused, built into React Native 0.81+
+  - `expo-constants` — replaced with static version in LoadingScreen
 
 ### Added
 - **Dynamic AI Context Limits** — The app now extracts model context-window properties directly from OpenAI-compatible and OpenRouter `/models` payloads, enabling accurate "percentage used" logic for unknown or custom models.

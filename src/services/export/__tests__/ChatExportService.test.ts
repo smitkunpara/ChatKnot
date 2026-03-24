@@ -90,10 +90,11 @@ describe('MarkdownExporter', () => {
   it('exports markdown without thinking block when includeThinking is false', () => {
     const markdown = toMarkdown(conversation, markdownOpts);
 
-    expect(markdown).toContain('# Export Test Chat');
     expect(markdown).not.toContain('<summary><strong>Thought</strong>');
     expect(markdown).toContain('lookup_weather');
     expect(markdown).not.toContain('tool output payload');
+    expect(markdown).toContain('### **You**');
+    expect(markdown).toContain('### **Assistant**');
   });
 
   it('exports markdown with thinking block when includeThinking is true', () => {
@@ -103,7 +104,18 @@ describe('MarkdownExporter', () => {
     };
     const markdown = toMarkdown(conversation, opts);
 
-    expect(markdown).toContain('# Export Test Chat');
+    expect(markdown).toContain('<summary><strong>Thought</strong>');
+    expect(markdown).toContain('internal thought');
+    expect(markdown).toContain('lookup_weather');
+  });
+
+  it('exports markdown with thinking block when includeThinking is true', () => {
+    const opts: MarkdownExportOptions = {
+      ...markdownOpts,
+      includeThinking: true,
+    };
+    const markdown = toMarkdown(conversation, opts);
+
     expect(markdown).toContain('<summary><strong>Thought</strong>');
     expect(markdown).toContain('internal thought');
     expect(markdown).toContain('lookup_weather');
@@ -261,7 +273,10 @@ describe('JsonExporter', () => {
     const opts: JsonExportOptions = { includeToolInput: true, includeToolOutput: true };
     const payload = JSON.parse(toJson(convWithError, opts));
 
-    expect(payload.messages[1].tool_calls[0].output).toBe('sunny');
+    // OpenAI-compatible format: tool output is in separate tool role message
+    const toolMsg = payload.messages.find((m: { role: string }) => m.role === 'tool');
+    expect(toolMsg.content).toBe('sunny');
+    expect(toolMsg.tool_call_id).toBe('tc-1');
   });
 
   it('includes system_prompt in payload', () => {
