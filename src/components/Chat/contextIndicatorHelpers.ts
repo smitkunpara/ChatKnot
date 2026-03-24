@@ -2,17 +2,10 @@ import { type ContextUsageData } from '../../store/useContextUsageStore';
 
 export const selectContextUsageForConversation = (
   usageByConversation: Record<string, ContextUsageData>,
-  conversationId: string | null,
-  providerId: string,
-  model: string
+  conversationId: string | null
 ): ContextUsageData | null => {
   if (!conversationId) return null;
-
-  const data = usageByConversation[conversationId];
-  if (!data) return null;
-  if (data.providerId !== providerId || data.model !== model) return null;
-
-  return data;
+  return usageByConversation[conversationId] ?? null;
 };
 
 export const getPromptUsageRatio = (usageData: ContextUsageData | null): number => {

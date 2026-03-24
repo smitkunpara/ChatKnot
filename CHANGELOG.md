@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **Android-Only Project Cleanup** — Removed iOS project files/folders and iOS-specific build/version-check paths so the repository now targets Android packaging only, including older branches of the build workflow.
-- **Single Android Artifact Strategy** — Removed multi-ABI split artifact generation and now build only the latest supported Android target.
-- **APK Output Filename Format** — Release APK output now uses the simplified format `ChatKnot_<version>.apk` (example: `ChatKnot_0.4.0.apk`).
+### Added
+- **Dynamic AI Context Limits** — The app now extracts model context-window properties directly from OpenAI-compatible and OpenRouter `/models` payloads, enabling accurate "percentage used" logic for unknown or custom models.
+- **Context Limit Switch Enforcement** — Switching to a model mid-conversation with a context window smaller than current usage is now blocked, triggering a warning modal with an option to start a fresh chat.
+- **Transactional Token Tracking** — Token usage now updates only at the conclusion of a response, preventing UI "flickering" and ensuring the store stays strictly in sync with finalized turn data.
+- **Historical Usage Restoration** — Editing or retrying any historical message now automatically "rewinds" the contextual usage state for that chat, ensuring usage stats match only the surviving history.
+- **New Chat Context Awareness** — The context indicator ring now initializes at 0% for recognized model families on brand-new chats, providing immediate visual feedback before the first turn.
 
 ## [0.4.0] - 2026-03-22
 
@@ -25,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Android Reinstall Data Policy** — Disabled Android backup restore (`android:allowBackup="false"`) so uninstall/reinstall starts from a fresh local app state.
 - **Storage Core Cleanup** — Centralized all MMKV/Vault key aliases into a single constant registry to prevent future alias mismatches across migrations and deletion flows.
 - **Comprehensive Test Coverage** — Dramatically expanded test coverage (now at 273 tests) specifically targeting OpenAPI routing logic, context usage persistence, and local data reset boundaries.
+- **Android-Only Project Cleanup** — Removed iOS project files/folders and iOS-specific build/version-check paths so the repository now targets Android packaging only, including older branches of the build workflow.
+- **Single Android Artifact Strategy** — Removed multi-ABI split artifact generation and now build only the latest supported Android target.
+- **APK Output Filename Format** — Release APK output now uses the simplified format `ChatKnot_<version>.apk` (example: `ChatKnot_0.4.0.apk`).
 
 ### Optimized
 - **Android Binary Size Reduction** — Reduced APK size from ~142MB to ~45MB (68% reduction) for modern devices by enabling R8 minification, resource shrinking, and ABI splitting.

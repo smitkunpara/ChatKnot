@@ -10,7 +10,8 @@ import {
 import Svg, { Circle } from 'react-native-svg';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
 import { useContextUsageStore } from '../../store/useContextUsageStore';
-import { formatTokenCount } from '../../utils/modelContextLimits';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { formatTokenCount, getContextLimitForModelIfKnown } from '../../utils/modelContextLimits';
 import {
   selectContextUsageForConversation,
   getPromptUsageRatio,
@@ -34,15 +35,44 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [popupVisible, setPopupVisible] = useState(false);
 
-  const usageData = useContextUsageStore(
-    (state) =>
-      selectContextUsageForConversation(
-        state.usageByConversation,
-        conversationId,
-        providerId,
-        model
-      )
+  const rawUsageData = useContextUsageStore(
+    (state) => selectContextUsageForConversation(state.usageByConversation, conversationId)
   );
+
+  const getDynamicContextLimit = useCallback(() => {
+    const provider = useSettingsStore.getState().providers.find(p => p.id === providerId);
+    if (provider?.modelCapabilities && provider.modelCapabilities[model]?.contextLimit) {
+      return provider.modelCapabilities[model].contextLimit!;
+    }
+    return getContextLimitForModelIfKnown(model) || 0;
+  }, [providerId, model]);
+
+  const usageData = useMemo(() => {
+    const knownLimit = getDynamicContextLimit();
+    
+    // If no stored usage data AND no known context limit, hide the interactive ring entirely
+    // (show disabled generic dot).
+    if (!rawUsageData && knownLimit === 0) {
+      return null;
+    }
+
+    // Adapt to current limits or fabricate neutral state for a brand new chat.
+    const unadapted = rawUsageData || {
+      conversationId: conversationId || '',
+      providerId,
+      model,
+      contextLimit: knownLimit,
+      lastUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      timestamp: Date.now(),
+    };
+
+    return {
+      ...unadapted,
+      providerId,
+      model,
+      contextLimit: knownLimit,
+    };
+  }, [rawUsageData, providerId, model, getDynamicContextLimit, conversationId]);
 
   const fillPercent = useMemo(() => getPromptUsageRatio(usageData), [usageData]);
   const usagePercent = useMemo(() => getPromptUsagePercent(usageData), [usageData]);
@@ -55,7 +85,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   const strokeWidth = 2.5;
   const radius = 10;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - fillPercent);
+  const strokeDashoffset = usageData ? circumference * (1 - fillPercent) : circumference;
 
   const fillColor = useMemo(() => {
     if (fillPercent > 0.9) return colors.danger;
@@ -159,7 +189,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
                 <View style={styles.popupRow}>
                   <Text style={styles.popupLabel}>Context Limit</Text>
                   <Text style={styles.popupValue}>
-                    {usageData ? formatTokenCount(usageData.contextLimit) : 'N/A'} tokens
+                    {usageData && usageData.contextLimit > 0 ? formatTokenCount(usageData.contextLimit) : 'N/A'} tokens
                   </Text>
                 </View>
 
@@ -206,7 +236,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
                   </Text>
                 </View>
 
-                {usageData?.lastUsage.promptTokens !== undefined && usageData && (
+                {usageData?.lastUsage.promptTokens !== undefined && usageData?.contextLimit > 0 && (
                   <Text style={styles.remainingText}>
                     {formatTokenCount(remainingTokens)} tokens remaining
                   </Text>

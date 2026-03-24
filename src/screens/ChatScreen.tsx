@@ -31,7 +31,7 @@ import { WarningModal } from '../components/Chat/WarningModal';
 import { ExportModal } from '../components/Chat/ExportModal';
 import { ToolCall, Attachment, Message } from '../types';
 import { useContextUsageStore } from '../store/useContextUsageStore';
-import { getContextLimitForModel } from '../utils/modelContextLimits';
+import { getContextLimitForModel, getContextLimitForModelIfKnown } from '../utils/modelContextLimits';
 import { useAppTheme, AppPalette } from '../theme/useAppTheme';
 import {
   CHAT_NO_MODEL_AVAILABLE_MESSAGE,
@@ -258,6 +258,7 @@ const navigation = useNavigation<AppDrawerNavigation>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [visionWarningVisible, setVisionWarningVisible] = useState(false);
   const [toolsWarningVisible, setToolsWarningVisible] = useState(false);
+  const [contextWarningVisible, setContextWarningVisible] = useState(false);
   const [enabledMcpToolsCount, setEnabledMcpToolsCount] = useState<number>(() => McpManager.getTools().length);
   const approvalResolversRef = useRef<Map<string, (approved: boolean) => void>>(new Map());
   const toolApprovalConversationIdsRef = useRef<Map<string, string>>(new Map());
@@ -429,6 +430,65 @@ const navigation = useNavigation<AppDrawerNavigation>();
     pendingInstantScrollConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const getDynamicContextLimit = useCallback((providerId: string, model: string) => {
+    const provider = providers.find(p => p.id === providerId);
+    if (provider?.modelCapabilities && provider.modelCapabilities[model]?.contextLimit) {
+      return provider.modelCapabilities[model].contextLimit!;
+    }
+    return getContextLimitForModelIfKnown(model);
+  }, [providers]);
+
+  const restoreContextUsage = useCallback((conversationId: string) => {
+    const chatStore = useChatStore.getState();
+    const conversation = chatStore.conversations.find(c => c.id === conversationId);
+    if (!conversation) return;
+    
+    const messages = conversation.messages || [];
+    const lastMsgWithUsage = [...messages].reverse().find(m => m.contextUsage);
+    const providerId = conversation.providerId;
+    const model = conversation.modelOverride || '';
+    const knownLimit = getDynamicContextLimit(providerId, model);
+    
+    const usageStore = useContextUsageStore.getState();
+    if (lastMsgWithUsage && lastMsgWithUsage.contextUsage && knownLimit !== null) {
+      usageStore.updateUsage({
+        conversationId,
+        providerId,
+        model,
+        contextLimit: knownLimit,
+        lastUsage: lastMsgWithUsage.contextUsage,
+        timestamp: Date.now(),
+      });
+    } else if (knownLimit !== null) {
+      // no historical usage left, reset to zero
+      usageStore.updateUsage({
+        conversationId,
+        providerId,
+        model,
+        contextLimit: knownLimit,
+        lastUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        timestamp: Date.now(),
+      });
+    } else {
+      // if unknown limit, we clear it out
+      usageStore.clearUsage(conversationId);
+    }
+  }, [getDynamicContextLimit]);
+
+  const syncContextUsageWithModel = useCallback((conversationId: string, providerId: string, model: string) => {
+    const usageStore = useContextUsageStore.getState();
+    const existingUsage = usageStore.getUsage(conversationId);
+    if (!existingUsage) return;
+    const knownLimit = getDynamicContextLimit(providerId, model);
+    if (knownLimit === null) return; // Don't write unknown defaults into the store
+    usageStore.updateUsage({
+      ...existingUsage,
+      providerId,
+      model,
+      contextLimit: knownLimit,
+    });
+  }, []);
+
   useEffect(() => {
     if (!activeConversation || !modelResolution.selection) {
       return;
@@ -441,6 +501,7 @@ const navigation = useNavigation<AppDrawerNavigation>();
 
     if (currentProviderId !== nextProviderId || currentModel !== nextModel) {
       updateModelInConversation(activeConversation.id, nextProviderId, nextModel);
+      syncContextUsageWithModel(activeConversation.id, nextProviderId, nextModel);
     }
 
     if (
@@ -550,6 +611,7 @@ const navigation = useNavigation<AppDrawerNavigation>();
         setChatError(null);
         clearStopRequested(conversationId);
         editMessage(conversationId, candidate.id, candidate.content);
+        restoreContextUsage(conversationId);
         userScrolledAwayRef.current = false;
         pendingInstantScrollConversationIdRef.current = conversationId;
         beginRequest(conversationId);
@@ -624,8 +686,18 @@ const navigation = useNavigation<AppDrawerNavigation>();
     if (nextSelectionKey && nextSelectionKey !== previousModelSelectionRef.current) {
       previousModelSelectionRef.current = nextSelectionKey;
 
-      // Show themed vision warning on model switch
-      if (conversationHasImages && !currentModelVisionSupported) {
+      let showContextWarning = false;
+      if (modelResolution.selection && activeConversationId) {
+        const nextLimit = getDynamicContextLimit(modelResolution.selection.providerId, modelResolution.selection.model);
+        const usageData = useContextUsageStore.getState().getUsage(activeConversationId);
+        if (usageData && nextLimit !== null && usageData.lastUsage.totalTokens > nextLimit) {
+          showContextWarning = true;
+        }
+      }
+
+      if (showContextWarning) {
+        setContextWarningVisible(true);
+      } else if (conversationHasImages && !currentModelVisionSupported) {
         setVisionWarningVisible(true);
       } else if (hasEnabledMcpTools && !currentModelToolsSupported) {
         setToolsWarningVisible(true);
@@ -844,6 +916,7 @@ setChatError(null);
 
     if (editingMessageId) {
       editMessage(conversationId, editingMessageId, text);
+      restoreContextUsage(conversationId);
       setEditingMessageId(null);
       setEditingContent(undefined);
     } else {
@@ -872,6 +945,9 @@ let hasFinalAnswer = false;
     let lastKnownRequestContext: { model: string; modeName?: string; providerUrl: string } | null = null;
     let thoughtStartedAt: number | null = null;
     let finalThoughtDurationMs: number | undefined;
+    let finalContextUsage: import('../store/useContextUsageStore').TokenUsage | null = null;
+    let completedProviderId: string | null = null;
+    let completedModel: string | null = null;
 
     const settleCurrentStream = (options?: {
       content?: string;
@@ -1118,15 +1194,9 @@ setChatError(CHAT_NO_MODEL_AVAILABLE_MESSAGE);
                 currentStreamController?.updateReasoning(streamedReasoning);
               },
               (usage) => {
-                const contextLimit = getContextLimitForModel(selectedModel);
-                useContextUsageStore.getState().updateUsage({
-                  conversationId,
-                  providerId: selectedProviderId,
-                  model: selectedModel,
-                  contextLimit,
-                  lastUsage: usage,
-                  timestamp: Date.now(),
-                });
+                finalContextUsage = usage;
+                completedProviderId = selectedProviderId;
+                completedModel = selectedModel;
               }
             )
             .catch(reject);
@@ -1359,6 +1429,20 @@ const errorStr = serializeToolExecutionError(error);
       }
 
       clearStopRequested(conversationId);
+
+      if (finalContextUsage && completedProviderId && completedModel) {
+        const knownLimit = getDynamicContextLimit(completedProviderId, completedModel);
+        if (knownLimit !== null) {
+          useContextUsageStore.getState().updateUsage({
+            conversationId,
+            providerId: completedProviderId,
+            model: completedModel,
+            contextLimit: knownLimit,
+            lastUsage: finalContextUsage,
+            timestamp: Date.now(),
+          });
+        }
+      }
     }
   };
 
@@ -1592,6 +1676,7 @@ const errorStr = serializeToolExecutionError(error);
             onSelect={(pid, model) => {
               if (activeConversation) {
                 updateModelInConversation(activeConversation.id, pid, model);
+                syncContextUsageWithModel(activeConversation.id, pid, model);
               }
               setLastUsedModel(pid, model);
             }}
@@ -1645,6 +1730,23 @@ const errorStr = serializeToolExecutionError(error);
         }}
         onSecondaryAction={() => setToolsWarningVisible(false)}
         onRequestClose={() => setToolsWarningVisible(false)}
+      />
+
+      <WarningModal
+        visible={contextWarningVisible}
+        title="Context Limit Exceeded"
+        message="The current conversation has used more tokens than the new model's context limit allows. You should start a new chat or switch to a model with a larger context window."
+        primaryActionLabel="Start New Chat"
+        secondaryActionLabel="Switch Model"
+        onPrimaryAction={() => {
+          setContextWarningVisible(false);
+          useChatStore.getState().setActiveConversation(null);
+        }}
+        onSecondaryAction={() => {
+          setContextWarningVisible(false);
+          setTimeout(() => modelSelectorRef.current?.open(), 300);
+        }}
+        onRequestClose={() => setContextWarningVisible(false)}
       />
 
       {/* Mode Selector Modal */}

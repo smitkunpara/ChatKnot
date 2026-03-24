@@ -11,6 +11,7 @@ export interface ModelCapabilities {
   vision: boolean;
   tools: boolean;
   fileInput: boolean;
+  contextLimit?: number;
 }
 
 export interface Attachment {
@@ -49,6 +50,8 @@ export interface Message {
   thoughtDurationMs?: number;
   /** API request metadata persisted for display in the request phase indicator. */
   apiRequestDetails?: ApiRequestDetails;
+  /** Captured context usage at the end of the AI generation turn */
+  contextUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }
 
 export interface Conversation {

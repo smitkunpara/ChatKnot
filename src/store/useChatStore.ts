@@ -62,6 +62,7 @@ interface ChatState {
       updatedAt?: number;
       apiRequestDetails?: ApiRequestDetails;
       thoughtDurationMs?: number;
+      contextUsage?: import('../types').Message['contextUsage'];
     }
   ) => void;
   editMessage: (conversationId: string, messageId: string, newContent: string) => void;
@@ -244,6 +245,7 @@ export const useChatStore = create<ChatState>()(
               reasoning: payload.reasoning ?? message.reasoning,
               ...(payload.apiRequestDetails ? { apiRequestDetails: payload.apiRequestDetails } : {}),
               ...(payload.thoughtDurationMs !== undefined ? { thoughtDurationMs: payload.thoughtDurationMs } : {}),
+              ...(payload.contextUsage ? { contextUsage: payload.contextUsage } : {}),
             })),
             updatedAt: payload.updatedAt ?? Date.now(),
           })),

@@ -281,6 +281,22 @@ export class OpenAiService {
     return false;
   }
 
+  private static extractNumberValue(source: unknown, paths: string[][]): number | undefined {
+    for (const path of paths) {
+      const value = OpenAiService.getNestedValue(source, path);
+      if (typeof value === 'number' && !Number.isNaN(value) && value > 0) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const parsed = parseInt(value, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+    return undefined;
+  }
+
   private static extractCapabilities(model: unknown): ModelCapabilities | null {
     const modalityTokens = OpenAiService.collectTokens(model, [
       ['architecture', 'input_modalities'],
@@ -387,13 +403,29 @@ export class OpenAiService {
       ])
       : undefined;
 
+    const contextLimit = OpenAiService.extractNumberValue(model, [
+      ['context_length'],
+      ['max_tokens'],
+      ['context_window'],
+      ['model_max_length'],
+      ['architecture', 'context_length'],
+      ['architecture', 'max_tokens'],
+      ['capabilities', 'context_length'],
+      ['capabilities', 'max_tokens'],
+      ['model_capabilities', 'context_length'],
+      ['model_capabilities', 'max_tokens'],
+      ['top_provider', 'context_length'],
+      ['top_provider', 'max_tokens'],
+    ]);
+
     const hasSignals =
       explicitVision !== undefined ||
       explicitTools !== undefined ||
       explicitFileInput !== undefined ||
       modalityTokens.size > 0 ||
       parameterTokens.size > 0 ||
-      featureTokens.size > 0;
+      featureTokens.size > 0 ||
+      contextLimit !== undefined;
 
     if (!hasSignals) return null;
 
@@ -404,6 +436,7 @@ export class OpenAiService {
       // Tool-calling remains opt-in by metadata.
       tools: explicitTools ?? inferredTools ?? false,
       fileInput: explicitFileInput ?? inferredFileInput ?? true,
+      contextLimit,
     };
   }
 

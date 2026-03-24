@@ -126,6 +126,39 @@ export const getContextLimitForModel = (model: string): number => {
   return DEFAULT_CONTEXT_LIMIT;
 };
 
+/**
+ * Returns the context limit for a model only if it's explicitly known.
+ * Returns null when the model isn't recognized (so callers can hide UI rather than showing a wrong default).
+ */
+export const getContextLimitForModelIfKnown = (model: string): number | null => {
+  if (!model) return null;
+
+  const normalizedModel = model.toLowerCase().trim();
+
+  if (MODEL_CONTEXT_LIMITS[normalizedModel]) {
+    return MODEL_CONTEXT_LIMITS[normalizedModel];
+  }
+
+  for (const key of SORTED_KEYS) {
+    if (normalizedModel.startsWith(key)) {
+      return MODEL_CONTEXT_LIMITS[key];
+    }
+  }
+
+  if (normalizedModel.includes('gpt-4o')) return 128000;
+  if (normalizedModel.includes('gpt-4')) return 128000;
+  if (normalizedModel.includes('gpt-3.5')) return 16385;
+  if (normalizedModel.includes('claude')) return 200000;
+  if (normalizedModel.includes('gemini')) return 1048576;
+  if (normalizedModel.includes('deepseek')) return 128000;
+  if (normalizedModel.includes('llama')) return 131072;
+  if (normalizedModel.includes('mistral') || normalizedModel.includes('mixtral')) return 32000;
+  if (normalizedModel.includes('qwen')) return 131072;
+  if (normalizedModel.includes('command-r')) return 128000;
+
+  return null;
+};
+
 export const formatTokenCount = (count: number): string => {
   if (count >= 1000000) {
     return `${(count / 1000000).toFixed(1)}M`;
