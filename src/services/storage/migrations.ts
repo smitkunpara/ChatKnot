@@ -64,7 +64,7 @@ interface LegacyConversation {
 }
 
 export interface StorageHardeningBootstrapOptions {
-  legacyStorage?: MigrationStorage;
+  legacyStorage?: MigrationStorage | null;
   encryptedSettingsStorage?: MigrationStorage;
   vault?: MigrationVault;
   logger?: MigrationLogger;
@@ -95,8 +95,8 @@ export interface LegacyMcpServerSecrets {
   headerRefs?: Record<string, string>;
 }
 
-const resolveDefaultLegacyStorage = (): MigrationStorage => {
-  throw new Error('AsyncStorage migration path has been removed in v0.4.1. Migrations are now only supported from MMKV-based versions (0.3.0+).');
+const resolveDefaultLegacyStorage = (): MigrationStorage | null => {
+  return null;
 };
 
 const createDefaultEncryptedStorage = (id: string, keyAlias: string): MigrationStorage => {
@@ -624,7 +624,7 @@ export const executeStorageHardeningBootstrap = async (
   const chatStorageKey = options.chatStorageKey ?? DEFAULT_CHAT_STORAGE_KEY;
   const markerKey = options.markerKey ?? DEFAULT_MIGRATION_MARKER_KEY;
 
-  const legacyStorage = options.legacyStorage ?? resolveDefaultLegacyStorage();
+  const legacyStorage = options.legacyStorage === null ? null : (options.legacyStorage ?? resolveDefaultLegacyStorage());
   const encryptedSettingsStorage =
     options.encryptedSettingsStorage ??
     createDefaultEncryptedStorage(STORAGE_KEYS.SETTINGS_STORAGE, STORAGE_KEYS.SETTINGS_STORAGE_KEY_ALIAS);
@@ -651,7 +651,7 @@ export const executeStorageHardeningBootstrap = async (
       return result;
     }
 
-    const legacySettingsRaw = await legacyStorage.getItem(settingsStorageKey);
+    const legacySettingsRaw = legacyStorage ? await legacyStorage.getItem(settingsStorageKey) : null;
     if (legacySettingsRaw) {
       const migratedSettings = await migratePersistedSettingsPayloadDetailed(legacySettingsRaw, {
         vault,
@@ -670,7 +670,7 @@ export const executeStorageHardeningBootstrap = async (
         settingsStorageKey,
         legacySettingsRaw,
         migratedSettingsRaw,
-        legacyStorage,
+        legacyStorage!,
         logger
       );
     }
@@ -678,9 +678,9 @@ export const executeStorageHardeningBootstrap = async (
     // Chat data is now persisted in encrypted Realm, not in AsyncStorage/MMKV.
     // Legacy chat data in AsyncStorage is cleaned up but not migrated to MMKV
     // since Realm hydration reads exclusively from its own database.
-    const legacyChatRaw = await legacyStorage.getItem(chatStorageKey);
+    const legacyChatRaw = legacyStorage ? await legacyStorage.getItem(chatStorageKey) : null;
     if (legacyChatRaw) {
-      await maybeCleanupLegacyKey(chatStorageKey, legacyChatRaw, legacyChatRaw, legacyStorage, logger);
+      await maybeCleanupLegacyKey(chatStorageKey, legacyChatRaw, legacyChatRaw, legacyStorage!, logger);
     }
 
     if (result.errors.length > 0) {

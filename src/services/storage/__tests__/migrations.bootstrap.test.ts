@@ -126,6 +126,28 @@ describe('executeStorageHardeningBootstrap', () => {
     const marker = await encryptedSettingsStorage.getItem('storage-hardening:migration:v1');
     expect(marker).toBeNull();
   });
+
+  it('handles missing legacy storage gracefully (new v0.4.1 behavior)', async () => {
+    const encryptedSettingsStorage = createStorage();
+    const vault = createVault();
+
+    const result = await executeStorageHardeningBootstrap({
+      legacyStorage: null,
+      encryptedSettingsStorage,
+      vault,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.errors).toEqual([]);
+    expect(result.migratedSettings).toBe(false);
+    expect(result.migratedChat).toBe(false);
+    expect(result.markerWritten).toBe(true);
+
+    const marker = await encryptedSettingsStorage.getItem('storage-hardening:migration:v1');
+    expect(marker).toBeTruthy();
+    const parsedMarker = JSON.parse(marker!);
+    expect(parsedMarker.migratedSettings).toBe(false);
+  });
 });
 
 describe('hydratePersistedSettingsPayload', () => {
