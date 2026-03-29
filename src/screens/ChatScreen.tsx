@@ -88,15 +88,18 @@ const navigation = useNavigation<AppDrawerNavigation>();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
 
-  // Track keyboard visibility for input area adjustments
+  // Track keyboard height for manual input adjustment on Android
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    const showListener = Keyboard.addListener('keyboardDidShow', () => {
+    const showListener = Keyboard.addListener('keyboardDidShow', (e) => {
       setIsKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates.height);
     });
     const hideListener = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
+      setKeyboardHeight(0);
     });
     return () => {
       showListener.remove();
@@ -1516,9 +1519,12 @@ const errorStr = serializeToolExecutionError(error);
           </TouchableOpacity>
         </View>
       )}
-      {/* Main content area with keyboard handling */}
+      {/* Main content area with keyboard handling.
+           Android: We bypass KeyboardAvoidingView entirely and use a manual
+           keyboardHeight margin so the view resets to exactly 0 when dismissed.
+           iOS: Standard KeyboardAvoidingView with 'height' behavior works fine. */}
       <KeyboardAvoidingView
-        behavior="height"
+        behavior={Platform.OS === 'ios' ? 'height' : undefined}
         keyboardVerticalOffset={0}
         style={[styles.content, { justifyContent: 'flex-end' }]}
       >
@@ -1625,7 +1631,11 @@ const errorStr = serializeToolExecutionError(error);
           pointerEvents="none"
         />
 
-        <View style={{ zIndex: 1 }}>
+        {/* On Android, marginBottom = exact keyboard height (resets to 0 on dismiss). */}
+        <View style={[
+          { zIndex: 1 },
+          Platform.OS === 'android' ? { marginBottom: keyboardHeight } : undefined,
+        ]}>
           <Input
             onSend={handleSend}
             isLoading={isActiveConversationLoading}

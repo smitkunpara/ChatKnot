@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
   Modal,
+  Platform,
 } from 'react-native';
 import uuid from 'react-native-uuid';
 import { ChevronDown, FileText, ImageIcon, Plus, Send, StopCircle, X } from 'lucide-react-native';
@@ -83,7 +84,7 @@ export const Input: React.FC<InputProps> = ({
   contextProviderId,
   contextModel,
 }) => {
-const { colors } = useAppTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, insets.bottom, isKeyboardVisible), [colors, insets.bottom, isKeyboardVisible]);
 
@@ -114,7 +115,7 @@ const { colors } = useAppTheme();
   const canSend = (!!currentText.trim() || attachments.length > 0) && !isLoading;
 
   const handleSend = () => {
-if (!currentText.trim() && attachments.length === 0) return;
+    if (!currentText.trim() && attachments.length === 0) return;
     onSend(currentText.trim());
     if (isControlled) {
       onChangeText?.('');
@@ -124,7 +125,7 @@ if (!currentText.trim() && attachments.length === 0) return;
   };
 
   const pickImage = async () => {
-try {
+    try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant access to your photo library to attach images.');
@@ -156,7 +157,7 @@ try {
   };
 
   const pickFile = async () => {
-try {
+    try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'text/*', 'application/json'],
         copyToCacheDirectory: true,
@@ -346,8 +347,10 @@ const createStyles = (colors: AppPalette, insetBottom: number, isKeyboardVisible
     innerWrap: {
       paddingHorizontal: 12,
       paddingTop: 8,
-      // Keyboard open: 10 (close to keyboard), Keyboard closed: 25 (lifted up)
-      paddingBottom: Math.max(insetBottom, isKeyboardVisible ? 12 : 25),
+      // Keyboard lifting is handled upstream via marginBottom in ChatScreen (Android)
+      // or KeyboardAvoidingView (iOS). 
+      // isKeyboardVisible ? 20 : 10 adds a nice gap when the keyboard is open.
+      paddingBottom: Math.max(insetBottom, isKeyboardVisible ? 25 : 10),
     },
     editingBadge: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
