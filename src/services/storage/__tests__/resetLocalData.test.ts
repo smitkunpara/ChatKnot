@@ -142,4 +142,36 @@ describe('resetAllLocalData', () => {
       expect(mockFallbackRemoveItem).toHaveBeenCalledWith(key);
     });
   });
+
+  it('should still reset data when fallback storage is unavailable', async () => {
+    (useChatStore.getState as jest.Mock).mockReturnValue({
+      clearAllChatData: jest.fn(),
+    });
+    (useChatRuntimeStore.getState as jest.Mock).mockReturnValue({
+      resetRuntimeState: jest.fn(),
+    });
+    (useChatDraftStore.getState as jest.Mock).mockReturnValue({
+      clearAllDrafts: jest.fn(),
+    });
+    (useContextUsageStore.getState as jest.Mock).mockReturnValue({
+      clearAllUsage: jest.fn(),
+    });
+    (useSettingsStore.getState as jest.Mock).mockReturnValue({
+      providers: [],
+      mcpServers: [],
+      replaceAllSettings: jest.fn(),
+    });
+
+    (useChatDraftStore as any).persist = { clearStorage: jest.fn() };
+    (useContextUsageStore as any).persist = { clearStorage: jest.fn() };
+    (useSettingsStore as any).persist = { clearStorage: jest.fn() };
+
+    (defaultSecretVault.deleteSecret as jest.Mock).mockResolvedValue(undefined);
+    (resolveDefaultFallbackStorage as jest.Mock).mockImplementation(() => {
+      throw new Error('Persistent storage fallback (AsyncStorage) has been removed in v0.4.1.');
+    });
+
+    await expect(resetAllLocalData()).resolves.toBeUndefined();
+    expect(clearMigrationMarker).toHaveBeenCalled();
+  });
 });

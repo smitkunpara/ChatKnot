@@ -92,7 +92,13 @@ const clearPersistedStoreStorage = async (): Promise<void> => {
 
 export const resetAllLocalData = async (): Promise<void> => {
   const secretKeys = collectSecretKeysForDeletion();
-  const fallbackStorage = resolveDefaultFallbackStorage();
+  let fallbackStorage: ReturnType<typeof resolveDefaultFallbackStorage> | null = null;
+  try {
+    fallbackStorage = resolveDefaultFallbackStorage();
+  } catch {
+    // v0.4.1 removed AsyncStorage fallback; deletion should still proceed.
+    fallbackStorage = null;
+  }
   const fallbackStorageKeys = CONSENT_MARKER_IDS.flatMap((id) => [
     `${id}:plaintext-consent`,
     `${id}:consent-declined`,
@@ -117,9 +123,9 @@ export const resetAllLocalData = async (): Promise<void> => {
 
   await Promise.allSettled([
     ...secretKeys.map((key) => defaultSecretVault.deleteSecret(key)),
-    ...fallbackStorageKeys.map((key) =>
-      fallbackStorage.removeItem(key)
-    ),
+    ...(fallbackStorage
+      ? fallbackStorageKeys.map((key) => fallbackStorage!.removeItem(key))
+      : []),
     clearMigrationMarker(),
   ]);
 };
