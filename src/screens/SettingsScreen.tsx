@@ -4,6 +4,7 @@ import {
   Alert,
   BackHandler,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -17,7 +18,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Trash2, Plus, ChevronRight, X } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
-import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths, readAsStringAsync } from 'expo-file-system';
+import { EncodingType, StorageAccessFramework, writeAsStringAsync } from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { LlmProviderConfig, McpServerConfig, Mode, ModelCapabilities } from '../types';
 import { OpenAiService } from '../services/llm/OpenAiService';
@@ -51,12 +55,19 @@ import {
   hasServerDraftChanges,
 } from './settingsServerPolicy';
 import { applyHealthCheckReport, runStartupHealthCheck, reconcileMcpTools } from '../services/startup/StartupHealthCheck';
-import { validateImportPayload } from '../utils/settingsValidation';
+import { validateAndNormalizeImportSettings } from '../utils/settingsImportSchema.ts';
 import { resetAllLocalData } from '../services/storage/resetLocalData';
 import { ModeEditor } from '../components/settings/ModeEditor';
 import { McpServerEditor } from '../components/settings/McpServerEditor';
 import { ProviderEditor } from '../components/settings/ProviderEditor';
 import { ModelPicker } from '../components/settings/ModelPicker';
+import { StartupWarningBanner } from '../components/Common/StartupWarningBanner';
+import {
+  buildSettingsExportPayload,
+  parseSettingsImport,
+  serializeSettingsExport,
+  SETTINGS_EXPORT_SCHEMA,
+} from '../services/export/settingsTransfer';
 
 const refreshServerTools = async (
   server: McpServerConfig,
@@ -191,8 +202,6 @@ export const SettingsScreen = () => {
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<SettingsView>('index');
-  const [importModalVisible, setImportModalVisible] = useState(false);
-  const [importPayloadText, setImportPayloadText] = useState('');
   const activeViewRef = useRef<SettingsView>('index');
   const saveModeEditorRef = useRef<() => void>(() => {});
   const saveProviderEditorRef = useRef<() => void>(() => {});
@@ -210,6 +219,7 @@ export const SettingsScreen = () => {
   const [loadingModels, setLoadingModels] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
 
   const closeAllEditModes = useCallback(() => {
@@ -814,185 +824,212 @@ export const SettingsScreen = () => {
     setActiveView(nextView);
   };
 
-  const handleExportSettings = async () => {
-    const settingsSnapshot = useSettingsStore.getState();
-    const compactProviders = settingsSnapshot.providers.map((provider) => {
-      // Export only visible models (exclude hidden ones)
-      const hiddenSet = new Set(provider.hiddenModels || []);
-      const visibleModels = (provider.availableModels || []).filter(m => !hiddenSet.has(m));
-      return {
-        id: provider.id,
-        name: provider.name,
-        type: provider.type,
-        baseUrl: provider.baseUrl,
-        apiKeyRef: provider.apiKeyRef,
-        model: provider.model,
-        enabled: !!provider.enabled,
-        availableModels: visibleModels,
-      };
-    });
+  const exportSettingsToFile = useCallback(async (payload: ReturnType<typeof buildSettingsExportPayload>) => {
+    const timestamp = new Date().toISOString().replace(/[.:]/g, '-');
+    const fileName = `chatknot_settings_${timestamp}.json`;
+    const content = serializeSettingsExport(payload);
 
-    const compactModes = settingsSnapshot.modes.map((mode) => ({
-      id: mode.id,
-      name: mode.name,
-      systemPrompt: mode.systemPrompt,
-      isDefault: mode.isDefault,
-      mcpServerOverrides: mode.mcpServerOverrides ?? {},
-    }));
+    if (Platform.OS === 'android') {
+      const directoryPermission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!directoryPermission.granted) {
+        Alert.alert('Export Cancelled', 'No save location was selected.');
+        return;
+      }
 
-    const compactMcpServers = settingsSnapshot.mcpServers.map((server) => {
-      // Export only enabled tools (in allowedTools, or all if allowedTools is empty)
-      const enabledToolNames = (server.allowedTools && server.allowedTools.length > 0)
-        ? new Set(server.allowedTools)
-        : new Set((server.tools || []).map(t => t.name));
-      const enabledTools = (server.tools || []).filter(t => enabledToolNames.has(t.name));
-      const enabledAutoApproved = (server.autoApprovedTools || []).filter(t => enabledToolNames.has(t));
-      return {
-        id: server.id,
-        name: server.name,
-        url: server.url,
-        headerRefs: server.headerRefs || {},
-        tokenRef: server.tokenRef,
-        enabled: !!server.enabled,
-        tools: enabledTools,
-        allowedTools: enabledTools.map((tool) => tool.name),
-        autoApprovedTools: enabledAutoApproved,
-      };
-    });
-
-    const payload = {
-      schema: 'mcp-connector-settings-v1',
-      exportedAt: new Date().toISOString(),
-      settings: {
-        providers: compactProviders,
-        mcpServers: compactMcpServers,
-        modes: compactModes,
-        theme: settingsSnapshot.theme,
-        lastUsedModel: settingsSnapshot.lastUsedModel,
-      },
-    };
-
-    Alert.alert(
-      'Export Settings',
-      'Secrets (API keys, tokens) are NOT included in the export. You will need to re-enter them after importing.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Copy to Clipboard',
-          onPress: async () => {
-            await Clipboard.setStringAsync(JSON.stringify(payload, null, 2));
-            Alert.alert('Settings Exported', 'Settings JSON has been copied to your clipboard.');
-          },
-        },
-      ]
-    );
-  };
-
-  const handleImportSettings = async () => {
-    const raw = importPayloadText.trim();
-    if (!raw) {
-      Alert.alert('Import Error', 'Paste exported settings JSON first.');
+      try {
+        const destinationUri = await StorageAccessFramework.createFileAsync(
+          directoryPermission.directoryUri,
+          fileName,
+          'application/json'
+        );
+        await writeAsStringAsync(destinationUri, content, {
+          encoding: EncodingType.UTF8,
+        });
+        Alert.alert('Export Complete', `Settings saved as ${fileName}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to save settings file.';
+        Alert.alert('Export Error', message);
+      }
       return;
     }
 
-    try {
-      const parsed = JSON.parse(raw);
+    const sharingAvailable = await Sharing.isAvailableAsync();
+    if (!sharingAvailable) {
+      Alert.alert('Export Error', 'File sharing is not available on this device.');
+      return;
+    }
 
-      if (parsed?.schema && parsed.schema !== 'mcp-connector-settings-v1') {
+    const file = new File(Paths.cache, fileName);
+    file.write(content);
+
+    try {
+      await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Export Settings' });
+    } finally {
+      try {
+        file.delete();
+      } catch {
+        // Best effort cleanup after sharing.
+      }
+    }
+  }, []);
+
+  const applyImportedSettings = useCallback(async (settings: unknown) => {
+    const importResult = validateAndNormalizeImportSettings(settings);
+    const importSettings = importResult.settings;
+    const currentSettings = useSettingsStore.getState();
+
+    if (!importResult.hasImportableData) {
+      const skippedPreview = importResult.report.skippedPaths.slice(0, 3);
+      const message = skippedPreview.length > 0
+        ? `No valid importable settings found.\n${skippedPreview.join('\n')}`
+        : 'No valid importable settings found in this JSON file.';
+      Alert.alert('Import Error', message);
+      return;
+    }
+
+    // Handle legacy imports that have mcpServers/systemPrompt at top level (no modes)
+    let importedModes = Array.isArray(importSettings.modes)
+      ? importSettings.modes
+      : currentSettings.modes;
+    let importedMcpServers = Array.isArray(importSettings.mcpServers)
+      ? importSettings.mcpServers
+      : currentSettings.mcpServers;
+    if (
+      Array.isArray(importSettings.mcpServers)
+      && (!Array.isArray(importSettings.modes) || importSettings.modes.length === 0)
+    ) {
+      const overrides: Record<string, { enabled: boolean }> = {};
+      for (const server of importedMcpServers) {
+        if (server?.id) {
+          overrides[server.id] = { enabled: !!server.enabled };
+        }
+      }
+      importedModes = [{
+        id: uuid.v4() as string,
+        name: 'Default',
+        systemPrompt: typeof importSettings.systemPrompt === 'string' ? importSettings.systemPrompt : '',
+        mcpServerOverrides: overrides,
+        isDefault: true,
+      }];
+    }
+
+    const importedProviders = Array.isArray(importSettings.providers)
+      ? importSettings.providers.map((provider: LlmProviderConfig) => ({ ...provider, hiddenModels: [] as string[] }))
+      : currentSettings.providers;
+
+    const sanitizedMcpServers = importedMcpServers.map((server: McpServerConfig) => {
+      const allowed: string[] = Array.isArray(server.allowedTools) ? server.allowedTools : [];
+      const autoApproved: string[] = Array.isArray(server.autoApprovedTools) ? server.autoApprovedTools : [];
+      const enabledSet = allowed.length > 0
+        ? new Set(allowed)
+        : new Set((server.tools || []).map((tool) => tool.name));
+      return {
+        ...server,
+        autoApprovedTools: autoApproved.filter((toolName: string) => enabledSet.has(toolName)),
+      };
+    });
+
+    replaceAllSettings({
+      providers: importedProviders,
+      mcpServers: sanitizedMcpServers,
+      modes: importedModes,
+      theme: importSettings.theme ?? currentSettings.theme,
+      lastUsedModel: importSettings.lastUsedModel ?? currentSettings.lastUsedModel,
+    });
+
+    const updated = useSettingsStore.getState();
+    const allMcpServers = updated.mcpServers;
+    const report = await runStartupHealthCheck(
+      allMcpServers,
+      updated.providers,
+      () => { }
+    );
+
+    applyHealthCheckReport(
+      report,
+      allMcpServers,
+      updated.providers,
+      updateMcpServer,
+      updated.updateProvider
+      );
+    closeAllEditModes();
+    setActiveView('index');
+
+    const totalMcpServers = updated.mcpServers.length;
+    const importReportMessages: string[] = [];
+    if (importResult.report.importedSections.length > 0) {
+      importReportMessages.push(`Imported sections: ${importResult.report.importedSections.join(', ')}`);
+    }
+    if (importResult.report.ignoredPaths.length > 0) {
+      importReportMessages.push(
+        `Ignored extra keys (${importResult.report.ignoredPaths.length}): ${importResult.report.ignoredPaths.slice(0, 6).join(', ')}`
+      );
+    }
+    if (importResult.report.skippedPaths.length > 0) {
+      importReportMessages.push(
+        `Skipped invalid entries (${importResult.report.skippedPaths.length}): ${importResult.report.skippedPaths.slice(0, 6).join(' | ')}`
+      );
+    }
+
+    if (report.warnings.length === 0 && importReportMessages.length === 0) {
+      Alert.alert(
+        'Import Complete',
+        `All ${updated.providers.length} providers and ${totalMcpServers} MCP servers verified successfully.`
+      );
+    } else {
+      setImportWarnings([...importReportMessages, ...report.warnings]);
+    }
+  }, [closeAllEditModes, replaceAllSettings, updateMcpServer]);
+
+  const handleExportSettings = async () => {
+    const settingsSnapshot = useSettingsStore.getState();
+    const payload = buildSettingsExportPayload(settingsSnapshot);
+
+    setConfirmDialog({
+      title: 'Export Settings',
+      message: 'Warning: This JSON export is NOT encrypted and may include API keys, tokens, and header secrets. Continue only if you trust where this file will be stored/shared.',
+      buttons: [
+        { label: 'Cancel', style: 'cancel', onPress: () => setConfirmDialog(null) },
+        {
+          label: 'Export',
+          style: 'primary',
+          onPress: () => {
+            setConfirmDialog(null);
+            void exportSettingsToFile(payload);
+          },
+        },
+      ],
+    });
+  };
+
+  const handleImportSettings = async () => {
+    const picked = await DocumentPicker.getDocumentAsync({
+      type: [
+        'application/json',
+        'text/json',
+      ],
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+
+    if (picked.canceled || !picked.assets[0]) {
+      return;
+    }
+
+    const selectedFile = picked.assets[0];
+    const raw = await readAsStringAsync(selectedFile.uri);
+
+    try {
+      const parsed = parseSettingsImport(raw, selectedFile.name);
+
+      if (parsed.schema && parsed.schema !== SETTINGS_EXPORT_SCHEMA) {
         Alert.alert('Import Error', 'Unsupported settings format version.');
         return;
       }
 
-      const settings = parsed?.settings || parsed;
-
-      const validationError = validateImportPayload(settings);
-      if (validationError) {
-        Alert.alert('Import Error', validationError);
-        return;
-      }
-
-      // Handle legacy imports that have mcpServers/systemPrompt at top level (no modes)
-      let importedModes = settings?.modes;
-      let importedMcpServers = Array.isArray(settings?.mcpServers) ? settings.mcpServers : [];
-      if (!Array.isArray(importedModes) || importedModes.length === 0) {
-        // Build overrides from legacy servers
-        const overrides: Record<string, { enabled: boolean }> = {};
-        for (const s of importedMcpServers) {
-          if (s?.id) {
-            overrides[s.id] = { enabled: !!s.enabled };
-          }
-        }
-        importedModes = [{
-          id: uuid.v4() as string,
-          name: 'Default',
-          systemPrompt: typeof settings?.systemPrompt === 'string' ? settings.systemPrompt : '',
-          mcpServerOverrides: overrides,
-          isDefault: true,
-        }];
-      }
-
-      // Sanitize providers: drop hiddenModels (not tracked in new exports;
-      // post-import health check will discover and hide new models automatically)
-      const importedProviders = Array.isArray(settings?.providers)
-        ? settings.providers.map((p: LlmProviderConfig) => ({ ...p, hiddenModels: [] as string[] }))
-        : settings?.providers;
-
-      // Sanitize MCP servers: drop autoApprovedTools that are not also enabled
-      const sanitizedMcpServers = importedMcpServers.map((s: McpServerConfig) => {
-        const allowed: string[] = Array.isArray(s.allowedTools) ? s.allowedTools : [];
-        const autoApproved: string[] = Array.isArray(s.autoApprovedTools) ? s.autoApprovedTools : [];
-        const enabledSet = allowed.length > 0
-          ? new Set(allowed)
-          : new Set((s.tools || []).map((t) => t.name));
-        return {
-          ...s,
-          autoApprovedTools: autoApproved.filter((t: string) => enabledSet.has(t)),
-        };
-      });
-
-      replaceAllSettings({
-        providers: importedProviders,
-        mcpServers: sanitizedMcpServers,
-        modes: importedModes,
-        theme: settings?.theme,
-        lastUsedModel: settings?.lastUsedModel,
-      });
-
-      const updated = useSettingsStore.getState();
-      const allMcpServers = updated.mcpServers;
-      const report = await runStartupHealthCheck(
-        allMcpServers,
-        updated.providers,
-        () => { }
-      );
-
-      // Apply provider-level results
-      applyHealthCheckReport(
-        report,
-        allMcpServers,
-        updated.providers,
-        updateMcpServer,
-        updated.updateProvider
-        );
-      setImportPayloadText('');
-      setImportModalVisible(false);
-      closeAllEditModes();
-      setActiveView('index');
-
-      const totalMcpServers = updated.mcpServers.length;
-      if (report.warnings.length === 0) {
-        Alert.alert(
-          'Import Complete',
-          `All ${updated.providers.length} providers and ${totalMcpServers} MCP servers verified successfully.`
-        );
-      } else {
-        Alert.alert(
-          'Import Summary',
-          report.warnings.map(w => `• ${w}`).join('\n')
-        );
-      }
+      await applyImportedSettings(parsed.settings);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Invalid JSON format. Please paste a valid exported payload.';
+      const message = error instanceof Error ? error.message : 'Unable to read selected file.';
       Alert.alert('Import Error', message);
     }
   };
@@ -1061,7 +1098,7 @@ export const SettingsScreen = () => {
                 <TouchableOpacity style={[styles.themePill, styles.themePillActive]} onPress={() => void handleExportSettings()}>
                   <Text style={[styles.themePillText, styles.themePillTextActive]}>Export</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.themePill} onPress={() => setImportModalVisible(true)}>
+                <TouchableOpacity style={styles.themePill} onPress={() => void handleImportSettings()}>
                   <Text style={styles.themePillText}>Import</Text>
                 </TouchableOpacity>
               </View>
@@ -1397,41 +1434,6 @@ export const SettingsScreen = () => {
       </Modal>
 
       <Modal
-        visible={importModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setImportModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Import Settings JSON</Text>
-              <TouchableOpacity onPress={() => setImportModalVisible(false)}>
-                <Text style={styles.modalClose}>Close</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                multiline
-                scrollEnabled
-                value={importPayloadText}
-                onChangeText={setImportPayloadText}
-                placeholder="Paste exported settings JSON..."
-                placeholderTextColor={colors.placeholder}
-              />
-
-              <TouchableOpacity style={styles.primaryButton} onPress={handleImportSettings}>
-                <Plus size={16} color={colors.onPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
-                <Text style={styles.primaryButtonText}>Import Settings</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
         visible={confirmDialog !== null}
         transparent
         animationType="fade"
@@ -1465,6 +1467,12 @@ export const SettingsScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <StartupWarningBanner
+        warnings={importWarnings}
+        visible={importWarnings.length > 0}
+        onDismiss={() => setImportWarnings([])}
+      />
     </SafeAreaView>
   );
 };
