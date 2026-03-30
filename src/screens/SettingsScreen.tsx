@@ -19,7 +19,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Trash2, Plus, ChevronRight, X } from 'lucide-react-native';
 import uuid from 'react-native-uuid';
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Paths, readAsStringAsync } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import { EncodingType, StorageAccessFramework, writeAsStringAsync } from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -61,7 +61,6 @@ import { ModeEditor } from '../components/settings/ModeEditor';
 import { McpServerEditor } from '../components/settings/McpServerEditor';
 import { ProviderEditor } from '../components/settings/ProviderEditor';
 import { ModelPicker } from '../components/settings/ModelPicker';
-import { StartupWarningBanner } from '../components/Common/StartupWarningBanner';
 import {
   buildSettingsExportPayload,
   parseSettingsImport,
@@ -219,7 +218,8 @@ export const SettingsScreen = () => {
   const [loadingModels, setLoadingModels] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [importProgressVisible, setImportProgressVisible] = useState(false);
+  const [importProgressMessage, setImportProgressMessage] = useState('Importing data...');
 
 
   const closeAllEditModes = useCallback(() => {
@@ -845,10 +845,18 @@ export const SettingsScreen = () => {
         await writeAsStringAsync(destinationUri, content, {
           encoding: EncodingType.UTF8,
         });
-        Alert.alert('Export Complete', `Settings saved as ${fileName}.`);
+        setConfirmDialog({
+          title: 'Export Complete',
+          message: `Settings saved as ${fileName}.`,
+          buttons: [{ label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) }],
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to save settings file.';
-        Alert.alert('Export Error', message);
+        setConfirmDialog({
+          title: 'Export Error',
+          message,
+          buttons: [{ label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) }],
+        });
       }
       return;
     }
@@ -883,8 +891,7 @@ export const SettingsScreen = () => {
       const message = skippedPreview.length > 0
         ? `No valid importable settings found.\n${skippedPreview.join('\n')}`
         : 'No valid importable settings found in this JSON file.';
-      Alert.alert('Import Error', message);
-      return;
+      throw new Error(message);
     }
 
     // Handle legacy imports that have mcpServers/systemPrompt at top level (no modes)
@@ -942,7 +949,9 @@ export const SettingsScreen = () => {
     const report = await runStartupHealthCheck(
       allMcpServers,
       updated.providers,
-      () => { }
+      (_phase, msg) => {
+        setImportProgressMessage(`Verifying data... ${msg}`);
+      }
     );
 
     applyHealthCheckReport(
@@ -971,14 +980,18 @@ export const SettingsScreen = () => {
       );
     }
 
-    if (report.warnings.length === 0 && importReportMessages.length === 0) {
-      Alert.alert(
-        'Import Complete',
-        `All ${updated.providers.length} providers and ${totalMcpServers} MCP servers verified successfully.`
-      );
-    } else {
-      setImportWarnings([...importReportMessages, ...report.warnings]);
+    const mergedWarnings = [...importReportMessages, ...report.warnings];
+    if (mergedWarnings.length === 0) {
+      return {
+        warnings: [] as string[],
+        successMessage: `All ${updated.providers.length} providers and ${totalMcpServers} MCP servers verified successfully.`,
+      };
     }
+
+    return {
+      warnings: mergedWarnings,
+      successMessage: '',
+    };
   }, [closeAllEditModes, replaceAllSettings, updateMcpServer]);
 
   const handleExportSettings = async () => {
@@ -1017,18 +1030,40 @@ export const SettingsScreen = () => {
     }
 
     const selectedFile = picked.assets[0];
-    const raw = await readAsStringAsync(selectedFile.uri);
+    setImportProgressMessage('Importing data...');
+    setImportProgressVisible(true);
 
     try {
+      const raw = await new File(selectedFile.uri).text();
       const parsed = parseSettingsImport(raw, selectedFile.name);
 
       if (parsed.schema && parsed.schema !== SETTINGS_EXPORT_SCHEMA) {
-        Alert.alert('Import Error', 'Unsupported settings format version.');
+        throw new Error('Unsupported settings format version.');
+      }
+
+      const result = await applyImportedSettings(parsed.settings);
+      setImportProgressVisible(false);
+
+      if (result.warnings.length > 0) {
+        setConfirmDialog({
+          title: 'Import Report',
+          message: result.warnings.join('\n'),
+          buttons: [
+            { label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) },
+          ],
+        });
         return;
       }
 
-      await applyImportedSettings(parsed.settings);
+      setConfirmDialog({
+        title: 'Import Complete',
+        message: result.successMessage,
+        buttons: [
+          { label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) },
+        ],
+      });
     } catch (error: unknown) {
+      setImportProgressVisible(false);
       const message = error instanceof Error ? error.message : 'Unable to read selected file.';
       Alert.alert('Import Error', message);
     }
@@ -1050,9 +1085,17 @@ export const SettingsScreen = () => {
                 await resetAllLocalData();
                 closeAllEditModes();
                 setActiveView('index');
-                Alert.alert('Done', 'All local app data has been deleted.');
+                setConfirmDialog({
+                  title: 'Done',
+                  message: 'All local app data has been deleted.',
+                  buttons: [{ label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) }],
+                });
               } catch (error) {
-                Alert.alert('Delete Failed', `Unable to delete all local data: ${String(error)}`);
+                setConfirmDialog({
+                  title: 'Delete Failed',
+                  message: `Unable to delete all local data: ${String(error)}`,
+                  buttons: [{ label: 'OK', style: 'primary', onPress: () => setConfirmDialog(null) }],
+                });
               }
             })();
           },
@@ -1442,7 +1485,13 @@ export const SettingsScreen = () => {
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmContent}>
             <Text style={styles.confirmTitle}>{confirmDialog?.title}</Text>
-            <Text style={styles.confirmMessage}>{confirmDialog?.message}</Text>
+            <ScrollView
+              style={styles.confirmMessageScroll}
+              contentContainerStyle={styles.confirmMessageScrollContent}
+              showsVerticalScrollIndicator
+            >
+              <Text style={styles.confirmMessage}>{confirmDialog?.message}</Text>
+            </ScrollView>
             <View style={styles.confirmActions}>
               {confirmDialog?.buttons.map((btn, i) => (
                 <TouchableOpacity
@@ -1468,11 +1517,14 @@ export const SettingsScreen = () => {
         </View>
       </Modal>
 
-      <StartupWarningBanner
-        warnings={importWarnings}
-        visible={importWarnings.length > 0}
-        onDismiss={() => setImportWarnings([])}
-      />
+      <Modal visible={importProgressVisible} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.importProgressContent}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.importProgressText}>{importProgressMessage}</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2007,7 +2059,13 @@ const createStyles = (colors: AppPalette, pickerHeight: number) =>
       fontSize: 14,
       color: colors.textSecondary,
       lineHeight: 20,
+    },
+    confirmMessageScroll: {
+      maxHeight: 260,
       marginBottom: 20,
+    },
+    confirmMessageScrollContent: {
+      paddingRight: 2,
     },
     confirmActions: {
       flexDirection: 'row',
@@ -2041,6 +2099,22 @@ const createStyles = (colors: AppPalette, pickerHeight: number) =>
     },
     confirmBtnTextCancel: {
       color: colors.textSecondary,
+    },
+    importProgressContent: {
+      width: '85%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      paddingVertical: 18,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      gap: 10,
+    },
+    importProgressText: {
+      color: colors.text,
+      fontSize: 14,
+      textAlign: 'center',
+      lineHeight: 20,
     },
     // Model Picker Styles
     modelItem: {
