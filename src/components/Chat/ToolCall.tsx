@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Hammer } from 'lucide-react-native';
 import { ToolCall as ToolCallType } from '../../types';
 import { useAppTheme, AppPalette } from '../../theme/useAppTheme';
@@ -85,22 +85,29 @@ export const ToolCall: React.FC<ToolCallProps> = ({
 
       {expanded ? (
         <View style={styles.details}>
-          <Text style={styles.label}>Arguments</Text>
-          <Text style={styles.code}>{safePrettyText(toolCall.arguments)}</Text>
+          <ScrollView
+            style={styles.detailsScroll}
+            contentContainerStyle={styles.detailsContent}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+          >
+            <Text style={styles.label}>Arguments</Text>
+            <Text style={styles.code}>{safePrettyText(toolCall.arguments)}</Text>
 
-          {toolCall.result ? (
-            <>
-              <Text style={styles.label}>Result</Text>
-              <Text style={styles.code}>{safePrettyText(toolCall.result)}</Text>
-            </>
-          ) : null}
+            {toolCall.result ? (
+              <>
+                <Text style={styles.label}>Result</Text>
+                <Text style={styles.code}>{safePrettyText(toolCall.result)}</Text>
+              </>
+            ) : null}
 
-          {toolCall.error ? (
-            <>
-              <Text style={[styles.label, styles.errorLabel]}>Error</Text>
-              <Text style={styles.code}>{toolCall.error}</Text>
-            </>
-          ) : null}
+            {toolCall.error ? (
+              <>
+                <Text style={[styles.label, styles.errorLabel]}>Error</Text>
+                <Text style={styles.code}>{toolCall.error}</Text>
+              </>
+            ) : null}
+          </ScrollView>
         </View>
       ) : null}
 
@@ -157,10 +164,15 @@ const createStyles = (colors: AppPalette) =>
       fontWeight: '600',
     },
     details: {
-      paddingHorizontal: 10,
-      paddingBottom: 10,
-      paddingTop: 6,
+      maxHeight: 300,
       backgroundColor: colors.surface,
+    },
+    detailsScroll: {
+      paddingHorizontal: 10,
+      paddingTop: 6,
+    },
+    detailsContent: {
+      paddingBottom: 10,
     },
     label: {
       color: colors.textSecondary,

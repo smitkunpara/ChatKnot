@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Delete All Local Data Crash (v0.4.1 fallback removal)** — Fixed a regression where the Settings "Delete All Local Data" action could fail with `Persistent storage fallback (AsyncStorage) has been removed in v0.4.1.` Cleanup now treats legacy fallback storage as optional and still fully clears encrypted stores, Realm data, and vault secrets.
 - **Import Validation + Startup-Style Report Flow** — Hardened Settings import with deep JSON structure traversal and path-level validation reporting. Imports now keep valid structured data, ignore extra/unknown keys, skip invalid entries with exact paths, and surface a consolidated post-import report via the same startup warning popup UX, including AI model and MCP tool reconciliation changes.
 - **Themed Settings Status Popups** — Replaced remaining native Android alerts for Settings export/delete completion and failure states with the app's themed popup dialog so feedback now consistently matches the in-app design language.
+- **Large MCP Details Panel Overflow** — Constrained expanded MCP/tool call details with a max-height container and internal scrolling so very large tool responses no longer over-expand the chat UI.
 
 ## [0.4.1] - 2026-03-24
 
