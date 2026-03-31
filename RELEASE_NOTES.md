@@ -1,18 +1,14 @@
-# ChatKnot v0.4.1 Release Notes
+# ChatKnot v0.4.2 Release Notes
 
-**⚡ Drastic Performance & Size Optimization** — In our most aggressive cleanup yet, we've stripped away over **7+ native dependencies**, resulting in a significantly leaner, faster, and more stable Android experience:
-- **Reduced Bundle Size** — Removed `AsyncStorage`, `Reanimated`, `MaskedView`, and several polyfills; now built purely for modern Android.
-- **Improved Security Fallback** — Replaced disk-based fallbacks with a high-performance in-memory **Volatile Storage** layer.
-- **Zero-Warning Production Build** — Cleared multiple internal Gradle/Kotlin deprecations to ensure a rock-solid, error-free binary.
+**⌨️ High-Precision Android Keyboard Support** — Replaced the standard `KeyboardAvoidingView` with a manual keyboard height tracker for a more stable and predictable typing experience on Android. No more "sticky" inputs or inconsistent lifting.
 
-**🎯 Context Usage & Model Awareness** — A significant overhaul of how token usage is tracked, displayed, and enforced:
-- **Dynamic Context Limits** — Automatically extracts model context windows directly from AI provider `/models` endpoints (including OpenRouter/Custom OpenAI).
-- **Hard Switch Enforcement** — Prevents switching to a model with a context limit smaller than your current conversation's used tokens, showing a "Context Limit Exceeded" warning with options to start a new chat instead.
-- **Transactional Token Tracking** — Finalizes token counts only at the end of AI turns for a "flicker-free" and precise usage display.
-- **Smart Rewind** — Editing or retrying a message now automatically "rewinds" your context ring to that historical turn, with intelligent token estimation for legacy chats.
+**🛠️ Hardened Data Management** — Significant improvements to local data safety and migration:
+- **Resilient Data Deletion** — Fixed a regression in the "Delete All Local Data" action, ensures all Realm, MMKV, and hardware-backed secrets are cleared even when legacy fallbacks are absent.
+- **Deep Import Validation** — Settings imports now undergo deep JSON structure traversal with path-level validation. Invalid entries are skipped with precise reporting, while valid data is preserved.
+- **Post-Import Reconciliation** — Consolidated post-import reporting using the app's native warning UI, ensuring AI models and MCP tools are correctly reconciled after a configuration load.
 
-**📦 UI/UX & Native Refinements**:
-- **Seamless Assistant Turns** — Continuous "seam-free" response flow for sequential tool-calling turns; no more interstitial gaps.
-- **Metadata-Rich Exports** — Markdown, PDF, and JSON exports now permanently record the specific AI model name and active mode for every message.
+**🎨 UI/UX & Refinements**:
+- **Themed Status Dialogs** — Replaced all remaining native Android system alerts with the app's themed popup system for a consistent, premium design language throughout the Settings workflows.
+- **MCP Panel Constraints** — Added max-height constraints and internal scrolling to the MCP/tool call details panel, preventing large responses from disrupting the chat layout.
 
 Full changelog: [CHANGELOG.md](./CHANGELOG.md)

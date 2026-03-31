@@ -7,7 +7,7 @@ describe('resolveStartupVersion', () => {
         expoConfig: { version: '1.2.3' },
         nativeAppVersion: '9.9.9',
       },
-      '0.4.1'
+      '0.4.2'
     );
 
     expect(version).toBe('1.2.3');
@@ -18,7 +18,7 @@ describe('resolveStartupVersion', () => {
       {
         manifest2: { extra: { expoClient: { version: '2.0.0' } } },
       },
-      '0.4.1'
+      '0.4.2'
     );
 
     expect(version).toBe('2.0.0');
@@ -30,7 +30,7 @@ describe('resolveStartupVersion', () => {
         expoConfig: { version: '   ' },
         manifest: { version: ' 3.1.4  ' },
       },
-      '0.4.1'
+      '0.4.2'
     );
 
     expect(version).toBe('3.1.4');
@@ -41,7 +41,7 @@ describe('resolveStartupVersion', () => {
       {
         nativeAppVersion: '4.5.6',
       },
-      '0.4.1'
+      '0.4.2'
     );
 
     expect(version).toBe('4.5.6');
@@ -55,9 +55,9 @@ describe('resolveStartupVersion', () => {
         manifest: { version: null },
         nativeAppVersion: undefined,
       },
-      '0.4.1'
+      '0.4.2'
     );
 
-    expect(version).toBe('0.4.1');
+    expect(version).toBe('0.4.2');
   });
 });

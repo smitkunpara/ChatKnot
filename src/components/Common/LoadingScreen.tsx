@@ -9,7 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../theme/useAppTheme';
 
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.4.2';
 
 interface Props {
   statusMessage: string;

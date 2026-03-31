@@ -9,8 +9,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
-const expectedVersion = process.argv[2] ?? '0.4.1';
-const expectedBuild = process.argv[3] ?? '9';
+const expectedVersion = process.argv[2] ?? '0.4.2';
+const expectedBuild = process.argv[3] ?? '10';
 
 function readRelativeFile(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
