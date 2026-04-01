@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **New AI Models Hidden by Default** — Fixed a bug where newly discovered AI models from providers were marked as visible by default instead of hidden. This ensures all new models are properly hidden until the user explicitly makes them visible.
+
 ## [0.4.2] - 2026-03-31
 
 ### Fixed

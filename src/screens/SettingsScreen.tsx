@@ -341,10 +341,19 @@ export const SettingsScreen = () => {
       const service = new OpenAiService(provider);
       const { models, capabilities } = await service.listModelsWithCapabilities();
       
+      // Add new models to hiddenModels so they are hidden by default
+      const existingModels = new Set(provider.availableModels || []);
+      const newModels = models.filter(m => !existingModels.has(m));
+      const updatedHiddenModels = [
+        ...(provider.hiddenModels || []),
+        ...newModels,
+      ];
+      
       const nextProvider = {
         ...provider,
         availableModels: models,
         modelCapabilities: capabilities,
+        hiddenModels: updatedHiddenModels,
       };
       updateProvider(nextProvider);
     } catch (err: unknown) {
